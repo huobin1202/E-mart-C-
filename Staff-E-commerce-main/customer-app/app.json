@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "E-Mart",
+    "slug": "e-mart-customer",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "emart",
+    "userInterfaceStyle": "light",
+    "platforms": ["android"],
+    "android": {
+      "package": "vn.emart.customerapp",
+      "versionCode": 1
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ]
+  }
+}

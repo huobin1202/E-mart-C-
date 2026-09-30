@@ -100,3 +100,12 @@
 [2026-09-30 13:03:23] [User:1] [Action:CREATE_Inventory] [Entity:Inventory#reduce-multiple] [IP:127.0.0.1] [{"ProductId":77,"Quantity":3}]
 [2026-09-30 13:07:02] [User:1] [Action:UPDATE_Promotions] [Entity:Promotions#1] [IP:127.0.0.1] {"id":1,"code":"SALE10","type":"percent","value":10,"minOrderAmount":0,"maxDiscount":50000,"usageLimit":null,"startDate":"2025-01-01","endDate":"2027-12-31","active":true,"description":"Gi?m 10% cho t?t c? \u0111\u01A1n h\u00E0ng","usedCount":0}
 [2026-09-30 13:59:03] [User:1] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"username":"admin","password":"[REDACTED]"}
+[2026-09-30 14:49:33] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#orders] [IP:::1] {"fullName":"b\u00ECnh","phone":"0908447742","address":"123123","note":"123","items":[{"productId":36,"quantity":2}]}
+[2026-09-30 14:49:37] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#orders] [IP:::1] {"fullName":"b\u00ECnh","phone":"0908447742","address":"123123","note":"123","items":[{"productId":36,"quantity":2}]}
+[2026-09-30 14:49:37] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#orders] [IP:::1] {"fullName":"b\u00ECnh","phone":"0908447742","address":"123123","note":"123","items":[{"productId":36,"quantity":2}]}
+[2026-09-30 14:49:38] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#orders] [IP:::1] {"fullName":"b\u00ECnh","phone":"0908447742","address":"123123","note":"123","items":[{"productId":36,"quantity":2}]}
+[2026-09-30 14:49:38] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#orders] [IP:::1] {"fullName":"b\u00ECnh","phone":"0908447742","address":"123123","note":"123","items":[{"productId":36,"quantity":2}]}
+[2026-09-30 14:49:38] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#orders] [IP:::1] {"fullName":"b\u00ECnh","phone":"0908447742","address":"123123","note":"123","items":[{"productId":36,"quantity":2}]}
+[2026-09-30 14:49:38] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#orders] [IP:::1] {"fullName":"b\u00ECnh","phone":"0908447742","address":"123123","note":"123","items":[{"productId":36,"quantity":2}]}
+[2026-09-30 14:49:38] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#orders] [IP:::1] {"fullName":"b\u00ECnh","phone":"0908447742","address":"123123","note":"123","items":[{"productId":36,"quantity":2}]}
+[2026-09-30 14:49:41] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#orders] [IP:::1] {"fullName":"b\u00ECnh","phone":"0908447742","address":"123123","note":"123","items":[{"productId":36,"quantity":2}]}

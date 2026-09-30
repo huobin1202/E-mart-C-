@@ -1,24 +1,32 @@
-# E-Mart customer app
+# E-Mart Android app
 
-The customer shopping app is kept separate from the staff/admin frontend. It uses React and Vite and reads the public product catalog from the existing backend.
+This is the native React Native customer app. It is a separate Expo project; the staff/admin web app remains in `../frontend` and is unchanged.
 
-## Run locally
+## Run on Android
 
-In one terminal, start the backend using the ASP.NET Core 9 runtime:
-
-```powershell
-cd .\backend
-dotnet run
-```
-
-In another terminal, install this app's dependencies once and start Vite:
+Start the backend in one PowerShell terminal:
 
 ```powershell
-cd .\customer-app
-npm install
-npm run dev
+cd D:\E-mart-C-\Staff-E-commerce-main\backend
+dotnet run --launch-profile http
 ```
 
-Open `http://localhost:5174`. The Vite server proxies `/api` calls to `http://localhost:5099`.
+Start Expo in another terminal:
 
-The catalog and category list are public read-only endpoints. Cart contents are saved in this browser. Checkout posts customer contact details and product IDs to `POST /api/storefront/orders`; the backend checks current prices and stock, creates a pending order, and deducts inventory in the same database transaction. Payment gateway and delivery-provider integrations are not configured; checkout currently uses payment on delivery.
+```powershell
+cd D:\E-mart-C-\Staff-E-commerce-main\customer-app
+npm.cmd install
+npm.cmd start
+```
+
+Install Expo Go on an Android phone and scan the QR code. Keep the phone and computer on the same Wi-Fi. The Expo Go app connects to the backend using the computer's LAN address; create a local `.env` file with:
+
+```text
+EXPO_PUBLIC_API_URL=http://YOUR_COMPUTER_LAN_IP:5099/api
+```
+
+For the Android emulator, use `http://10.0.2.2:5099/api` instead. Restart Expo after changing `.env`. The backend listens on `0.0.0.0:5099` for development, so Windows Firewall may ask whether to allow local network access.
+
+To build and install a native debug APK with `npm.cmd run build:android`, install Android Studio and its Android SDK first. Expo Go is the quickest way to preview the app on a phone.
+
+The app loads active, in-stock products and categories from `GET /api/storefront/products` and `GET /api/storefront/categories`. Checkout sends cart product IDs and quantities to `POST /api/storefront/orders`; the backend recalculates prices and checks stock before saving the order and reducing inventory. Cart contents are stored on-device. Payment is currently cash on delivery; payment gateway and delivery integrations are not configured.
