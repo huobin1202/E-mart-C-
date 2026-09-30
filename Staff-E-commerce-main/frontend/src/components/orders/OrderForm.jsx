@@ -268,7 +268,7 @@ export default function OrdersForm({
               </label>
               <input
                 readOnly
-                value={payment.transaction_ref}
+                  value={payment?.transaction_ref || ""}
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50"
               />
 
@@ -277,7 +277,7 @@ export default function OrdersForm({
               </label>
               <input
                 readOnly
-                value={payment.status}
+                value={payment?.status || ""}
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50"
               />
             </div>
@@ -294,7 +294,8 @@ export default function OrdersForm({
               <span className="text-green-600">{currentOrder.discount}₫</span>
             </div>
             <div className="flex justify-between text-xl text-blue-600">
-              <span>Phải trả:</span> <span>{currentOrder.total_amount}₫</span>
+              <span>Phải trả:</span>{" "}
+              <span>{currentOrder.totalAmount ?? currentOrder.total_amount ?? 0}₫</span>
             </div>
           </div>
 

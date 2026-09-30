@@ -65,7 +65,6 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     })
 // .EnableSensitiveDataLogging() // Dev only
 );
-
 // -------------------------
 // Register Repositories
 // -------------------------
