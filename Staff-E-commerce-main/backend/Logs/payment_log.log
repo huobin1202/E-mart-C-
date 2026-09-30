@@ -90,3 +90,7 @@
 [2025-12-16 21:40:24] [User:1] [Action:CREATE_Payment] [Entity:Payment#momo] [IP:::1] {"OrderId":5,"Amount":1000,"ReturnUrl":"","NotifyUrl":"https://stainful-asher-unfeigningly.ngrok-free.dev/api/payment/momo/ipn"}
 [2025-12-16 21:41:48] [User:1] [Action:CREATE_Payment] [Entity:Payment#momo] [IP:::1] {"OrderId":6,"Amount":1000,"ReturnUrl":"","NotifyUrl":"https://stainful-asher-unfeigningly.ngrok-free.dev/api/payment/momo/ipn"}
 [2025-12-16 21:42:08] [User:1] [Action:CREATE_Payment] [Entity:Payment#offlinepayment] [IP:::1] {"OrderId":7,"Amount":1000,"Method":"cash","Status":"completed"}
+[2026-09-30 12:54:38] [User:1] [Action:CREATE_Payment] [Entity:Payment#momo] [IP:127.0.0.1] {"OrderId":31,"Amount":20000,"ReturnUrl":"","NotifyUrl":"https://stainful-asher-unfeigningly.ngrok-free.dev/api/payment/momo/ipn"}
+[2026-09-30 12:55:50] [User:1] [Action:CREATE_Payment] [Entity:Payment#offlinepayment] [IP:127.0.0.1] {"OrderId":32,"Amount":220000,"Method":"cash","Status":"completed"}
+[2026-09-30 12:56:21] [User:1] [Action:CREATE_Payment] [Entity:Payment#offlinepayment] [IP:127.0.0.1] {"OrderId":33,"Amount":15004,"Method":"cash","Status":"completed"}
+[2026-09-30 13:03:23] [User:1] [Action:CREATE_Payment] [Entity:Payment#offlinepayment] [IP:127.0.0.1] {"OrderId":34,"Amount":36000,"Method":"cash","Status":"completed"}
