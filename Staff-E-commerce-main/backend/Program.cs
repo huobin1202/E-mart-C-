@@ -190,6 +190,15 @@ app.UseRouting();
 
 app.UseCors("AllowReact");
 
+// Product images are public files and cannot send the API's bearer token via <img>.
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(
+        Path.Combine(Directory.GetCurrentDirectory(), "wwwroot")),
+    RequestPath = "", // Serve /assets/... directly.
+    ServeUnknownFileTypes = false
+});
+
 // Xác thực JWT
 app.UseAuthentication();
 app.UseAuthorization();
@@ -199,14 +208,6 @@ app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseHttpsRedirection();
 
 app.MapControllers();
-
-app.UseStaticFiles(new StaticFileOptions
-{
-    FileProvider = new PhysicalFileProvider(
-        Path.Combine(Directory.GetCurrentDirectory(), "wwwroot")),
-    RequestPath = "", // Để trống để serve trực tiếp /assets/...
-    ServeUnknownFileTypes = false // Bảo mật: chỉ serve các MIME types đã biết
-});
 
 // -------------------------
 // Serve frontend SPA (Vite)
