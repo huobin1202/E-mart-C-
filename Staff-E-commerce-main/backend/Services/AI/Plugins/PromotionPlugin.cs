@@ -21,7 +21,7 @@ namespace backend.Services.AI.Plugins
             [Description("Tìm theo tên khuyến mãi")] string? keyword = null,
             [Description("Mã khuyến mãi cụ thể")] string? code = null,
             [Description("Trạng thái: active, inactive, expired")] string? status = null,
-            [Description("Loại giảm giá: percent, fixed")] string? type = null,
+            [Description("Loại chương trình: product, event, voucher")] string? type = null,
             [Description("Số trang")] int page = 1,
             [Description("Số kết quả/trang")] int limit = 20)
         {
@@ -43,8 +43,10 @@ namespace backend.Services.AI.Plugins
                     {
                         promotion.Id,
                         promotion.Code,
+                        promotion.Name,
+                        PromotionType = promotion.Type,
                         promotion.Description,
-                        DiscountType = promotion.Type,
+                        DiscountType = promotion.DiscountType,
                         DiscountValue = promotion.Value,
                         MinOrderValue = promotion.MinOrderAmount,
                         MaxDiscountAmount = promotion.MaxDiscount,
@@ -76,8 +78,10 @@ namespace backend.Services.AI.Plugins
                 {
                     p.Id,
                     p.Code,
+                    p.Name,
+                    PromotionType = p.Type,
                     p.Description,
-                    DiscountType = p.Type,
+                    DiscountType = p.DiscountType,
                     DiscountValue = p.Value,
                     p.StartDate,
                     p.EndDate,

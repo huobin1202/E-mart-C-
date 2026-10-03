@@ -19,16 +19,17 @@ namespace backend.Models
         [StringLength(100)]
         public string Code { get; set; } = string.Empty;
 
-        // "percent" or "fixed" as in DB ENUM
+        // Campaign kind: product, event, or voucher.
         [Column("type")]
-        [StringLength(50)]
-        public string Type { get; set; } = "percent";
+        [StringLength(20)]
+        public string Type { get; set; } = "event";
 
-        [Column("value", TypeName = "decimal(12,2)")]
+        [Column("discount_type")]
+        [StringLength(10)]
+        public string DiscountType { get; set; } = "percent";
+
+        [Column("discount_value", TypeName = "decimal(12,2)")]
         public decimal Value { get; set; } = 0m;
-
-        [Column("min_order_amount", TypeName = "decimal(12,2)")]
-        public decimal MinOrderAmount { get; set; } = 0m;
 
         [Column("max_discount", TypeName = "decimal(12,2)")]
         public decimal? MaxDiscount { get; set; }
@@ -45,8 +46,19 @@ namespace backend.Models
         [Column("used_count")]
         public int UsedCount { get; set; } = 0;
 
-        [Column("active")]
-        public bool Active { get; set; } = true;
+        [Column("name")]
+        [StringLength(150)]
+        public string Name { get; set; } = string.Empty;
+
+        [Column("status")]
+        [StringLength(20)]
+        public string Status { get; set; } = "active";
+
+        [NotMapped]
+        public bool Active { get => Status == "active"; set => Status = value ? "active" : "disabled"; }
+
+        [NotMapped]
+        public decimal MinOrderAmount { get; set; }
 
         [Column("description")]
         [StringLength(1000)]
@@ -68,5 +80,8 @@ namespace backend.Models
         // Navigation
         public virtual ICollection<Order>? Orders { get; set; }
         public virtual ICollection<PromotionRedemption>? Redemptions { get; set; }
+        public virtual EventPromotion? EventDetails { get; set; }
+        public virtual VoucherPromotion? VoucherDetails { get; set; }
+        public virtual ICollection<ProductPromotion>? ProductDetails { get; set; }
     }
 }

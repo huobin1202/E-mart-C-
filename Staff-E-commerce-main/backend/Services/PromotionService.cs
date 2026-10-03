@@ -64,11 +64,23 @@ namespace backend.Services
             // Validation
             if (string.IsNullOrWhiteSpace(promotion.Code))
                 throw new ArgumentException("Code is required", nameof(promotion.Code));
+            if (string.IsNullOrWhiteSpace(promotion.Name))
+                throw new ArgumentException("Name is required", nameof(promotion.Name));
+            if (promotion.Type == "voucher" && string.IsNullOrWhiteSpace(promotion.VoucherDetails?.VoucherCode))
+                throw new ArgumentException("Voucher code is required");
+            if (promotion.Type == "product" && (promotion.ProductDetails == null || !promotion.ProductDetails.Any()))
+                throw new ArgumentException("Select at least one product");
+            if (!promotion.StartDate.HasValue || !promotion.EndDate.HasValue)
+                throw new ArgumentException("Start date and end date are required");
 
             if (promotion.Value <= 0)
                 throw new ArgumentException("Value must be greater than 0", nameof(promotion.Value));
 
-            if (promotion.Type == "percent" && promotion.Value > 100)
+            if (!new[] { "product", "event", "voucher" }.Contains(promotion.Type))
+                throw new ArgumentException("Type must be product, event, or voucher", nameof(promotion.Type));
+            if (!new[] { "percent", "fixed" }.Contains(promotion.DiscountType))
+                throw new ArgumentException("DiscountType must be percent or fixed", nameof(promotion.DiscountType));
+            if (promotion.DiscountType == "percent" && promotion.Value > 100)
                 throw new ArgumentException("Percent value cannot exceed 100", nameof(promotion.Value));
 
             if (promotion.StartDate.HasValue && promotion.EndDate.HasValue && promotion.StartDate > promotion.EndDate)
@@ -94,7 +106,19 @@ namespace backend.Services
             if (promotion.Value <= 0)
                 throw new ArgumentException("Value must be greater than 0", nameof(promotion.Value));
 
-            if (promotion.Type == "percent" && promotion.Value > 100)
+            if (!new[] { "product", "event", "voucher" }.Contains(promotion.Type))
+                throw new ArgumentException("Type must be product, event, or voucher", nameof(promotion.Type));
+            if (!new[] { "percent", "fixed" }.Contains(promotion.DiscountType))
+                throw new ArgumentException("DiscountType must be percent or fixed", nameof(promotion.DiscountType));
+            if (string.IsNullOrWhiteSpace(promotion.Name))
+                throw new ArgumentException("Name is required", nameof(promotion.Name));
+            if (promotion.Type == "voucher" && string.IsNullOrWhiteSpace(promotion.VoucherDetails?.VoucherCode))
+                throw new ArgumentException("Voucher code is required");
+            if (promotion.Type == "product" && (promotion.ProductDetails == null || !promotion.ProductDetails.Any()))
+                throw new ArgumentException("Select at least one product");
+            if (!promotion.StartDate.HasValue || !promotion.EndDate.HasValue)
+                throw new ArgumentException("Start date and end date are required");
+            if (promotion.DiscountType == "percent" && promotion.Value > 100)
                 throw new ArgumentException("Percent value cannot exceed 100", nameof(promotion.Value));
 
             if (promotion.StartDate.HasValue && promotion.EndDate.HasValue && promotion.StartDate > promotion.EndDate)
@@ -147,7 +171,17 @@ namespace backend.Services
                 };
             }
 
-            if (!promotion.Active)
+            if (promotion.Type == "product")
+            {
+                return new ValidatePromotionResult
+                {
+                    IsValid = false,
+                    Message = "Khuyến mãi này áp dụng trực tiếp cho sản phẩm, không áp dụng bằng mã đơn hàng",
+                    DiscountAmount = 0
+                };
+            }
+
+            if (promotion.Status != "active")
             {
                 return new ValidatePromotionResult
                 {
@@ -188,7 +222,8 @@ namespace backend.Services
                 };
             }
 
-            if (orderAmount < promotion.MinOrderAmount)
+            promotion.MinOrderAmount = promotion.EventDetails?.MinOrderAmount ?? 0;
+            if (promotion.Type == "event" && orderAmount < promotion.MinOrderAmount)
             {
                 return new ValidatePromotionResult
                 {
@@ -222,7 +257,7 @@ namespace backend.Services
         {
             decimal discount = 0;
 
-            if (promotion.Type == "percent")
+            if (promotion.DiscountType == "percent")
             {
                 discount = orderAmount * (promotion.Value / 100);
 
@@ -346,15 +381,20 @@ namespace backend.Services
             {
                 Id = p.Id,
                 Code = p.Code,
+                Name = p.Name,
                 Type = p.Type,
+                DiscountType = p.DiscountType,
                 Value = p.Value,
-                MinOrderAmount = p.MinOrderAmount,
+                MinOrderAmount = p.EventDetails?.MinOrderAmount ?? 0,
+                VoucherCode = p.VoucherDetails?.VoucherCode,
+                ProductIds = p.ProductDetails?.Select(d => d.ProductId).ToList() ?? new List<int>(),
                 MaxDiscount = p.MaxDiscount,
                 StartDate = p.StartDate,
                 EndDate = p.EndDate,
                 UsageLimit = p.UsageLimit,
                 UsedCount = p.UsedCount,
                 Active = p.Active,
+                Status = p.Status,
                 Description = p.Description,
                 CreatedAt = p.CreatedAt,
                 UpdatedAt = p.UpdatedAt
