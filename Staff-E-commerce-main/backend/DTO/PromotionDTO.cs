@@ -3,6 +3,7 @@ namespace backend.DTO
     public class PromotionDTO
     {
         public int Id { get; set; }
+        // Public, customer-entered code. Only vouchers have one.
         public string Code { get; set; } = string.Empty;
         public string Type { get; set; } = "event"; // product | event | voucher
         public string DiscountType { get; set; } = "percent"; // percent | fixed

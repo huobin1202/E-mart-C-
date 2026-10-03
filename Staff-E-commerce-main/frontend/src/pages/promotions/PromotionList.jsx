@@ -430,7 +430,7 @@ export default function PromotionList() {
                       >
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="text-sm font-medium text-gray-900 font-mono bg-blue-50 px-2 py-1 rounded">
-                            {promo.code}
+                            {promo.type === "voucher" ? promo.voucherCode : promo.name}
                           </span>
                           <div className="mt-1 text-xs text-gray-500">{promo.name}</div>
                         </td>

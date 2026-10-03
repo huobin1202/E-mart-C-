@@ -37,7 +37,7 @@ export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
       setFormData({
         id: promotion.id,
         name: promotion.name || "",
-        code: promotion.code,
+        code: promotion.code || "",
         type: promotion.type || "event",
         discountType: promotion.discountType || "percent",
         value: promotion.value,
@@ -74,14 +74,14 @@ export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
     setError(null);
 
     try {
-      if (!formData.code || !formData.name || !formData.value || (formData.type === "event" && !formData.minOrderAmount) || (formData.type === "voucher" && !formData.voucherCode) || (formData.type === "product" && !formData.productIdsText.trim())) {
+      if (!formData.name || !formData.value || (formData.type === "event" && !formData.minOrderAmount) || (formData.type === "voucher" && !formData.voucherCode) || (formData.type === "product" && !formData.productIdsText.trim())) {
         throw new Error("Vui lòng điền đầy đủ thông tin bắt buộc");
       }
 
       const payload = {
         id: formData.id,
         name: formData.name,
-        code: formData.code.toUpperCase(),
+        code: formData.code,
         type: formData.type,
         discountType: formData.discountType,
         value: parseFloat(formData.value),
@@ -130,21 +130,7 @@ export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
             </div>
           )}
 
-          {/* Mã khuyến mãi (disabled) */}
           <div><label className="block text-sm font-medium text-gray-700 mb-2">Tên chương trình</label><input name="name" value={formData.name} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg" required /></div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Mã khuyến mãi
-            </label>
-            <input
-              type="text"
-              name="code"
-              value={formData.code}
-              disabled
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500 uppercase cursor-not-allowed"
-            />
-            <p className="text-xs text-gray-500 mt-1">Mã khuyến mãi không thể thay đổi</p>
-          </div>
 
           {/* Loại và giá trị */}
           <div className="grid grid-cols-2 gap-4">

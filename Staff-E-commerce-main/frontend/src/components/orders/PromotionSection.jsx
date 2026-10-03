@@ -56,7 +56,7 @@ export default function PromotionSection({ isCreateMode, promotion, setPromotion
 
     let discountAmount = 0;
 
-    if (promo.type === "percent") {
+    if (promo.discountType === "percent") {
       discountAmount = Math.floor((subtotal * promo.value) / 100);
     } else {
       discountAmount = promo.value;
@@ -75,7 +75,7 @@ export default function PromotionSection({ isCreateMode, promotion, setPromotion
 
 
   const formatValue = (promo) => {
-    if (promo.type === "percent") return `${promo.value}%`;
+    if (promo.discountType === "percent") return `${promo.value}%`;
     return `${Number(promo.value).toLocaleString()}₫`;
   };
 
@@ -93,7 +93,7 @@ export default function PromotionSection({ isCreateMode, promotion, setPromotion
                 }`}
               >
                 <div>
-                  <div className="font-bold text-primary text-lg">{promo.code}</div>
+                  <div className="font-bold text-primary text-lg">{promo.type === "voucher" ? promo.code : promo.name}</div>
                   <div className="text-sm text-gray-600">
                     Giảm {formatValue(promo)}
                     {promo.minOrderAmount > 0 && (
@@ -114,7 +114,7 @@ export default function PromotionSection({ isCreateMode, promotion, setPromotion
           : promotion && (
               <label className="flex items-center justify-between p-4 border rounded-lg cursor-pointer bg-gray-100">
                 <div>
-                  <div className="font-bold text-primary text-lg">{promotion.code}</div>
+                  <div className="font-bold text-primary text-lg">{promotion.type === "voucher" ? promotion.code : promotion.name}</div>
                   <div className="text-sm text-gray-600">
                     Giảm {formatValue(promotion)}
                     {promotion.minOrderAmount > 0 && (

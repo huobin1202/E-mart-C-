@@ -118,7 +118,7 @@ namespace backend.Controllers
             {
                 var promotion = new Promotion
                 {
-                    Code = promotionDto.Code.ToUpper(),
+                    Code = $"PROMO-{Guid.NewGuid():N}".ToUpperInvariant(),
                     Name = promotionDto.Name,
                     Type = promotionDto.Type,
                     DiscountType = promotionDto.DiscountType,
@@ -170,7 +170,7 @@ namespace backend.Controllers
                 var promotion = new Promotion
                 {
                     Id = promotionDto.Id,
-                    Code = promotionDto.Code.ToUpper(),
+                    Code = promotionDto.Code?.ToUpperInvariant() ?? string.Empty,
                     Name = promotionDto.Name,
                     Type = promotionDto.Type,
                     DiscountType = promotionDto.DiscountType,

@@ -118,7 +118,7 @@ export default function PromotionDetail({ promotionId, onClose, onEdit }) {
             <div>
               <h2 className="text-2xl font-bold text-white">Chi tiết khuyến mãi</h2>
               <p className="text-white mt-1">{promotion.name}</p>
-              <p className="text-white mt-1 font-mono text-lg">{promotion.code}</p>
+              <p className="text-white mt-1 font-mono text-lg">{promotion.type === "voucher" ? promotion.voucherCode : "Chương trình tự động"}</p>
             </div>
             <div className="flex items-center gap-3">
               {getStatusBadge()}
@@ -179,7 +179,7 @@ export default function PromotionDetail({ promotionId, onClose, onEdit }) {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs font-medium text-blue-700">Mã khuyến mãi</label>
-                    <p className="mt-1 text-base font-bold text-blue-900 font-mono">{promotion.code}</p>
+                    <p className="mt-1 text-base font-bold text-blue-900 font-mono">{promotion.type === "voucher" ? promotion.voucherCode : "Không có mã nhập"}</p>
                   </div>
                   <div>
                     <label className="text-xs font-medium text-blue-700">ID</label>

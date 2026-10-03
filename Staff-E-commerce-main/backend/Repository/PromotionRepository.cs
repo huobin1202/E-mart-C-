@@ -44,7 +44,8 @@ namespace backend.Repository
             // Search by code
             if (!string.IsNullOrWhiteSpace(search))
             {
-                query = query.Where(p => p.Code.ToLower().Contains(search.ToLower()));
+                query = query.Where(p => p.Name.ToLower().Contains(search.ToLower()) ||
+                    (p.VoucherDetails != null && p.VoucherDetails.VoucherCode.ToLower().Contains(search.ToLower())));
             }
 
             // Filter by type
@@ -109,8 +110,8 @@ namespace backend.Repository
             return await _context.Promotions
                 .AsNoTracking()
                 .Include(p => p.EventDetails).Include(p => p.VoucherDetails).Include(p => p.ProductDetails)
-                .FirstOrDefaultAsync(p => (p.Code.ToUpper() == code.ToUpper() ||
-                    (p.VoucherDetails != null && p.VoucherDetails.VoucherCode.ToUpper() == code.ToUpper())) && !p.IsDeleted);
+                .FirstOrDefaultAsync(p => p.VoucherDetails != null &&
+                    p.VoucherDetails.VoucherCode.ToUpper() == code.Trim().ToUpper() && !p.IsDeleted);
         }
 
         // Create promotion
@@ -166,7 +167,7 @@ namespace backend.Repository
                 .AsNoTracking()
                 .Include(p => p.EventDetails).Include(p => p.VoucherDetails).Include(p => p.ProductDetails)
                 .Where(p => !p.IsDeleted &&
-                           p.Status == "active" &&
+                           p.Status == "active" && p.Type != "product" &&
                            (!p.StartDate.HasValue || p.StartDate.Value.Date <= vnToday) &&
                            (!p.EndDate.HasValue || p.EndDate.Value.Date >= vnToday) &&
                            (!p.UsageLimit.HasValue || p.UsedCount < p.UsageLimit))

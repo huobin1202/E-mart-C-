@@ -90,6 +90,7 @@ CREATE TABLE customers (
   note NVARCHAR(MAX),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  is_active BIT NOT NULL DEFAULT 1,
   -- SQL Server: dùng filtered unique indexes bên dưới để cho phép nhiều NULL.
 );
 GO

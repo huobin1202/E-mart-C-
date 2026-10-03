@@ -4,7 +4,6 @@ import { createPromotion } from "../../api/promotionApi";
 export default function PromotionCreate({ onCancel, onSuccess }) {
   const [formData, setFormData] = useState({
     name: "",
-    code: "",
     type: "event",
     discountType: "percent",
     value: "",
@@ -49,13 +48,12 @@ export default function PromotionCreate({ onCancel, onSuccess }) {
 
     try {
       // Validate
-      if (!formData.code || !formData.name || !formData.value || (formData.type === "event" && !formData.minOrderAmount) || (formData.type === "voucher" && !formData.voucherCode) || (formData.type === "product" && !formData.productIdsText.trim())) {
+      if (!formData.name || !formData.value || (formData.type === "event" && !formData.minOrderAmount) || (formData.type === "voucher" && !formData.voucherCode) || (formData.type === "product" && !formData.productIdsText.trim())) {
         throw new Error("Vui lòng điền đầy đủ thông tin bắt buộc");
       }
 
       // Convert to proper types
       const payload = {
-        code: formData.code.toUpperCase(),
         name: formData.name,
         type: formData.type,
         discountType: formData.discountType,
@@ -78,10 +76,7 @@ export default function PromotionCreate({ onCancel, onSuccess }) {
     } catch (err) {
       let errorMessage = err.message || "Có lỗi xảy ra khi tạo khuyến mãi";
       
-      // Xử lý lỗi mã khuyến mãi đã tồn tại
-      if (errorMessage.toLowerCase().includes('already exists')) {
-        errorMessage = `Mã khuyến mãi "${formData.code.toUpperCase()}" đã tồn tại. Vui lòng chọn mã khác.`;
-      }
+      if (errorMessage.toLowerCase().includes('already exists')) errorMessage = "Mã voucher đã tồn tại. Vui lòng chọn mã khác.";
       
       setError(errorMessage);
     } finally {
@@ -112,20 +107,7 @@ export default function PromotionCreate({ onCancel, onSuccess }) {
 
           {/* Mã khuyến mãi */}
           <div><label className="block text-sm font-medium text-gray-700 mb-2">Tên chương trình *</label><input name="name" value={formData.name} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg" required /></div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Mã khuyến mãi <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              name="code"
-              value={formData.code}
-              onChange={handleChange}
-              placeholder="VD: SUMMER2025"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 uppercase"
-              required
-            />
-          </div>
+          {formData.type !== "voucher" && <p className="text-sm text-gray-500">Mã nội bộ sẽ được hệ thống tạo tự động. Chỉ voucher mới có mã khách hàng nhập.</p>}
 
           {/* Loại và giá trị */}
           <div className="grid grid-cols-2 gap-4">

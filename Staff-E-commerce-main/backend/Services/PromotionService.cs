@@ -62,8 +62,6 @@ namespace backend.Services
         public async Task<PromotionDTO> CreatePromotionAsync(Promotion promotion)
         {
             // Validation
-            if (string.IsNullOrWhiteSpace(promotion.Code))
-                throw new ArgumentException("Code is required", nameof(promotion.Code));
             if (string.IsNullOrWhiteSpace(promotion.Name))
                 throw new ArgumentException("Name is required", nameof(promotion.Name));
             if (promotion.Type == "voucher" && string.IsNullOrWhiteSpace(promotion.VoucherDetails?.VoucherCode))
@@ -86,10 +84,13 @@ namespace backend.Services
             if (promotion.StartDate.HasValue && promotion.EndDate.HasValue && promotion.StartDate > promotion.EndDate)
                 throw new ArgumentException("Start date must be before end date");
 
-            // Check if code already exists
-            var existing = await _promotionRepository.GetByCodeAsync(promotion.Code);
-            if (existing != null)
-                throw new ArgumentException($"Promotion code '{promotion.Code}' already exists");
+            if (promotion.Type == "voucher")
+            {
+                promotion.VoucherDetails!.VoucherCode = promotion.VoucherDetails.VoucherCode.Trim().ToUpperInvariant();
+                var existing = await _promotionRepository.GetByCodeAsync(promotion.VoucherDetails.VoucherCode);
+                if (existing != null)
+                    throw new ArgumentException($"Voucher code '{promotion.VoucherDetails.VoucherCode}' already exists");
+            }
 
             var created = await _promotionRepository.CreateAsync(promotion);
             return MapToDTO(created);
@@ -125,11 +126,13 @@ namespace backend.Services
                 throw new ArgumentException("Start date must be before end date");
 
             // Check if changing code conflicts with another promotion
-            if (promotion.Code != existing.Code)
+            promotion.Code = existing.Code; // Internal identifier; customer-facing codes belong to vouchers only.
+            if (promotion.Type == "voucher")
             {
-                var codeExists = await _promotionRepository.GetByCodeAsync(promotion.Code);
-                if (codeExists != null && codeExists.Id != promotion.Id)
-                    throw new ArgumentException($"Promotion code '{promotion.Code}' already exists");
+                promotion.VoucherDetails!.VoucherCode = promotion.VoucherDetails.VoucherCode.Trim().ToUpperInvariant();
+                var duplicate = await _promotionRepository.GetByCodeAsync(promotion.VoucherDetails.VoucherCode);
+                if (duplicate != null && duplicate.Id != promotion.Id)
+                    throw new ArgumentException($"Voucher code '{promotion.VoucherDetails.VoucherCode}' already exists");
             }
 
             promotion.CreatedAt = existing.CreatedAt;
@@ -171,7 +174,7 @@ namespace backend.Services
                 };
             }
 
-            if (promotion.Type == "product")
+            if (promotion.Type != "voucher")
             {
                 return new ValidatePromotionResult
                 {
@@ -228,7 +231,7 @@ namespace backend.Services
                 return new ValidatePromotionResult
                 {
                     IsValid = false,
-                    Message = $"Đơn hàng tối thiểu {promotion.MinOrderAmount:N0}đ để sử dụng mã này",
+                    Message = $"Đơn hàng tối thiểu {promotion.MinOrderAmount:N0}đ để sử dụng chương trình này",
                     DiscountAmount = 0
                 };
             }
@@ -380,7 +383,7 @@ namespace backend.Services
             return new PromotionDTO
             {
                 Id = p.Id,
-                Code = p.Code,
+                Code = p.Type == "voucher" ? p.VoucherDetails?.VoucherCode ?? string.Empty : string.Empty,
                 Name = p.Name,
                 Type = p.Type,
                 DiscountType = p.DiscountType,
