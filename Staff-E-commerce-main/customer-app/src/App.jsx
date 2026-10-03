@@ -102,7 +102,7 @@ export default function App() {
       .finally(() => setCartLoaded(true));
   }, []);
   useEffect(() => {
-    if (cartLoaded) AsyncStorage.setItem(CART_KEY, JSON.stringify(cart)).catch(() => {});
+    if (cartLoaded) AsyncStorage.setItem(CART_KEY, JSON.stringify(cart)).catch(() => { });
   }, [cart, cartLoaded]);
 
   const visibleProducts = useMemo(() => products.filter((product) => {

@@ -1,11 +1,5 @@
--- =========================================================
--- STORE MANAGEMENT - CONVENIENCE STORE
--- SQL Server / SSMS
--- Admin + Employee: dùng chung bảng Users, phân quyền bằng role.
--- Customer: tài khoản riêng cho App.
--- Schema bám theo ERD: Users, Customers, Categories, Products,
--- Suppliers, Purchase Orders, Promotions (3 loại), Orders, Payments...
--- =========================================================
+-- Updated schema for Store Management
+-- Adds foreign keys, audit table, inventory adjustments, users table, and more.
 -- IMPORTANT:
 -- 1) If you already have data in the original DB, adding constraints may fail. 
 --    Use data-cleaning steps first (ensure referential integrity), or import into a fresh DB.
@@ -39,18 +33,12 @@ IF OBJECT_ID(N'ai_conversations', N'U') IS NOT NULL DROP TABLE ai_conversations;
 
 IF OBJECT_ID(N'activity_logs', N'U') IS NOT NULL DROP TABLE activity_logs;
 IF OBJECT_ID(N'promotion_redemptions', N'U') IS NOT NULL DROP TABLE promotion_redemptions;
-IF OBJECT_ID(N'voucher_promotions', N'U') IS NOT NULL DROP TABLE voucher_promotions;
-IF OBJECT_ID(N'event_promotions', N'U') IS NOT NULL DROP TABLE event_promotions;
-IF OBJECT_ID(N'product_promotions', N'U') IS NOT NULL DROP TABLE product_promotions;
 IF OBJECT_ID(N'payments', N'U') IS NOT NULL DROP TABLE payments;
 IF OBJECT_ID(N'order_items', N'U') IS NOT NULL DROP TABLE order_items;
 IF OBJECT_ID(N'[orders]', N'U') IS NOT NULL DROP TABLE [orders];
-IF OBJECT_ID(N'po_details', N'U') IS NOT NULL DROP TABLE po_details;
-IF OBJECT_ID(N'purchase_orders', N'U') IS NOT NULL DROP TABLE purchase_orders;
 IF OBJECT_ID(N'inventory_adjustments', N'U') IS NOT NULL DROP TABLE inventory_adjustments;
 IF OBJECT_ID(N'inventory', N'U') IS NOT NULL DROP TABLE inventory;
 IF OBJECT_ID(N'products', N'U') IS NOT NULL DROP TABLE products;
-IF OBJECT_ID(N'units', N'U') IS NOT NULL DROP TABLE units;
 IF OBJECT_ID(N'suppliers', N'U') IS NOT NULL DROP TABLE suppliers;
 IF OBJECT_ID(N'categories', N'U') IS NOT NULL DROP TABLE categories;
 IF OBJECT_ID(N'customers', N'U') IS NOT NULL DROP TABLE customers;
@@ -83,18 +71,14 @@ CREATE TABLE suppliers (
 
 CREATE TABLE customers (
   id INT IDENTITY(1,1) PRIMARY KEY,
-  full_name NVARCHAR(255) NOT NULL,
+  full_name VARCHAR(255) NOT NULL,
   phone VARCHAR(50),
-  password_hash VARCHAR(512) DEFAULT NULL,
   email VARCHAR(255),
-  reward_points INT NOT NULL DEFAULT 0,
   address NVARCHAR(MAX),
   note NVARCHAR(MAX),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  is_active BIT NOT NULL DEFAULT 1,
-  -- Khách hàng đăng nhập App; tài khoản nhân viên/admin nằm ở Users.
-  -- SQL Server: dùng filtered unique indexes bên dưới để cho phép nhiều NULL.
+  -- SQL Server: dùng filtered unique indexes bên dưới để cho phép nhiều NULL
 );
 GO
 CREATE UNIQUE INDEX ux_customers_phone
@@ -110,18 +94,15 @@ GO
 CREATE TABLE users (
   id INT IDENTITY(1,1) PRIMARY KEY,
   username VARCHAR(150) NOT NULL UNIQUE,
-  password_hash VARCHAR(512) NOT NULL,
-  first_name NVARCHAR(100) NOT NULL,
-  last_name NVARCHAR(100) NOT NULL,
   email VARCHAR(255),
-  phone VARCHAR(20),
-  role VARCHAR(20) NOT NULL DEFAULT 'employee',
+  password_hash VARCHAR(512) NOT NULL,
+  full_name VARCHAR(255),
+  role VARCHAR(20) NOT NULL DEFAULT 'staff',
   is_active BIT NOT NULL DEFAULT 1,
   locked BIT NOT NULL DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  last_login DATETIME DEFAULT NULL,
-  CONSTRAINT ck_users_role CHECK (role IN ('admin','employee'))
+  last_login DATETIME DEFAULT NULL
 );
 GO
 CREATE UNIQUE INDEX ux_users_email
@@ -132,56 +113,16 @@ GO
 CREATE TABLE promotions (
   id INT IDENTITY(1,1) PRIMARY KEY,
   code VARCHAR(100) NOT NULL UNIQUE,
-  name NVARCHAR(150) NOT NULL,
-  type VARCHAR(20) NOT NULL,
-  description NVARCHAR(1000),
-  start_date DATETIME NOT NULL,
-  end_date DATETIME NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'active',
-  max_discount DECIMAL(12,2) DEFAULT NULL,
+  type VARCHAR(20) NOT NULL DEFAULT 'percent',
+  value DECIMAL(12,2) NOT NULL DEFAULT 0,
+  min_order_amount DECIMAL(12,2) DEFAULT 0,
+  start_date DATETIME DEFAULT NULL,
+  end_date DATETIME DEFAULT NULL,
   usage_limit INT DEFAULT NULL,
-  used_count INT NOT NULL DEFAULT 0,
-  is_deleted BIT NOT NULL DEFAULT 0,
-  deleted_at DATETIME NULL,
+  used_count INT DEFAULT 0,
+  active BIT NOT NULL DEFAULT 1,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT ck_promotions_type CHECK (type IN ('product','event','voucher')),
-  CONSTRAINT ck_promotions_status CHECK (status IN ('active','expired','disabled')),
-  CONSTRAINT ck_promotions_dates CHECK (end_date >= start_date),
-  CONSTRAINT ck_promotions_usage CHECK (usage_limit IS NULL OR usage_limit >= 0),
-  CONSTRAINT ck_promotions_used_count CHECK (used_count >= 0)
-);
-
--- =========================================================
--- PROMOTION DETAILS: 3 loại khuyến mãi theo ERD
--- =========================================================
-
--- Event/voucher details
-CREATE TABLE event_promotions (
-  id INT IDENTITY(1,1) PRIMARY KEY,
-  promotion_id INT NOT NULL UNIQUE,
-  min_order_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
-  discount_percent DECIMAL(5,2) NOT NULL,
-  max_discount_amount DECIMAL(12,2) DEFAULT NULL,
-  CONSTRAINT fk_event_promotions_promotion
-    FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE CASCADE,
-  CONSTRAINT ck_event_min_order CHECK (min_order_amount >= 0),
-  CONSTRAINT ck_event_discount CHECK (discount_percent >= 0 AND discount_percent <= 100)
-);
-
-CREATE TABLE voucher_promotions (
-  id INT IDENTITY(1,1) PRIMARY KEY,
-  promotion_id INT NOT NULL UNIQUE,
-  voucher_code VARCHAR(50) NOT NULL UNIQUE,
-  discount_percent DECIMAL(5,2) NOT NULL,
-  max_discount_amount DECIMAL(12,2) DEFAULT NULL,
-  usage_limit INT DEFAULT NULL,
-  used_count INT NOT NULL DEFAULT 0,
-  CONSTRAINT fk_voucher_promotions_promotion
-    FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE CASCADE,
-  CONSTRAINT ck_voucher_discount CHECK (discount_percent >= 0 AND discount_percent <= 100),
-  CONSTRAINT ck_voucher_usage CHECK (usage_limit IS NULL OR usage_limit >= 0),
-  CONSTRAINT ck_voucher_used_count CHECK (used_count >= 0)
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE units (
@@ -230,20 +171,6 @@ CREATE INDEX idx_products_category ON products (category_id);
 CREATE INDEX idx_products_supplier ON products (supplier_id);
 CREATE INDEX idx_products_unit ON products (unit_id);
 
--- Promotion áp dụng theo từng sản phẩm
-CREATE TABLE product_promotions (
-  id INT IDENTITY(1,1) PRIMARY KEY,
-  promotion_id INT NOT NULL,
-  product_id INT NOT NULL,
-  discount_percent DECIMAL(5,2) NOT NULL,
-  CONSTRAINT fk_product_promotions_promotion
-    FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE CASCADE,
-  CONSTRAINT fk_product_promotions_product
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
-  CONSTRAINT ck_product_promotions_discount CHECK (discount_percent >= 0 AND discount_percent <= 100),
-  CONSTRAINT ux_product_promotions UNIQUE (promotion_id, product_id)
-);
-
 
 -- Inventory: one record per product (normalized). Use product_id unique.
 CREATE TABLE inventory (
@@ -272,78 +199,27 @@ CREATE INDEX idx_inv_adj_product ON inventory_adjustments (product_id);
 CREATE INDEX idx_inv_adj_user ON inventory_adjustments (user_id);
 
 
--- =========================================================
--- PURCHASE ORDERS: nhập hàng từ nhà cung cấp
--- =========================================================
-CREATE TABLE purchase_orders (
-  id INT IDENTITY(1,1) PRIMARY KEY,
-  po_code VARCHAR(20) NOT NULL UNIQUE,
-  supplier_id INT NOT NULL,
-  user_id INT NOT NULL,
-  total_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
-  note NVARCHAR(MAX),
-  status VARCHAR(20) NOT NULL DEFAULT 'pending',
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT fk_purchase_orders_supplier
-    FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE NO ACTION ON UPDATE CASCADE,
-  CONSTRAINT fk_purchase_orders_user
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE NO ACTION ON UPDATE CASCADE,
-  CONSTRAINT ck_purchase_orders_status CHECK (status IN ('pending','completed','cancelled'))
-);
-
-CREATE TABLE po_details (
-  id INT IDENTITY(1,1) PRIMARY KEY,
-  purchase_order_id INT NOT NULL,
-  product_id INT NOT NULL,
-  quantity INT NOT NULL,
-  import_price DECIMAL(12,2) NOT NULL,
-  subtotal AS (quantity * import_price) PERSISTED,
-  CONSTRAINT fk_po_details_po
-    FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE,
-  CONSTRAINT fk_po_details_product
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE NO ACTION,
-  CONSTRAINT ck_po_details_quantity CHECK (quantity > 0),
-  CONSTRAINT ck_po_details_import_price CHECK (import_price >= 0),
-  CONSTRAINT ux_po_details_product UNIQUE (purchase_order_id, product_id)
-);
-
-CREATE INDEX idx_purchase_orders_supplier ON purchase_orders(supplier_id);
-CREATE INDEX idx_purchase_orders_user ON purchase_orders(user_id);
-CREATE INDEX idx_po_details_product ON po_details(product_id);
-
 -- Orders and order items
 CREATE TABLE [orders] (
   id INT IDENTITY(1,1) PRIMARY KEY,
   order_number VARCHAR(100) NOT NULL UNIQUE,
   customer_id INT DEFAULT NULL,
-  employee_id INT DEFAULT NULL,
-  promotion_id INT DEFAULT NULL,
-  order_type VARCHAR(20) NOT NULL DEFAULT 'pos',
+  user_id INT DEFAULT NULL, -- staff who created the order
   status VARCHAR(20) NOT NULL DEFAULT 'pending',
   subtotal DECIMAL(12,2) NOT NULL DEFAULT 0,
   discount DECIMAL(12,2) NOT NULL DEFAULT 0,
   total_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
-  payment_method VARCHAR(20) DEFAULT NULL,
-  payment_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  promotion_id INT DEFAULT NULL,
   note NVARCHAR(MAX),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_orders_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT fk_orders_employee FOREIGN KEY (employee_id) REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT fk_orders_promo FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT ck_orders_type CHECK (order_type IN ('pos','mobile')),
-  CONSTRAINT ck_orders_status CHECK (status IN ('pending','processing','completed','cancelled')),
-  CONSTRAINT ck_orders_payment_method CHECK (payment_method IS NULL OR payment_method IN ('cash','card','e_wallet')),
-  CONSTRAINT ck_orders_payment_status CHECK (payment_status IN ('pending','paid','failed')),
-  CONSTRAINT ck_orders_amounts CHECK (subtotal >= 0 AND discount >= 0 AND total_amount >= 0)
+  CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT fk_orders_promo FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE SET NULL ON UPDATE CASCADE
 );
 CREATE INDEX idx_orders_customer ON [orders] (customer_id);
-CREATE INDEX idx_orders_employee ON [orders] (employee_id);
+CREATE INDEX idx_orders_user ON [orders] (user_id);
 CREATE INDEX idx_orders_status ON [orders] (status);
-CREATE INDEX idx_orders_type ON [orders] (order_type);
-CREATE INDEX idx_orders_payment_status ON [orders] (payment_status);
-
 
 
 CREATE TABLE order_items (
@@ -409,16 +285,15 @@ CREATE INDEX idx_orders_created_at ON [orders] (created_at);
 CREATE INDEX idx_inventory_quantity ON inventory (quantity);
 CREATE INDEX idx_products_created_at ON products (created_at);
 
--- ===== USERS (ADMIN + EMPLOYEE, phân quyền bằng role) =====
-INSERT INTO users
-(username, password_hash, first_name, last_name, email, phone, role, is_active, locked, created_at)
+-- ===== USERS =====
+INSERT INTO users (username, email, password_hash, full_name, role, is_active, locked, created_at)
 VALUES
-  ('admin', '$2a$11$B5Pre4vLwlsfDIMg/gXXjuH/CyqianiPXHXSXikWE5R0djN/9Tf7.', N'Quản trị', N'Viên', 'admin@example.com', '0909000000', 'admin', 1, 0, GETDATE()),
-  ('staff01', '$2a$11$NChyYqe5MniZi.l08LVuP.SkfLMRMtyK6guvRRyq/PdaGdjYoTaO2', N'Nguyễn Văn', N'A', 'staff01@example.com', '0909000001', 'employee', 1, 0, GETDATE()),
-  ('staff02', '$2a$11$NChyYqe5MniZi.l08LVuP.SkfLMRMtyK6guvRRyq/PdaGdjYoTaO2', N'Lê Thị', N'B', 'staff02@example.com', '0909000002', 'employee', 1, 0, GETDATE());
+  ('admin', 'admin@example.com', '$2a$11$B5Pre4vLwlsfDIMg/gXXjuH/CyqianiPXHXSXikWE5R0djN/9Tf7.', 'Quản trị viên', 'admin', 1, 0, GETDATE()),
+  ('staff01', 'staff01@example.com', '$2a$11$NChyYqe5MniZi.l08LVuP.SkfLMRMtyK6guvRRyq/PdaGdjYoTaO2', 'Nguyễn Văn A', 'staff', 1, 0, GETDATE()),
+  ('staff02', 'staff02@example.com', '$2a$11$NChyYqe5MniZi.l08LVuP.SkfLMRMtyK6guvRRyq/PdaGdjYoTaO2', 'Lê Thị B', 'staff', 1, 0, GETDATE());
 
 -- password của admin là admin123
--- password của employee là 123456
+-- password của staff là 123456
 
 
 -- ===== CUSTOMERS (full_name, phone, email, address) =====
@@ -601,101 +476,48 @@ VALUES
 (71, 203, GETDATE()),(72, 215, GETDATE()),(73, 224, GETDATE()),(74, 233, GETDATE()),(75, 242, GETDATE()),
 (76, 251, GETDATE()),(77, 263, GETDATE()),(78, 274, GETDATE()),(79, 285, GETDATE()),(80, 296, GETDATE());
 
--- ===== PURCHASE ORDERS =====
-INSERT INTO purchase_orders
-(po_code, supplier_id, user_id, total_amount, note, status, created_at)
+-- ===== PROMOTIONS (code, type, value, start_date, end_date, min_order_amount, usage_limit, used_count, active) =====
+INSERT INTO promotions (code, type, value, start_date, end_date, min_order_amount, usage_limit, used_count, active, created_at)
 VALUES
-('PO0001', 1, 2, 12500000, N'Nhập bổ sung nhóm đồ uống', 'completed', GETDATE()),
-('PO0002', 8, 3, 8500000, N'Nhập bánh kẹo định kỳ', 'completed', GETDATE()),
-('PO0003', 4, 2, 6200000, N'Nhập thực phẩm tươi sống', 'pending', GETDATE());
-
-INSERT INTO po_details
-(purchase_order_id, product_id, quantity, import_price)
-VALUES
-(1, 1, 200, 10000),
-(1, 2, 200, 10000),
-(1, 3, 150, 8000),
-(2, 16, 100, 16000),
-(2, 17, 100, 13000),
-(2, 18, 200, 3000),
-(3, 42, 100, 3500),
-(3, 43, 100, 5000),
-(3, 44, 50, 35000);
-
--- ===== INVENTORY ADJUSTMENTS =====
-INSERT INTO inventory_adjustments
-(product_id, change_amount, reason, user_id, created_at)
-VALUES
-(1, 200, 'Nhập hàng PO0001', 2, GETDATE()),
-(2, 200, 'Nhập hàng PO0001', 2, GETDATE()),
-(16, 100, 'Nhập hàng PO0002', 3, GETDATE()),
-(42, 100, 'Nhập hàng PO0003', 2, GETDATE()),
-(1, -2, 'Hàng hư hỏng', 3, GETDATE());
-
--- ===== PROMOTIONS =====
-INSERT INTO promotions
-(code, name, type, description, start_date, end_date, status, max_discount, usage_limit, used_count, created_at)
-VALUES
-('SALE10', N'Giảm 10%', 'event', N'Giảm 10% cho đơn hàng đủ điều kiện', '2025-01-01', '2025-12-31', 'expired', 50000, NULL, 0, GETDATE()),
-('FREESHIP50K', N'Giảm 50K', 'event', N'Giảm 50.000 cho đơn từ 300.000', '2025-03-01', '2025-12-31', 'expired', 50000, 500, 0, GETDATE()),
-('NEWUSER', N'Khách hàng mới', 'voucher', N'Giảm 20% cho khách hàng mới', '2025-01-01', '2025-06-30', 'expired', 100000, 1, 0, GETDATE()),
-('SUMMER15', N'Khuyến mãi mùa hè', 'event', N'Giảm 15% mùa hè', '2025-06-01', '2025-08-31', 'expired', 100000, 1000, 0, GETDATE()),
-('VIP100K', N'Khách VIP', 'voucher', N'Giảm 100.000 cho khách VIP', '2025-01-01', '2025-12-31', 'expired', 100000, 200, 0, GETDATE()),
-('PROD15', N'Giảm 15% Coca/Pepsi', 'product', N'Giảm 15% cho một số sản phẩm đồ uống', '2025-01-01', '2025-12-31', 'expired', 100000, 500, 0, GETDATE());
-
--- Chi tiết event promotion
-INSERT INTO event_promotions (promotion_id, min_order_amount, discount_percent, max_discount_amount)
-VALUES
-(1, 0, 10, 50000),
-(2, 300000, 0, 50000),
-(4, 50000, 15, 100000);
-
--- Chi tiết voucher promotion
-INSERT INTO voucher_promotions
-(promotion_id, voucher_code, discount_percent, max_discount_amount, usage_limit, used_count)
-VALUES
-(3, 'NEWUSER20', 20, 100000, 1, 0),
-(5, 'VIP100K', 0, 100000, 200, 0);
-
--- Khuyến mãi áp dụng trực tiếp cho sản phẩm
-INSERT INTO product_promotions (promotion_id, product_id, discount_percent)
-VALUES
-(6, 1, 15),
-(6, 2, 15);
+('SALE10', 'percent', 10.00, '2025-01-01', '2025-12-31', 0.00, NULL, 0, 1, GETDATE()),
+('FREESHIP50K', 'fixed', 50000.00, '2025-03-01', '2025-12-31', 300000.00, 500, 0, 1, GETDATE()),
+('NEWUSER', 'percent', 20.00, '2025-01-01', '2025-06-30', 0.00, 1, 0, 1, GETDATE()),
+('SUMMER15', 'percent', 15.00, '2025-06-01', '2025-08-31', 50000.00, 1000, 0, 1, GETDATE()),
+('VIP100K', 'fixed', 100000.00, '2025-01-01', '2025-12-31', 1000000.00, 200, 0, 1, GETDATE());
 
 -- ===== ORDERS với giá mới hợp lý =====
-INSERT INTO orders (order_number, customer_id, employee_id, order_type, status, subtotal, discount, total_amount, promotion_id, payment_method, payment_status, created_at)
+INSERT INTO orders (order_number, customer_id, user_id, status, subtotal, discount, total_amount, promotion_id, created_at)
 VALUES
-(CONVERT(varchar(36), NEWID()), 5, 3, 'pos', 'completed', 285000, 28500, 256500, 1, 'cash', 'paid', GETDATE()), -- Order 1: 10% discount
-(CONVERT(varchar(36), NEWID()), 17, 3, 'pos', 'completed', 420000, 0, 420000, NULL, 'e_wallet', 'paid', GETDATE()), -- Order 2: No discount
-(CONVERT(varchar(36), NEWID()), 8, 3, 'pos', 'completed', 185000, 0, 185000, NULL, 'e_wallet', 'paid', GETDATE()), -- Order 3: No discount
-(CONVERT(varchar(36), NEWID()), 20, 3, 'pos', 'completed', 40000, 4000, 36000, 1, 'card', 'paid', GETDATE()), -- Order 4: 10% discount
-(CONVERT(varchar(36), NEWID()), 1, 2, 'pos', 'completed', 75000, 0, 75000, NULL, 'cash', 'paid', GETDATE()), -- Order 5
-(CONVERT(varchar(36), NEWID()), 5, 3, 'pos', 'completed', 620000, 50000, 570000, 2, 'cash', 'paid', GETDATE()), -- Order 6: Fixed 50k
-(CONVERT(varchar(36), NEWID()), 9, 3, 'pos', 'completed', 350000, 52500, 297500, 4, 'e_wallet', 'paid', GETDATE()), -- Order 7: 15% discount
-(CONVERT(varchar(36), NEWID()), 11, 3, 'pos', 'completed', 280000, 56000, 224000, 3, 'cash', 'paid', GETDATE()), -- Order 8: 20% discount
-(CONVERT(varchar(36), NEWID()), 11, 3, 'pos', 'completed', 450000, 0, 450000, NULL, 'cash', 'paid', GETDATE()), -- Order 9
-(CONVERT(varchar(36), NEWID()), 11, 3, 'pos', 'completed', 320000, 50000, 270000, 2, 'card', 'paid', GETDATE()), -- Order 10: Fixed 50k
-(CONVERT(varchar(36), NEWID()), 20, 3, 'pos', 'completed', 380000, 0, 380000, NULL, 'e_wallet', 'paid', GETDATE()), -- Order 11
-(CONVERT(varchar(36), NEWID()), 10, 2, 'pos', 'completed', 275000, 0, 275000, NULL, 'card', 'paid', GETDATE()), -- Order 12
-(CONVERT(varchar(36), NEWID()), 10, 3, 'pos', 'completed', 410000, 50000, 360000, 2, 'card', 'paid', GETDATE()), -- Order 13: Fixed 50k
-(CONVERT(varchar(36), NEWID()), 6, 2, 'pos', 'completed', 520000, 50000, 470000, 2, 'cash', 'paid', GETDATE()), -- Order 14: Fixed 50k
-(CONVERT(varchar(36), NEWID()), 10, 2, 'pos', 'completed', 90000, 18000, 72000, 3, 'card', 'paid', GETDATE()), -- Order 15: 20% discount
-(CONVERT(varchar(36), NEWID()), 10, 2, 'pos', 'completed', 280000, 50000, 230000, 2, 'cash', 'paid', GETDATE()), -- Order 16: Fixed 50k
-(CONVERT(varchar(36), NEWID()), 19, 3, 'pos', 'completed', 150000, 0, 150000, NULL, 'cash', 'paid', GETDATE()), -- Order 17
-(CONVERT(varchar(36), NEWID()), 10, 2, 'pos', 'completed', 120000, 0, 120000, NULL, 'e_wallet', 'paid', GETDATE()), -- Order 18
-(CONVERT(varchar(36), NEWID()), 8, 3, 'pos', 'completed', 680000, 102000, 578000, 4, 'card', 'paid', GETDATE()), -- Order 19: 15% discount
-(CONVERT(varchar(36), NEWID()), 3, 3, 'pos', 'completed', 850000, 0, 850000, NULL, 'card', 'paid', GETDATE()), -- Order 20
-(CONVERT(varchar(36), NEWID()), 9, 2, 'pos', 'completed', 720000, 0, 720000, NULL, 'cash', 'paid', GETDATE()), -- Order 21
-(CONVERT(varchar(36), NEWID()), 17, 3, 'pos', 'completed', 95000, 0, 95000, NULL, 'e_wallet', 'paid', GETDATE()), -- Order 22
-(CONVERT(varchar(36), NEWID()), 6, 3, 'pos', 'completed', 630000, 94500, 535500, 4, 'cash', 'paid', GETDATE()), -- Order 23: 15% discount
-(CONVERT(varchar(36), NEWID()), 1, 3, 'pos', 'completed', 480000, 72000, 408000, 4, 'e_wallet', 'paid', GETDATE()), -- Order 24: 15% discount
-(CONVERT(varchar(36), NEWID()), 2, 2, 'pos', 'completed', 220000, 44000, 176000, 3, 'cash', 'paid', GETDATE()), -- Order 25: 20% discount
-(CONVERT(varchar(36), NEWID()), 15, 3, 'pos', 'completed', 180000, 36000, 144000, 3, 'cash', 'paid', GETDATE()), -- Order 26: 20% discount
-(CONVERT(varchar(36), NEWID()), 4, 2, 'pos', 'completed', 310000, 0, 310000, NULL, 'cash', 'paid', GETDATE()), -- Order 27
-(CONVERT(varchar(36), NEWID()), 16, 2, 'pos', 'completed', 750000, 0, 750000, NULL, 'card', 'paid', GETDATE()), -- Order 28
-(CONVERT(varchar(36), NEWID()), 4, 3, 'pos', 'completed', 920000, 138000, 782000, 4, 'cash', 'paid', GETDATE()), -- Order 29: 15% discount
-(CONVERT(varchar(36), NEWID()), 1, 3, 'pos', 'completed', 1050000, 0, 1050000, NULL, 'card', 'paid', GETDATE()); -- Order 30
+(CONVERT(varchar(36), NEWID()), 5, 3, 'completed', 285000, 28500, 256500, 1, GETDATE()), -- Order 1: 10% discount
+(CONVERT(varchar(36), NEWID()), 17, 3, 'completed', 420000, 0, 420000, NULL, GETDATE()), -- Order 2: No discount
+(CONVERT(varchar(36), NEWID()), 8, 3, 'completed', 185000, 0, 185000, NULL, GETDATE()), -- Order 3: No discount
+(CONVERT(varchar(36), NEWID()), 20, 3, 'completed', 40000, 4000, 36000, 1, GETDATE()), -- Order 4: 10% discount
+(CONVERT(varchar(36), NEWID()), 1, 2, 'completed', 75000, 0, 75000, NULL, GETDATE()), -- Order 5
+(CONVERT(varchar(36), NEWID()), 5, 3, 'completed', 620000, 50000, 570000, 2, GETDATE()), -- Order 6: Fixed 50k
+(CONVERT(varchar(36), NEWID()), 9, 3, 'completed', 350000, 52500, 297500, 4, GETDATE()), -- Order 7: 15% discount
+(CONVERT(varchar(36), NEWID()), 11, 3, 'completed', 280000, 56000, 224000, 3, GETDATE()), -- Order 8: 20% discount
+(CONVERT(varchar(36), NEWID()), 11, 3, 'completed', 450000, 0, 450000, NULL, GETDATE()), -- Order 9
+(CONVERT(varchar(36), NEWID()), 11, 3, 'completed', 320000, 50000, 270000, 2, GETDATE()), -- Order 10: Fixed 50k
+(CONVERT(varchar(36), NEWID()), 20, 3, 'completed', 380000, 0, 380000, NULL, GETDATE()), -- Order 11
+(CONVERT(varchar(36), NEWID()), 10, 2, 'completed', 275000, 0, 275000, NULL, GETDATE()), -- Order 12
+(CONVERT(varchar(36), NEWID()), 10, 3, 'completed', 410000, 50000, 360000, 2, GETDATE()), -- Order 13: Fixed 50k
+(CONVERT(varchar(36), NEWID()), 6, 2, 'completed', 520000, 50000, 470000, 2, GETDATE()), -- Order 14: Fixed 50k
+(CONVERT(varchar(36), NEWID()), 10, 2, 'completed', 90000, 18000, 72000, 3, GETDATE()), -- Order 15: 20% discount
+(CONVERT(varchar(36), NEWID()), 10, 2, 'completed', 280000, 50000, 230000, 2, GETDATE()), -- Order 16: Fixed 50k
+(CONVERT(varchar(36), NEWID()), 19, 3, 'completed', 150000, 0, 150000, NULL, GETDATE()), -- Order 17
+(CONVERT(varchar(36), NEWID()), 10, 2, 'completed', 120000, 0, 120000, NULL, GETDATE()), -- Order 18
+(CONVERT(varchar(36), NEWID()), 8, 3, 'completed', 680000, 102000, 578000, 4, GETDATE()), -- Order 19: 15% discount
+(CONVERT(varchar(36), NEWID()), 3, 3, 'completed', 850000, 0, 850000, NULL, GETDATE()), -- Order 20
+(CONVERT(varchar(36), NEWID()), 9, 2, 'completed', 720000, 0, 720000, NULL, GETDATE()), -- Order 21
+(CONVERT(varchar(36), NEWID()), 17, 3, 'completed', 95000, 0, 95000, NULL, GETDATE()), -- Order 22
+(CONVERT(varchar(36), NEWID()), 6, 3, 'completed', 630000, 94500, 535500, 4, GETDATE()), -- Order 23: 15% discount
+(CONVERT(varchar(36), NEWID()), 1, 3, 'completed', 480000, 72000, 408000, 4, GETDATE()), -- Order 24: 15% discount
+(CONVERT(varchar(36), NEWID()), 2, 2, 'completed', 220000, 44000, 176000, 3, GETDATE()), -- Order 25: 20% discount
+(CONVERT(varchar(36), NEWID()), 15, 3, 'completed', 180000, 36000, 144000, 3, GETDATE()), -- Order 26: 20% discount
+(CONVERT(varchar(36), NEWID()), 4, 2, 'completed', 310000, 0, 310000, NULL, GETDATE()), -- Order 27
+(CONVERT(varchar(36), NEWID()), 16, 2, 'completed', 750000, 0, 750000, NULL, GETDATE()), -- Order 28
+(CONVERT(varchar(36), NEWID()), 4, 3, 'completed', 920000, 138000, 782000, 4, GETDATE()), -- Order 29: 15% discount
+(CONVERT(varchar(36), NEWID()), 1, 3, 'completed', 1050000, 0, 1050000, NULL, GETDATE()); -- Order 30
 
 -- ===== ORDER_ITEMS với giá mới =====
 INSERT INTO order_items (order_id, product_id, quantity, unit_price, total_price, created_at)
@@ -776,29 +598,29 @@ VALUES
 INSERT INTO payments (order_id, amount, method, transaction_ref, status, created_at)
 VALUES
 (1, 256500.00, 'cash', NULL, 'completed', GETDATE()),
-(2, 420000.00, 'e_wallet', NULL, 'completed', GETDATE()),
-(3, 185000.00, 'e_wallet', NULL, 'completed', GETDATE()),
+(2, 420000.00, 'ecard', NULL, 'completed', GETDATE()),
+(3, 185000.00, 'ecard', NULL, 'completed', GETDATE()),
 (4, 36000.00, 'card', NULL, 'completed', GETDATE()),
 (5, 75000.00, 'cash', NULL, 'completed', GETDATE()),
 (6, 570000.00, 'cash', NULL, 'completed', GETDATE()),
-(7, 297500.00, 'e_wallet', NULL, 'completed', GETDATE()),
+(7, 297500.00, 'ecard', NULL, 'completed', GETDATE()),
 (8, 224000.00, 'cash', NULL, 'completed', GETDATE()),
 (9, 450000.00, 'cash', NULL, 'completed', GETDATE()),
 (10, 270000.00, 'card', NULL, 'completed', GETDATE()),
-(11, 380000.00, 'e_wallet', NULL, 'completed', GETDATE()),
+(11, 380000.00, 'ecard', NULL, 'completed', GETDATE()),
 (12, 275000.00, 'card', NULL, 'completed', GETDATE()),
 (13, 360000.00, 'card', NULL, 'completed', GETDATE()),
 (14, 470000.00, 'cash', NULL, 'completed', GETDATE()),
 (15, 72000.00, 'card', NULL, 'completed', GETDATE()),
 (16, 230000.00, 'cash', NULL, 'completed', GETDATE()),
 (17, 150000.00, 'cash', NULL, 'completed', GETDATE()),
-(18, 120000.00, 'e_wallet', NULL, 'completed', GETDATE()),
+(18, 120000.00, 'ecard', NULL, 'completed', GETDATE()),
 (19, 578000.00, 'card', NULL, 'completed', GETDATE()),
 (20, 850000.00, 'card', NULL, 'completed', GETDATE()),
 (21, 720000.00, 'cash', NULL, 'completed', GETDATE()),
-(22, 95000.00, 'e_wallet', NULL, 'completed', GETDATE()),
+(22, 95000.00, 'ecard', NULL, 'completed', GETDATE()),
 (23, 535500.00, 'cash', NULL, 'completed', GETDATE()),
-(24, 408000.00, 'e_wallet', NULL, 'completed', GETDATE()),
+(24, 408000.00, 'ecard', NULL, 'completed', GETDATE()),
 (25, 176000.00, 'cash', NULL, 'completed', GETDATE()),
 (26, 144000.00, 'cash', NULL, 'completed', GETDATE()),
 (27, 310000.00, 'cash', NULL, 'completed', GETDATE()),
@@ -806,7 +628,39 @@ VALUES
 (29, 782000.00, 'cash', NULL, 'completed', GETDATE()),
 (30, 1050000.00, 'card', NULL, 'completed', GETDATE());
 
+ALTER TABLE promotions
+ADD max_discount DECIMAL(12, 2) NULL;
+GO
 
+ALTER TABLE promotions
+ADD description VARCHAR(1000) NULL;
+GO
+
+ALTER TABLE promotions
+ADD is_deleted BIT NOT NULL CONSTRAINT DF_promotions_is_deleted DEFAULT 0,
+    deleted_at DATETIME NULL;
+GO
+
+ALTER TABLE customers
+ADD is_active BIT NOT NULL CONSTRAINT DF_customers_is_active DEFAULT 1;
+GO
+
+-- The GO statements above are required in SQL Server because the UPDATEs
+-- reference columns that were added by ALTER TABLE in previous batches.
+-- Cập nhật giá trị max_discount cho các promotion
+UPDATE promotions SET max_discount = 50000.00 WHERE code = 'SALE10';
+UPDATE promotions SET max_discount = 50000.00 WHERE code = 'FREESHIP50K';
+UPDATE promotions SET max_discount = 100000.00 WHERE code = 'NEWUSER';
+UPDATE promotions SET max_discount = 100000.00 WHERE code = 'SUMMER15';
+UPDATE promotions SET max_discount = 100000.00 WHERE code = 'VIP100K';
+
+-- Thêm description cho promotions
+UPDATE promotions SET description = 'Giảm 10% cho tất cả đơn hàng' WHERE code = 'SALE10';
+UPDATE promotions SET description = 'Miễn phí vận chuyển 50k cho đơn từ 300k' WHERE code = 'FREESHIP50K';
+UPDATE promotions SET description = 'Giảm 20% cho khách hàng mới' WHERE code = 'NEWUSER';
+UPDATE promotions SET description = 'Giảm 15% mùa hè' WHERE code = 'SUMMER15';
+UPDATE promotions SET description = 'Giảm 100k cho khách VIP' WHERE code = 'VIP100K';
+GO
 
 -- ===== AI CONVERSATIONS & MESSAGES =====
 CREATE TABLE ai_conversations (
@@ -837,8 +691,4 @@ SELECT name FROM sys.tables ORDER BY name;
 SELECT COUNT(*) AS users_count FROM users;
 SELECT COUNT(*) AS products_count FROM products;
 SELECT COUNT(*) AS orders_count FROM [orders];
-SELECT COUNT(*) AS purchase_orders_count FROM purchase_orders;
-SELECT COUNT(*) AS promotions_count FROM promotions;
-SELECT COUNT(*) AS employees_count FROM users WHERE role = 'employee';
-SELECT COUNT(*) AS admins_count FROM users WHERE role = 'admin';
 GO
