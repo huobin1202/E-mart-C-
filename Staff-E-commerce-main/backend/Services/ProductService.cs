@@ -234,6 +234,8 @@ namespace backend.Services
                 Price = p.Price,
                 Cost = p.Cost,
                 UnitId = p.UnitId,
+                UnitName = p.Unit?.Name,
+                UnitCode = p.Unit?.Code,
                 Description = p.Description,
                 ImageUrl = p.ImageUrl,
                 IsActive = p.IsActive,

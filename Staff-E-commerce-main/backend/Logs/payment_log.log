@@ -108,3 +108,4 @@
 [2026-09-30 22:20:31] [User:1] [Action:CREATE_Payment] [Entity:Payment#offlinepayment] [IP:127.0.0.1] {"OrderId":46,"Amount":288000,"Method":"cash","Status":"completed"}
 [2026-09-30 22:40:10] [User:1] [Action:CREATE_Payment] [Entity:Payment#offlinepayment] [IP:127.0.0.1] {"OrderId":47,"Amount":270000,"Method":"cash","Status":"completed"}
 [2026-09-30 22:41:19] [User:1] [Action:CREATE_Payment] [Entity:Payment#offlinepayment] [IP:127.0.0.1] {"OrderId":48,"Amount":288000,"Method":"cash","Status":"completed"}
+[2026-10-01 08:18:03] [User:1] [Action:CREATE_Payment] [Entity:Payment#offlinepayment] [IP:127.0.0.1] {"OrderId":32,"Amount":320000,"Method":"cash","Status":"completed"}

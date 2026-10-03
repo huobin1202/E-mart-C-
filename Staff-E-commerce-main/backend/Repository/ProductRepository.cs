@@ -25,6 +25,7 @@ namespace backend.Repository
             return await _context.Products
                 .Include(p => p.Category)
                 .Include(p => p.Supplier)
+                .Include(p => p.Unit)
                 .Include(p => p.Inventory)
                 .Include(p => p.OrderItems) // nếu cần thống kê
                 .FirstOrDefaultAsync(p => p.Id == id);
@@ -107,6 +108,7 @@ namespace backend.Repository
                 .AsQueryable()
                 .Include(p => p.Category)
                 .Include(p => p.Supplier)
+                .Include(p => p.Unit)
                 .Include(p => p.Inventory);
 
             // Filter supplier
@@ -192,6 +194,7 @@ namespace backend.Repository
             return await _context.Products
                 .Include(p => p.Category)
                 .Include(p => p.Supplier)
+                .Include(p => p.Unit)
                 .Include(p => p.Inventory)
                 .Where(p => ids.Contains(p.Id))
                 .AsNoTracking()
