@@ -9,7 +9,7 @@ namespace backend.Models
     [Table("orders")]
     [Index(nameof(OrderNumber), IsUnique = true, Name = "ux_orders_order_number")]
     [Index(nameof(CustomerId), Name = "idx_orders_customer")]
-    [Index(nameof(UserId), Name = "idx_orders_employee")]
+    [Index(nameof(UserId), Name = "idx_orders_user")]
     [Index(nameof(Status), Name = "idx_orders_status")]
     public class Order
     {
@@ -25,7 +25,7 @@ namespace backend.Models
         [Column("customer_id")]
         public int? CustomerId { get; set; }
 
-        [Column("employee_id")]
+        [Column("user_id")]
         public int? UserId { get; set; }
 
         [Column("order_type")]

@@ -31,27 +31,9 @@ namespace backend.Models
         public string PasswordHash { get; set; } = string.Empty;
 
         [Required]
-        [Column("first_name")]
-        [StringLength(100)]
-        public string FirstName { get; set; } = string.Empty;
-
-        [Required]
-        [Column("last_name")]
-        [StringLength(100)]
-        public string LastName { get; set; } = string.Empty;
-
-        [NotMapped]
-        public string FullName
-        {
-            get => string.Join(" ", new[] { FirstName, LastName }.Where(part => !string.IsNullOrWhiteSpace(part)));
-            set
-            {
-                var name = value?.Trim() ?? string.Empty;
-                var lastSpace = name.LastIndexOf(' ');
-                FirstName = lastSpace < 0 ? name : name[..lastSpace];
-                LastName = lastSpace < 0 ? string.Empty : name[(lastSpace + 1)..];
-            }
-        }
+        [Column("full_name")]
+        [StringLength(255)]
+        public string FullName { get; set; } = string.Empty;
 
         // The current schema accepts "admin" or "staff".
         [Column("role")]

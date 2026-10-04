@@ -21,6 +21,8 @@ namespace backend.Data
         public DbSet<Customer> Customers { get; set; }
         public DbSet<User> Users { get; set; }
         public DbSet<Promotion> Promotions { get; set; }
+        public DbSet<PurchaseOrder> PurchaseOrders { get; set; }
+        public DbSet<PurchaseOrderDetail> PurchaseOrderDetails { get; set; }
         public DbSet<EventPromotion> EventPromotions { get; set; }
         public DbSet<VoucherPromotion> VoucherPromotions { get; set; }
         public DbSet<ProductPromotion> ProductPromotions { get; set; }

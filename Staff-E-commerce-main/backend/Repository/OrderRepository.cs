@@ -95,7 +95,7 @@ namespace backend.Repository
 
                 query = query.Where(o =>
                     (o.Customer != null && EF.Functions.Like(o.Customer.FullName, keyword)) ||
-                    (o.User != null && EF.Functions.Like(o.User.FirstName + " " + o.User.LastName, keyword))
+                    (o.User != null && EF.Functions.Like(o.User.FullName, keyword))
                 );
             }
 
@@ -124,7 +124,7 @@ namespace backend.Repository
                     CreatedAt = o.CreatedAt,
                     UpdatedAt = o.UpdatedAt,
                     CustomerName = o.Customer != null ? o.Customer.FullName : null,
-                    UserName = o.User != null ? o.User.FirstName + " " + o.User.LastName : null,
+                    UserName = o.User != null ? o.User.FullName : null,
                     PromotionCode = o.Promotion != null ? o.Promotion.Code : null
                 })
                 .ToListAsync();

@@ -59,10 +59,7 @@ builder.Services.AddAuthorization(options =>
 // Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(connectionString, sqlOptions =>
-    {
-        sqlOptions.EnableRetryOnFailure();
-    })
+    options.UseSqlServer(connectionString)
 // .EnableSensitiveDataLogging() // Dev only
 );
 // -------------------------

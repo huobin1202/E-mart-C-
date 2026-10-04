@@ -60,9 +60,11 @@ namespace backend.Models
         [NotMapped]
         public decimal MinOrderAmount { get; set; }
 
-        [Column("status")]
-        [StringLength(20)]
-        public string Status { get; set; } = "active";
+        [NotMapped]
+        public string? VoucherCode { get; set; }
+
+        [NotMapped]
+        public List<int> ProductIds { get; set; } = new();
 
         [Column("description")]
         [StringLength(1000)]

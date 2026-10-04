@@ -110,8 +110,7 @@ CREATE TABLE users (
   id INT IDENTITY(1,1) PRIMARY KEY,
   username VARCHAR(150) NOT NULL UNIQUE,
   password_hash VARCHAR(512) NOT NULL,
-  first_name NVARCHAR(100) NOT NULL,
-  last_name NVARCHAR(100) NOT NULL,
+  full_name NVARCHAR(255) NOT NULL,
   email VARCHAR(255),
   phone VARCHAR(20),
   role VARCHAR(20) NOT NULL DEFAULT 'staff',
@@ -331,7 +330,7 @@ CREATE TABLE [orders] (
   CONSTRAINT ck_orders_amounts CHECK (subtotal >= 0 AND discount >= 0 AND total_amount >= 0)
 );
 CREATE INDEX idx_orders_customer ON [orders] (customer_id);
-CREATE INDEX idx_orders_employee ON [orders] (employee_id);
+CREATE INDEX idx_orders_user ON [orders] (user_id);
 CREATE INDEX idx_orders_status ON [orders] (status);
 CREATE INDEX idx_orders_type ON [orders] (order_type);
 CREATE INDEX idx_orders_payment_status ON [orders] (payment_status);
@@ -403,11 +402,11 @@ CREATE INDEX idx_products_created_at ON products (created_at);
 
 -- ===== USERS (ADMIN + EMPLOYEE, phân quyền bằng role) =====
 INSERT INTO users
-(username, password_hash, first_name, last_name, email, phone, role, is_active, locked, created_at)
+(username, password_hash, full_name, email, role, is_active, locked, created_at)
 VALUES
-  ('admin', 'admin@example.com', '$2a$11$B5Pre4vLwlsfDIMg/gXXjuH/CyqianiPXHXSXikWE5R0djN/9Tf7.', N'Quản trị viên', 'admin', 1, 0, GETDATE()),
-  ('staff01', 'staff01@example.com', '$2a$11$NChyYqe5MniZi.l08LVuP.SkfLMRMtyK6guvRRyq/PdaGdjYoTaO2', N'Nguyễn Văn A', 'staff', 1, 0, GETDATE()),
-  ('staff02', 'staff02@example.com', '$2a$11$NChyYqe5MniZi.l08LVuP.SkfLMRMtyK6guvRRyq/PdaGdjYoTaO2', N'Lê Thị B', 'staff', 1, 0, GETDATE());
+  ('admin', '$2a$11$B5Pre4vLwlsfDIMg/gXXjuH/CyqianiPXHXSXikWE5R0djN/9Tf7.', N'Quản trị viên', 'admin@example.com', 'admin', 1, 0, GETDATE()),
+  ('staff01', '$2a$11$NChyYqe5MniZi.l08LVuP.SkfLMRMtyK6guvRRyq/PdaGdjYoTaO2', N'Nguyễn Văn A', 'staff01@example.com', 'staff', 1, 0, GETDATE()),
+  ('staff02', '$2a$11$NChyYqe5MniZi.l08LVuP.SkfLMRMtyK6guvRRyq/PdaGdjYoTaO2', N'Lê Thị B', 'staff02@example.com', 'staff', 1, 0, GETDATE());
 
 -- password của admin là admin123
 -- password của employee là 123456

@@ -54,15 +54,8 @@ namespace backend.Repository
             if (!string.IsNullOrWhiteSpace(type) && type != "all")
             {
                 query = type is "event" or "voucher" or "product"
-                    ? query.Where(p => p.PromotionKind == type)
-                    : type == "fixed"
-                        ? query.Where(p =>
-                        (p.PromotionKind == "event" && p.EventPromotion != null && p.EventPromotion.DiscountPercent == 0 && p.EventPromotion.MaxDiscountAmount > 0) ||
-                        (p.PromotionKind == "voucher" && p.VoucherPromotion != null && p.VoucherPromotion.DiscountPercent == 0 && p.VoucherPromotion.MaxDiscountAmount > 0))
-                        : query.Where(p =>
-                        (p.PromotionKind == "event" && p.EventPromotion != null && p.EventPromotion.DiscountPercent > 0) ||
-                        (p.PromotionKind == "voucher" && p.VoucherPromotion != null && p.VoucherPromotion.DiscountPercent > 0) ||
-                        (p.PromotionKind == "product" && p.ProductPromotions.Any(detail => detail.DiscountPercent > 0)));
+                    ? query.Where(p => p.Type == type)
+                    : query.Where(p => p.DiscountType == type);
             }
 
             // Filter by status - sử dụng DateTimeHelper để thống nhất timezone
@@ -127,6 +120,7 @@ namespace backend.Repository
                 .Include(p => p.EventDetails).Include(p => p.VoucherDetails).Include(p => p.ProductDetails)
                 .FirstOrDefaultAsync(p => p.VoucherDetails != null &&
                     p.VoucherDetails.VoucherCode.ToUpper() == code.Trim().ToUpper() && !p.IsDeleted);
+            return promotion == null ? null : PopulateDiscountFields(new List<Promotion> { promotion }).Single();
         }
 
         // Create promotion
@@ -206,42 +200,19 @@ namespace backend.Repository
         private IQueryable<Promotion> PromotionsWithDetails()
         {
             return _context.Promotions
-                .Include(p => p.EventPromotion)
-                .Include(p => p.VoucherPromotion)
-                .Include(p => p.ProductPromotions);
+                .Include(p => p.EventDetails)
+                .Include(p => p.VoucherDetails)
+                .Include(p => p.ProductDetails);
         }
 
         private static List<Promotion> PopulateDiscountFields(List<Promotion> promotions)
         {
             foreach (var promotion in promotions)
             {
-                promotion.Active = promotion.Status != "disabled";
-                promotion.ProductIds = promotion.ProductPromotions.Select(detail => detail.ProductId).ToList();
-                promotion.VoucherCode = promotion.VoucherPromotion?.VoucherCode;
-
-                var percentage = promotion.PromotionKind switch
-                {
-                    "event" => promotion.EventPromotion?.DiscountPercent,
-                    "voucher" => promotion.VoucherPromotion?.DiscountPercent,
-                    "product" => promotion.ProductPromotions.FirstOrDefault()?.DiscountPercent,
-                    _ => null
-                };
-
-                var detailMaxDiscount = promotion.PromotionKind switch
-                {
-                    "event" => promotion.EventPromotion?.MaxDiscountAmount,
-                    "voucher" => promotion.VoucherPromotion?.MaxDiscountAmount,
-                    _ => null
-                };
-
-                promotion.MinOrderAmount = promotion.PromotionKind == "event"
-                    ? promotion.EventPromotion?.MinOrderAmount ?? 0
-                    : 0;
-                promotion.MaxDiscount = detailMaxDiscount ?? promotion.MaxDiscount;
-                promotion.Type = percentage.GetValueOrDefault() > 0 ? "percent" : "fixed";
-                promotion.Value = promotion.Type == "percent"
-                    ? percentage.GetValueOrDefault()
-                    : detailMaxDiscount ?? 0;
+                promotion.Active = promotion.Status == "active";
+                promotion.ProductIds = promotion.ProductDetails?.Select(detail => detail.ProductId).ToList() ?? new List<int>();
+                promotion.VoucherCode = promotion.VoucherDetails?.VoucherCode;
+                promotion.MinOrderAmount = promotion.EventDetails?.MinOrderAmount ?? 0;
             }
 
             return promotions;
@@ -249,30 +220,24 @@ namespace backend.Repository
 
         private void AddPromotionDetail(Promotion promotion)
         {
-            switch (promotion.PromotionKind)
+            switch (promotion.Type)
             {
                 case "event":
-                    promotion.EventPromotion = new EventPromotion
+                    promotion.EventDetails = new EventPromotion
                     {
                         PromotionId = promotion.Id,
-                        MinOrderAmount = promotion.MinOrderAmount,
-                        DiscountPercent = promotion.Type == "percent" ? promotion.Value : 0,
-                        MaxDiscountAmount = promotion.Type == "fixed" ? promotion.Value : promotion.MaxDiscount
+                        MinOrderAmount = promotion.MinOrderAmount
                     };
-                    _context.EventPromotions.Add(promotion.EventPromotion);
+                    _context.EventPromotions.Add(promotion.EventDetails);
                     break;
 
                 case "voucher":
-                    promotion.VoucherPromotion = new VoucherPromotion
+                    promotion.VoucherDetails = new VoucherPromotion
                     {
                         PromotionId = promotion.Id,
-                        VoucherCode = string.IsNullOrWhiteSpace(promotion.VoucherCode) ? promotion.Code : promotion.VoucherCode,
-                        DiscountPercent = promotion.Type == "percent" ? promotion.Value : 0,
-                        MaxDiscountAmount = promotion.Type == "fixed" ? promotion.Value : promotion.MaxDiscount,
-                        UsageLimit = promotion.UsageLimit,
-                        UsedCount = promotion.VoucherPromotion?.UsedCount ?? promotion.UsedCount
+                        VoucherCode = string.IsNullOrWhiteSpace(promotion.VoucherCode) ? promotion.Code : promotion.VoucherCode
                     };
-                    _context.VoucherPromotions.Add(promotion.VoucherPromotion);
+                    _context.VoucherPromotions.Add(promotion.VoucherDetails);
                     break;
 
                 case "product":
@@ -280,13 +245,12 @@ namespace backend.Repository
                     if (productIds.Count == 0)
                         throw new ArgumentException("At least one product is required for a product promotion");
 
-                    promotion.ProductPromotions = productIds.Select(productId => new ProductPromotion
+                    promotion.ProductDetails = productIds.Select(productId => new ProductPromotion
                     {
                         PromotionId = promotion.Id,
-                        ProductId = productId,
-                        DiscountPercent = promotion.Value
+                        ProductId = productId
                     }).ToList();
-                    _context.ProductPromotions.AddRange(promotion.ProductPromotions);
+                    _context.ProductPromotions.AddRange(promotion.ProductDetails);
                     break;
 
                 default:
@@ -314,14 +278,6 @@ namespace backend.Repository
 
             promotion.UsedCount++;
             promotion.UpdatedAt = DateTimeHelper.UtcNow;
-
-            if (promotion.PromotionKind == "voucher")
-            {
-                var voucher = await _context.VoucherPromotions
-                    .FirstOrDefaultAsync(detail => detail.PromotionId == promotionId);
-                if (voucher != null)
-                    voucher.UsedCount++;
-            }
 
             await _context.SaveChangesAsync();
             return true;

@@ -411,8 +411,6 @@ namespace backend.Services
                 Active = p.Active,
                 Status = p.Status,
                 Description = p.Description,
-                VoucherCode = p.VoucherCode,
-                ProductIds = p.ProductIds,
                 CreatedAt = p.CreatedAt,
                 UpdatedAt = p.UpdatedAt
             };

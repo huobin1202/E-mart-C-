@@ -67,7 +67,7 @@ namespace backend.Services
             return product != null ? MapToProductDto(product) : null;
         }
 
-        public async Task<ProductDTO> CreateProductAsync(Product product, IFormFile imageFile = null)
+        public async Task<ProductDTO> CreateProductAsync(Product product, IFormFile? imageFile = null)
         {
             var validator = await ValidateProductAsync(product, imageFile, mode: "create");
             if (validator.HasErrors) throw validator;
@@ -84,7 +84,7 @@ namespace backend.Services
             return MapToProductDto(created);
         }
 
-        public async Task<ProductDTO> UpdateProductAsync(Product product, IFormFile imageFile = null)
+        public async Task<ProductDTO> UpdateProductAsync(Product product, IFormFile? imageFile = null)
         {
             var existing = await _productRepository.GetByIdForUpdateAsync(product.Id);
             if (existing == null)
