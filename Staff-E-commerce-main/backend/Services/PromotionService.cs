@@ -88,9 +88,6 @@ namespace backend.Services
             if (promotion.DiscountType == "percent" && promotion.Value > 100)
                 throw new ArgumentException("Percent value cannot exceed 100", nameof(promotion.Value));
 
-            if (promotion.Type is not ("percent" or "fixed"))
-                throw new ArgumentException("Discount type must be percent or fixed", nameof(promotion.Type));
-
             if (promotion.StartDate.HasValue && promotion.EndDate.HasValue && promotion.StartDate > promotion.EndDate)
                 throw new ArgumentException("Start date must be before end date");
 

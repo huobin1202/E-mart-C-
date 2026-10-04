@@ -134,8 +134,6 @@ namespace backend.Repository
             {
                 _context.Promotions.Add(promotion);
                 await _context.SaveChangesAsync();
-                AddPromotionDetail(promotion);
-                await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
                 return promotion;
             }
@@ -216,46 +214,6 @@ namespace backend.Repository
             }
 
             return promotions;
-        }
-
-        private void AddPromotionDetail(Promotion promotion)
-        {
-            switch (promotion.Type)
-            {
-                case "event":
-                    promotion.EventDetails = new EventPromotion
-                    {
-                        PromotionId = promotion.Id,
-                        MinOrderAmount = promotion.MinOrderAmount
-                    };
-                    _context.EventPromotions.Add(promotion.EventDetails);
-                    break;
-
-                case "voucher":
-                    promotion.VoucherDetails = new VoucherPromotion
-                    {
-                        PromotionId = promotion.Id,
-                        VoucherCode = string.IsNullOrWhiteSpace(promotion.VoucherCode) ? promotion.Code : promotion.VoucherCode
-                    };
-                    _context.VoucherPromotions.Add(promotion.VoucherDetails);
-                    break;
-
-                case "product":
-                    var productIds = promotion.ProductIds.Distinct().ToList();
-                    if (productIds.Count == 0)
-                        throw new ArgumentException("At least one product is required for a product promotion");
-
-                    promotion.ProductDetails = productIds.Select(productId => new ProductPromotion
-                    {
-                        PromotionId = promotion.Id,
-                        ProductId = productId
-                    }).ToList();
-                    _context.ProductPromotions.AddRange(promotion.ProductDetails);
-                    break;
-
-                default:
-                    throw new ArgumentException("Promotion kind must be event, voucher, or product");
-            }
         }
 
         // Get redemptions for a promotion
