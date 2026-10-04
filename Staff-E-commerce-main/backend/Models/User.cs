@@ -53,7 +53,7 @@ namespace backend.Models
             }
         }
 
-        // "admin" or "staff" stored as string (matches DB ENUM)
+        // The current schema accepts "admin" or "staff".
         [Column("role")]
         [StringLength(50)]
         public string Role { get; set; } = "staff";
@@ -78,9 +78,5 @@ namespace backend.Models
         public virtual ICollection<InventoryAdjustment>? InventoryAdjustments { get; set; }
         public virtual ICollection<ActivityLog>? ActivityLogs { get; set; }
 
-        internal static string? FindFirst(string v)
-        {
-            throw new NotImplementedException();
-        }
     }
 }

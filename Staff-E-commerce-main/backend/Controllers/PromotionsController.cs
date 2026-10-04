@@ -118,10 +118,10 @@ namespace backend.Controllers
             {
                 var promotion = new Promotion
                 {
-                    Code = promotionDto.Code.ToUpper(),
+                    Code = $"PROMO-{Guid.NewGuid():N}".ToUpperInvariant(),
                     Name = promotionDto.Name,
-                    PromotionKind = promotionDto.PromotionKind,
                     Type = promotionDto.Type,
+                    DiscountType = promotionDto.DiscountType,
                     Value = promotionDto.Value,
                     MinOrderAmount = promotionDto.MinOrderAmount,
                     MaxDiscount = promotionDto.MaxDiscount,
@@ -129,11 +129,15 @@ namespace backend.Controllers
                     EndDate = promotionDto.EndDate,
                     UsageLimit = promotionDto.UsageLimit,
                     Active = promotionDto.Active,
-                    Status = promotionDto.Status,
-                    VoucherCode = promotionDto.VoucherCode,
-                    ProductIds = promotionDto.ProductIds,
+                    Status = promotionDto.Status ?? (promotionDto.Active ? "active" : "disabled"),
                     Description = promotionDto.Description
                 };
+                promotion.VoucherDetails = promotion.Type == "voucher" && !string.IsNullOrWhiteSpace(promotionDto.VoucherCode)
+                    ? new VoucherPromotion { VoucherCode = promotionDto.VoucherCode.Trim().ToUpperInvariant() } : null;
+                promotion.EventDetails = promotion.Type == "event"
+                    ? new EventPromotion { MinOrderAmount = promotionDto.MinOrderAmount } : null;
+                promotion.ProductDetails = promotion.Type == "product"
+                    ? promotionDto.ProductIds.Distinct().Select(productId => new ProductPromotion { ProductId = productId }).ToList() : null;
 
                 var created = await _promotionService.CreatePromotionAsync(promotion);
                 return CreatedAtAction(nameof(GetPromotion), new { id = created.Id }, created);
@@ -166,10 +170,10 @@ namespace backend.Controllers
                 var promotion = new Promotion
                 {
                     Id = promotionDto.Id,
-                    Code = promotionDto.Code.ToUpper(),
+                    Code = promotionDto.Code?.ToUpperInvariant() ?? string.Empty,
                     Name = promotionDto.Name,
-                    PromotionKind = promotionDto.PromotionKind,
                     Type = promotionDto.Type,
+                    DiscountType = promotionDto.DiscountType,
                     Value = promotionDto.Value,
                     MinOrderAmount = promotionDto.MinOrderAmount,
                     MaxDiscount = promotionDto.MaxDiscount,
@@ -178,11 +182,15 @@ namespace backend.Controllers
                     UsageLimit = promotionDto.UsageLimit,
                     UsedCount = promotionDto.UsedCount,
                     Active = promotionDto.Active,
-                    Status = promotionDto.Status,
-                    VoucherCode = promotionDto.VoucherCode,
-                    ProductIds = promotionDto.ProductIds,
+                    Status = promotionDto.Status ?? (promotionDto.Active ? "active" : "disabled"),
                     Description = promotionDto.Description
                 };
+                promotion.VoucherDetails = promotion.Type == "voucher" && !string.IsNullOrWhiteSpace(promotionDto.VoucherCode)
+                    ? new VoucherPromotion { VoucherCode = promotionDto.VoucherCode.Trim().ToUpperInvariant() } : null;
+                promotion.EventDetails = promotion.Type == "event"
+                    ? new EventPromotion { MinOrderAmount = promotionDto.MinOrderAmount } : null;
+                promotion.ProductDetails = promotion.Type == "product"
+                    ? promotionDto.ProductIds.Distinct().Select(productId => new ProductPromotion { ProductId = productId }).ToList() : null;
 
                 var updated = await _promotionService.UpdatePromotionAsync(promotion);
                 return Ok(updated);

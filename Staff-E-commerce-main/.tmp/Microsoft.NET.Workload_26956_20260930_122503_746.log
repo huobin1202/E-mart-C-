@@ -1,0 +1,14 @@
+[2026-09-30 12:25:03.751] [0000694C] === Logging started ===
+[2026-09-30 12:25:03.765] [0000694C] Executing: "C:\Program Files\dotnet\dotnet.exe" run --project D:\E-mart-C-\Staff-E-commerce-main\backend\backend.csproj --no-restore, PID: 26956, PPID: 3332
+[2026-09-30 12:25:03.766] [0000694C] IsElevated: False
+[2026-09-30 12:25:03.766] [0000694C] Is64BitProcess: True
+[2026-09-30 12:25:03.766] [0000694C] RebootPending: False
+[2026-09-30 12:25:03.766] [0000694C] ProcessorArchitecture: amd64
+[2026-09-30 12:25:03.766] [0000694C] HostArchitecture: x64
+[2026-09-30 12:25:03.766] [0000694C] SdkDirectory: 10.0.401
+[2026-09-30 12:25:03.766] [0000694C] VerifySignatures: False
+[2026-09-30 12:25:03.766] [0000694C] SDK feature band: 10.0.400
+[2026-09-30 12:25:06.145] [0000694C] Shutting down
+[2026-09-30 12:25:06.145] [0000694C] Shutdown completed.
+[2026-09-30 12:25:06.145] [0000694C] Restart required: False
+[2026-09-30 12:25:06.145] [0000694C] === Logging ended ===

@@ -265,7 +265,7 @@ export default function ProductList() {
           productName: productData.productName,
           price: Number(productData.price ?? 0),
           sku: productData.sku,
-          unit: productData.unit,
+          unitId: productData.unitId,
           categoryId: productData.categoryId,
           supplierId: productData.supplierId,
           isActive: !!productData.isActive,

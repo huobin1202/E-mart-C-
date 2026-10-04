@@ -19,6 +19,7 @@ namespace backend.Repository
         {
             return await _context.Inventory
                                 .Include(i => i.Product)
+                                    .ThenInclude(p => p!.Unit)
                                 .FirstOrDefaultAsync(i => i.ProductId == productId);
         }
 
@@ -26,6 +27,7 @@ namespace backend.Repository
         {
             return await _context.Inventory
                                 .Include(i => i.Product)
+                                    .ThenInclude(p => p!.Unit)
                                 .FirstOrDefaultAsync(i => i.Id == id);
         }
         //Tạo mới inventory mới khi tạo mới product
@@ -69,7 +71,9 @@ namespace backend.Repository
             IQueryable<Inventory> query = _context.Inventory
                 .AsQueryable()
                 .Include(i => i.Product)
-                    .ThenInclude(p => p!.Category);
+                    .ThenInclude(p => p!.Category)
+                .Include(i => i.Product)
+                    .ThenInclude(p => p!.Unit);
 
             // Tìm kiếm theo tên sản phẩm, SKU
             if (!string.IsNullOrWhiteSpace(search))

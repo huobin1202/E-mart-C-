@@ -324,9 +324,9 @@ export default function PromotionList() {
               className="block w-full lg:w-56 px-4 py-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
             >
               <option value="all">Tất cả loại</option>
-              <option value="event">Theo đơn hàng</option>
-              <option value="voucher">Voucher</option>
               <option value="product">Theo sản phẩm</option>
+              <option value="event">Sự kiện</option>
+              <option value="voucher">Voucher</option>
             </select>
           </div>
         </div>
@@ -430,38 +430,30 @@ export default function PromotionList() {
                       >
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="text-sm font-medium text-gray-900 font-mono bg-blue-50 px-2 py-1 rounded">
-                            {promo.code}
+                            {promo.type === "voucher" ? promo.voucherCode : promo.name}
                           </span>
+                          <div className="mt-1 text-xs text-gray-500">{promo.name}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span
                             className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              promo.promotionKind === "event"
+                              promo.discountType === "percent"
                                 ? "bg-purple-100 text-purple-800"
                                 : promo.promotionKind === "voucher"
                                   ? "bg-blue-100 text-blue-800"
                                   : "bg-emerald-100 text-emerald-800"
                             }`}
                           >
-                            {promo.promotionKind === "event"
-                              ? "Theo đơn hàng"
-                              : promo.promotionKind === "voucher"
-                                ? "Voucher"
-                                : "Theo sản phẩm"}
-                          </span>
-                          <span className="ml-2 text-xs text-gray-500">
-                            {promo.type === "percent" ? "Phần trăm" : "Cố định"}
+                            {{ product: "Theo sản phẩm", event: "Sự kiện", voucher: "Voucher" }[promo.type]} · {promo.discountType === "percent" ? "%" : "VNĐ"}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
-                          {promo.type === "percent"
+                          {promo.discountType === "percent"
                             ? `${promo.value}%`
                             : `${promo.value.toLocaleString()}đ`}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {promo.promotionKind === "event"
-                            ? `${Number(promo.minOrderAmount || 0).toLocaleString()}đ`
-                            : "-"}
+                          {promo.type === "event" ? `${(promo.minOrderAmount || 0).toLocaleString()}đ` : "—"}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           <div>{formatDate(promo.startDate)}</div>

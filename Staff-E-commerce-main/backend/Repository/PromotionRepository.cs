@@ -20,6 +20,7 @@ namespace backend.Repository
             var promotions = await PromotionsWithDetails()
                 .AsNoTracking()
                 .Where(p => !p.IsDeleted)
+                .Include(p => p.EventDetails).Include(p => p.VoucherDetails).Include(p => p.ProductDetails)
                 .OrderByDescending(p => p.CreatedAt)
                 .ToListAsync();
 
@@ -37,14 +38,16 @@ namespace backend.Repository
             if (page < 1) page = 1;
             if (pageSize <= 0) pageSize = 20;
 
-            var query = PromotionsWithDetails()
+            IQueryable<Promotion> query = _context.Promotions
                 .AsNoTracking()
-                .Where(p => !p.IsDeleted);
+                .Where(p => !p.IsDeleted)
+                .Include(p => p.EventDetails).Include(p => p.VoucherDetails).Include(p => p.ProductDetails);
 
             // Search by code
             if (!string.IsNullOrWhiteSpace(search))
             {
-                query = query.Where(p => p.Code.ToLower().Contains(search.ToLower()));
+                query = query.Where(p => p.Name.ToLower().Contains(search.ToLower()) ||
+                    (p.VoucherDetails != null && p.VoucherDetails.VoucherCode.ToLower().Contains(search.ToLower())));
             }
 
             // Filter by type
@@ -72,8 +75,8 @@ namespace backend.Repository
                         (!p.StartDate.HasValue || p.StartDate.Value.Date <= vnToday) &&
                         (!p.EndDate.HasValue || p.EndDate.Value.Date >= vnToday) &&
                         (!p.UsageLimit.HasValue || p.UsedCount < p.UsageLimit)),
-                    "inactive" => query.Where(p => p.Status == "disabled"),
-                    "expired" => query.Where(p => p.Status == "expired" || (p.EndDate.HasValue && p.EndDate.Value.Date < vnToday)),
+                    "inactive" => query.Where(p => p.Status != "active"),
+                    "expired" => query.Where(p => p.EndDate.HasValue && p.EndDate.Value.Date < vnToday),
                     "scheduled" => query.Where(p => p.Status == "active" &&
                         p.StartDate.HasValue && p.StartDate.Value.Date > vnToday &&
                         (!p.EndDate.HasValue || p.EndDate.Value.Date >= vnToday) &&
@@ -110,6 +113,7 @@ namespace backend.Repository
         {
             var promotion = await PromotionsWithDetails()
                 .AsNoTracking()
+                .Include(p => p.EventDetails).Include(p => p.VoucherDetails).Include(p => p.ProductDetails)
                 .FirstOrDefaultAsync(p => p.Id == id && !p.IsDeleted);
 
             return promotion == null ? null : PopulateDiscountFields(new List<Promotion> { promotion }).Single();
@@ -120,9 +124,9 @@ namespace backend.Repository
         {
             var promotion = await PromotionsWithDetails()
                 .AsNoTracking()
-                .FirstOrDefaultAsync(p => p.Code.ToUpper() == code.ToUpper() && !p.IsDeleted);
-
-            return promotion == null ? null : PopulateDiscountFields(new List<Promotion> { promotion }).Single();
+                .Include(p => p.EventDetails).Include(p => p.VoucherDetails).Include(p => p.ProductDetails)
+                .FirstOrDefaultAsync(p => p.VoucherDetails != null &&
+                    p.VoucherDetails.VoucherCode.ToUpper() == code.Trim().ToUpper() && !p.IsDeleted);
         }
 
         // Create promotion
@@ -151,53 +155,22 @@ namespace backend.Repository
         // Update promotion
         public async Task<Promotion> UpdateAsync(Promotion promotion)
         {
-            var existing = await PromotionsWithDetails()
+            var existing = await _context.Promotions
+                .Include(p => p.EventDetails).Include(p => p.VoucherDetails).Include(p => p.ProductDetails)
                 .FirstOrDefaultAsync(p => p.Id == promotion.Id);
-            if (existing == null)
-                throw new ArgumentException("Promotion not found", nameof(promotion.Id));
+            if (existing == null) throw new InvalidOperationException("Promotion not found");
 
-            await using var transaction = await _context.Database.BeginTransactionAsync();
-            try
-            {
-                existing.Code = promotion.Code;
-                existing.Name = string.IsNullOrWhiteSpace(promotion.Name) ? existing.Name : promotion.Name;
-                existing.PromotionKind = promotion.PromotionKind;
-                existing.MaxDiscount = promotion.MaxDiscount;
-                existing.StartDate = promotion.StartDate ?? existing.StartDate;
-                existing.EndDate = promotion.EndDate ?? existing.EndDate;
-                existing.UsageLimit = promotion.UsageLimit;
-                existing.UsedCount = promotion.UsedCount;
-                existing.Status = promotion.Status;
-                existing.Description = promotion.Description;
-                existing.UpdatedAt = DateTimeHelper.UtcNow;
-                existing.Type = promotion.Type;
-                existing.Value = promotion.Value;
-                existing.MinOrderAmount = promotion.MinOrderAmount;
-                existing.ProductIds = promotion.ProductIds;
-                existing.VoucherCode = promotion.VoucherCode;
-
-                if (existing.EventPromotion != null)
-                    _context.EventPromotions.Remove(existing.EventPromotion);
-                if (existing.VoucherPromotion != null)
-                    _context.VoucherPromotions.Remove(existing.VoucherPromotion);
-                _context.ProductPromotions.RemoveRange(existing.ProductPromotions);
-
-                existing.EventPromotion = null;
-                existing.VoucherPromotion = null;
-                existing.ProductPromotions.Clear();
-                await _context.SaveChangesAsync();
-
-                AddPromotionDetail(existing);
-
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
-                return existing;
-            }
-            catch
-            {
-                await transaction.RollbackAsync();
-                throw;
-            }
+            if (existing.ProductDetails != null) _context.ProductPromotions.RemoveRange(existing.ProductDetails);
+            if (existing.EventDetails != null) _context.EventPromotions.Remove(existing.EventDetails);
+            if (existing.VoucherDetails != null) _context.VoucherPromotions.Remove(existing.VoucherDetails);
+            _context.Entry(existing).CurrentValues.SetValues(promotion);
+            existing.EventDetails = promotion.EventDetails;
+            existing.VoucherDetails = promotion.VoucherDetails;
+            existing.ProductDetails = promotion.ProductDetails;
+            promotion.UpdatedAt = DateTimeHelper.UtcNow;
+            existing.UpdatedAt = promotion.UpdatedAt;
+            await _context.SaveChangesAsync();
+            return existing;
         }
 
         // Soft delete promotion
@@ -219,8 +192,9 @@ namespace backend.Repository
             var vnToday = DateTimeHelper.VietnamToday;
             var promotions = await PromotionsWithDetails()
                 .AsNoTracking()
+                .Include(p => p.EventDetails).Include(p => p.VoucherDetails).Include(p => p.ProductDetails)
                 .Where(p => !p.IsDeleted &&
-                           p.Status == "active" &&
+                           p.Status == "active" && p.Type != "product" &&
                            (!p.StartDate.HasValue || p.StartDate.Value.Date <= vnToday) &&
                            (!p.EndDate.HasValue || p.EndDate.Value.Date >= vnToday) &&
                            (!p.UsageLimit.HasValue || p.UsedCount < p.UsageLimit))

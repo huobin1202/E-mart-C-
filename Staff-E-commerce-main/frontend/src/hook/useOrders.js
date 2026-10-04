@@ -908,7 +908,13 @@ const showOrder = async (index) => {
 
         // ========== Lấy thông tin Payment ==========
         const payment = await getPaymentByOrder(item.id);
-        setPayment(payment);
+        // Orders without a recorded payment are valid (for example pending
+        // orders). Keep the form's payment fields controlled in that case.
+        setPayment(payment || {
+            method: "",
+            transaction_ref: "",
+            status: "Chưa thanh toán",
+        });
 
         // ========== Lấy thông tin Promotion ==========
         // item.PromotionId có thể null/undefined → cần kiểm tra

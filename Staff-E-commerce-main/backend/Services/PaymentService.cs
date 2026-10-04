@@ -18,6 +18,10 @@ namespace backend.Services
         // Lưu Payment (Cash, Card, ECard,...)
         public async Task<Payment> CreatePaymentAsync(Payment payment)
         {
+            // The POS request does not send CreatedAt. Avoid DateTime.MinValue,
+            // which SQL Server's datetime column cannot store.
+            if (payment.CreatedAt == default)
+                payment.CreatedAt = DateTime.UtcNow;
 
             return await _paymentRepo.AddPaymentAsync(payment);
         }

@@ -24,6 +24,10 @@ namespace backend.DTO
 
         public int? UnitId { get; set; }
 
+        public string? UnitName { get; set; }
+
+        public string? UnitCode { get; set; }
+
         public string? Description { get; set; }
 
         // [JsonPropertyName("image_url")]

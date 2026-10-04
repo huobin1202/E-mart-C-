@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from "react";
 import { updatePromotion } from "../../api/promotionApi";
-import { getProductsPaginated } from "../../api/apiClient";
+import ProductPickerModal from "../../components/promotions/ProductPickerModal";
 
 export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
   const [formData, setFormData] = useState({
     id: "",
     name: "",
     code: "",
-    promotionKind: "event",
-    type: "percent",
+    type: "event",
+    discountType: "percent",
     value: "",
     minOrderAmount: "",
+    voucherCode: "",
+    productIdsText: "",
     maxDiscount: "",
     usageLimit: "",
     startDate: "",
@@ -26,6 +28,7 @@ export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showProductPicker, setShowProductPicker] = useState(false);
 
   useEffect(() => {
     getProductsPaginated(1, 100, "", null, null, null, null, "name_asc", 1)
@@ -38,11 +41,13 @@ export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
       setFormData({
         id: promotion.id,
         name: promotion.name || "",
-        code: promotion.code,
-        promotionKind: promotion.promotionKind || "event",
-        type: promotion.type,
+        code: promotion.code || "",
+        type: promotion.type || "event",
+        discountType: promotion.discountType || "percent",
         value: promotion.value,
         minOrderAmount: promotion.minOrderAmount,
+        voucherCode: promotion.voucherCode || "",
+        productIdsText: (promotion.productIds || []).join(", "),
         maxDiscount: promotion.maxDiscount || "",
         usageLimit: promotion.usageLimit || "",
         startDate: promotion.startDate ? promotion.startDate.split("T")[0] : "",
@@ -66,13 +71,6 @@ export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
       };
       
       // Xóa giá trị maxDiscount khi chuyển sang loại "fixed"
-      if (name === "type" && value === "fixed") {
-        newData.maxDiscount = "";
-      }
-      if (name === "promotionKind" && value === "product") {
-        newData.type = "percent";
-      }
-      
       return newData;
     });
   };
@@ -83,28 +81,26 @@ export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
     setError(null);
 
     try {
-      if (!formData.code || !formData.value ||
-          (formData.promotionKind === "event" && formData.minOrderAmount === "") ||
-          (formData.promotionKind === "product" && formData.productIds.length === 0)) {
+      if (!formData.name || !formData.value || (formData.type === "event" && !formData.minOrderAmount) || (formData.type === "voucher" && !formData.voucherCode) || (formData.type === "product" && !formData.productIdsText.trim())) {
         throw new Error("Vui lòng điền đầy đủ thông tin bắt buộc");
       }
 
       const payload = {
         id: formData.id,
-        name: formData.name.trim() || formData.code,
-        code: formData.code.toUpperCase(),
-        promotionKind: formData.promotionKind,
+        name: formData.name,
+        code: formData.code,
         type: formData.type,
+        discountType: formData.discountType,
         value: parseFloat(formData.value),
-        minOrderAmount: formData.promotionKind === "event" ? parseFloat(formData.minOrderAmount || 0) : 0,
+        minOrderAmount: formData.type === "event" ? parseFloat(formData.minOrderAmount || 0) : 0,
+        voucherCode: formData.type === "voucher" ? formData.voucherCode.trim().toUpperCase() : null,
+        productIds: formData.type === "product" ? formData.productIdsText.split(",").map((id) => Number(id.trim())).filter(Number.isInteger) : [],
         maxDiscount: formData.maxDiscount ? parseFloat(formData.maxDiscount) : null,
         usageLimit: formData.usageLimit ? parseInt(formData.usageLimit) : null,
         startDate: formData.startDate || null,
         endDate: formData.endDate || null,
         active: formData.active,
-        status: formData.active
-          ? (formData.status === "expired" ? "expired" : "active")
-          : "disabled",
+        status: formData.active ? "active" : "disabled",
         description: formData.description || "",
         usedCount: formData.usedCount,
         voucherCode: formData.voucherCode.trim() || formData.code.toUpperCase(),
@@ -143,30 +139,7 @@ export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
             </div>
           )}
 
-          {/* Mã khuyến mãi (disabled) */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Tên chương trình</label>
-            <input
-              type="text"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Mã khuyến mãi
-            </label>
-            <input
-              type="text"
-              name="code"
-              value={formData.code}
-              disabled
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500 uppercase cursor-not-allowed"
-            />
-            <p className="text-xs text-gray-500 mt-1">Mã khuyến mãi không thể thay đổi</p>
-          </div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-2">Tên chương trình</label><input name="name" value={formData.name} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg" required /></div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Nhóm khuyến mãi</label>
@@ -222,7 +195,7 @@ export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Loại giảm giá <span className="text-red-500">*</span>
+                Loại chương trình <span className="text-red-500">*</span>
               </label>
               <select
                 name="type"
@@ -230,13 +203,14 @@ export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
                 onChange={handleChange}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="percent">Giảm theo %</option>
-                {formData.promotionKind !== "product" && <option value="fixed">Giảm cố định (VNĐ)</option>}
+                <option value="event">Sự kiện</option>
+                <option value="voucher">Voucher</option>
+                <option value="product">Theo sản phẩm</option>
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Giá trị {formData.type === "percent" ? "(%)" : "(VNĐ)"} <span className="text-red-500">*</span>
+                Giá trị {formData.discountType === "percent" ? "(%)" : "(VNĐ)"} <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
@@ -244,50 +218,42 @@ export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
                 value={formData.value}
                 onChange={handleChange}
                 min="0"
-                step={formData.type === "percent" ? "1" : "1000"}
-                max={formData.type === "percent" ? "100" : undefined}
+                step={formData.discountType === "percent" ? "1" : "1000"}
+                max={formData.discountType === "percent" ? "100" : undefined}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
               />
             </div>
           </div>
 
-          {/* Điều kiện đơn hàng */}
-          <div className="grid grid-cols-2 gap-4">
-            {formData.promotionKind === "event" && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Đơn hàng tối thiểu (VNĐ) <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  name="minOrderAmount"
-                  value={formData.minOrderAmount}
-                  onChange={handleChange}
-                  min="0"
-                  step="1000"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  required
-                />
-              </div>
-            )}
-            {formData.type === "percent" && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Giảm tối đa (VNĐ) <span className="text-gray-500 text-xs">(nếu có)</span>
-                </label>
-                <input
-                  type="number"
-                  name="maxDiscount"
-                  value={formData.maxDiscount}
-                  onChange={handleChange}
-                  min="0"
-                  step="1000"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-            )}
-          </div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-2">Kiểu giảm</label><select name="discountType" value={formData.discountType} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg"><option value="percent">Phần trăm</option><option value="fixed">Số tiền cố định</option></select></div>
+          {/* Điều kiện event */}
+          {formData.type === "event" && <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Đơn hàng tối thiểu (VNĐ) <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                name="minOrderAmount"
+                value={formData.minOrderAmount}
+                onChange={handleChange}
+                min="0"
+                step="1000"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                required
+              />
+            </div>
+          </div>}
+          {formData.type === "voucher" && <div><label className="block text-sm font-medium text-gray-700 mb-2">Mã voucher</label><input name="voucherCode" value={formData.voucherCode} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg" required /></div>}
+          {formData.type === "product" && <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Sản phẩm áp dụng <span className="text-red-500">*</span></label>
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="button" onClick={() => setShowProductPicker(true)} className="rounded-lg border border-blue-600 px-4 py-2 font-medium text-blue-700 hover:bg-blue-50">Chọn sản phẩm</button>
+              <span className="text-sm text-gray-600">Đã chọn {formData.productIdsText ? formData.productIdsText.split(",").filter(Boolean).length : 0} sản phẩm</span>
+            </div>
+          </div>}
+          <div><label className="block text-sm font-medium text-gray-700 mb-2">Giảm tối đa (VNĐ, tùy chọn)</label><input type="number" name="maxDiscount" value={formData.maxDiscount} onChange={handleChange} min="0" step="1000" disabled={formData.discountType === "fixed"} className="w-full px-4 py-2 border border-gray-300 rounded-lg disabled:bg-gray-100" /></div>
 
           {/* Thời gian */}
           <div className="grid grid-cols-2 gap-4">
@@ -298,6 +264,7 @@ export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
                 name="startDate"
                 value={formData.startDate}
                 onChange={handleChange}
+                required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
@@ -308,6 +275,7 @@ export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
                 name="endDate"
                 value={formData.endDate}
                 onChange={handleChange}
+                required
                 min={formData.startDate}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
@@ -377,6 +345,11 @@ export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
           </div>
         </form>
       </div>
+      {showProductPicker && <ProductPickerModal
+        selectedIds={formData.productIdsText.split(",").filter(Boolean).map(Number)}
+        onChange={(ids) => setFormData((previous) => ({ ...previous, productIdsText: ids.join(",") }))}
+        onClose={() => setShowProductPicker(false)}
+      />}
     </div>
   );
 }

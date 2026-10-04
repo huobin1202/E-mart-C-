@@ -1,7 +1,7 @@
 -- =========================================================
 -- STORE MANAGEMENT - CONVENIENCE STORE
 -- SQL Server / SSMS
--- Admin + Employee: dùng chung bảng Users, phân quyền bằng role.
+-- Admin + Staff: dùng chung bảng Users, phân quyền bằng role.
 -- Customer: tài khoản riêng cho App.
 -- Schema bám theo ERD: Users, Customers, Categories, Products,
 -- Suppliers, Purchase Orders, Promotions (3 loại), Orders, Payments...
@@ -93,7 +93,6 @@ CREATE TABLE customers (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   is_active BIT NOT NULL DEFAULT 1,
-  -- Khách hàng đăng nhập App; tài khoản nhân viên/admin nằm ở Users.
   -- SQL Server: dùng filtered unique indexes bên dưới để cho phép nhiều NULL.
 );
 GO
@@ -134,6 +133,8 @@ CREATE TABLE promotions (
   code VARCHAR(100) NOT NULL UNIQUE,
   name NVARCHAR(150) NOT NULL,
   type VARCHAR(20) NOT NULL,
+  discount_type VARCHAR(10) NOT NULL,
+  discount_value DECIMAL(12,2) NOT NULL,
   description NVARCHAR(1000),
   start_date DATETIME NOT NULL,
   end_date DATETIME NOT NULL,
@@ -146,6 +147,8 @@ CREATE TABLE promotions (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT ck_promotions_type CHECK (type IN ('product','event','voucher')),
+  CONSTRAINT ck_promotions_discount_type CHECK (discount_type IN ('percent','fixed')),
+  CONSTRAINT ck_promotions_discount_value CHECK (discount_value > 0 AND (discount_type <> 'percent' OR discount_value <= 100)),
   CONSTRAINT ck_promotions_status CHECK (status IN ('active','expired','disabled')),
   CONSTRAINT ck_promotions_dates CHECK (end_date >= start_date),
   CONSTRAINT ck_promotions_usage CHECK (usage_limit IS NULL OR usage_limit >= 0),
@@ -156,32 +159,23 @@ CREATE TABLE promotions (
 -- PROMOTION DETAILS: 3 loại khuyến mãi theo ERD
 -- =========================================================
 
--- Event/voucher details
+-- Event details contain only event-specific conditions.
 CREATE TABLE event_promotions (
   id INT IDENTITY(1,1) PRIMARY KEY,
   promotion_id INT NOT NULL UNIQUE,
   min_order_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
-  discount_percent DECIMAL(5,2) NOT NULL,
-  max_discount_amount DECIMAL(12,2) DEFAULT NULL,
   CONSTRAINT fk_event_promotions_promotion
     FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE CASCADE,
-  CONSTRAINT ck_event_min_order CHECK (min_order_amount >= 0),
-  CONSTRAINT ck_event_discount CHECK (discount_percent >= 0 AND discount_percent <= 100)
+  CONSTRAINT ck_event_min_order CHECK (min_order_amount >= 0)
 );
 
 CREATE TABLE voucher_promotions (
   id INT IDENTITY(1,1) PRIMARY KEY,
   promotion_id INT NOT NULL UNIQUE,
   voucher_code VARCHAR(50) NOT NULL UNIQUE,
-  discount_percent DECIMAL(5,2) NOT NULL,
-  max_discount_amount DECIMAL(12,2) DEFAULT NULL,
-  usage_limit INT DEFAULT NULL,
-  used_count INT NOT NULL DEFAULT 0,
   CONSTRAINT fk_voucher_promotions_promotion
     FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE CASCADE,
-  CONSTRAINT ck_voucher_discount CHECK (discount_percent >= 0 AND discount_percent <= 100),
-  CONSTRAINT ck_voucher_usage CHECK (usage_limit IS NULL OR usage_limit >= 0),
-  CONSTRAINT ck_voucher_used_count CHECK (used_count >= 0)
+  CONSTRAINT ck_voucher_code CHECK (LEN(voucher_code) > 0)
 );
 
 CREATE TABLE units (
@@ -235,12 +229,10 @@ CREATE TABLE product_promotions (
   id INT IDENTITY(1,1) PRIMARY KEY,
   promotion_id INT NOT NULL,
   product_id INT NOT NULL,
-  discount_percent DECIMAL(5,2) NOT NULL,
   CONSTRAINT fk_product_promotions_promotion
     FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE CASCADE,
   CONSTRAINT fk_product_promotions_product
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
-  CONSTRAINT ck_product_promotions_discount CHECK (discount_percent >= 0 AND discount_percent <= 100),
   CONSTRAINT ux_product_promotions UNIQUE (promotion_id, product_id)
 );
 
@@ -317,7 +309,7 @@ CREATE TABLE [orders] (
   id INT IDENTITY(1,1) PRIMARY KEY,
   order_number VARCHAR(100) NOT NULL UNIQUE,
   customer_id INT DEFAULT NULL,
-  employee_id INT DEFAULT NULL,
+  user_id INT DEFAULT NULL, -- staff who created the order
   promotion_id INT DEFAULT NULL,
   order_type VARCHAR(20) NOT NULL DEFAULT 'pos',
   status VARCHAR(20) NOT NULL DEFAULT 'pending',
@@ -330,7 +322,7 @@ CREATE TABLE [orders] (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_orders_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT fk_orders_employee FOREIGN KEY (employee_id) REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT fk_orders_promo FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT ck_orders_type CHECK (order_type IN ('pos','mobile')),
   CONSTRAINT ck_orders_status CHECK (status IN ('pending','processing','completed','cancelled')),
@@ -413,9 +405,9 @@ CREATE INDEX idx_products_created_at ON products (created_at);
 INSERT INTO users
 (username, password_hash, first_name, last_name, email, phone, role, is_active, locked, created_at)
 VALUES
-  ('admin', '$2a$11$B5Pre4vLwlsfDIMg/gXXjuH/CyqianiPXHXSXikWE5R0djN/9Tf7.', N'Quản trị', N'Viên', 'admin@example.com', '0909000000', 'admin', 1, 0, GETDATE()),
-  ('staff01', '$2a$11$NChyYqe5MniZi.l08LVuP.SkfLMRMtyK6guvRRyq/PdaGdjYoTaO2', N'Nguyễn Văn', N'A', 'staff01@example.com', '0909000001', 'staff', 1, 0, GETDATE()),
-  ('staff02', '$2a$11$NChyYqe5MniZi.l08LVuP.SkfLMRMtyK6guvRRyq/PdaGdjYoTaO2', N'Lê Thị', N'B', 'staff02@example.com', '0909000002', 'staff', 1, 0, GETDATE());
+  ('admin', 'admin@example.com', '$2a$11$B5Pre4vLwlsfDIMg/gXXjuH/CyqianiPXHXSXikWE5R0djN/9Tf7.', N'Quản trị viên', 'admin', 1, 0, GETDATE()),
+  ('staff01', 'staff01@example.com', '$2a$11$NChyYqe5MniZi.l08LVuP.SkfLMRMtyK6guvRRyq/PdaGdjYoTaO2', N'Nguyễn Văn A', 'staff', 1, 0, GETDATE()),
+  ('staff02', 'staff02@example.com', '$2a$11$NChyYqe5MniZi.l08LVuP.SkfLMRMtyK6guvRRyq/PdaGdjYoTaO2', N'Lê Thị B', 'staff', 1, 0, GETDATE());
 
 -- password của admin là admin123
 -- password của employee là 123456
@@ -634,37 +626,36 @@ VALUES
 
 -- ===== PROMOTIONS =====
 INSERT INTO promotions
-(code, name, type, description, start_date, end_date, status, max_discount, usage_limit, used_count, created_at)
+(code, name, type, discount_type, discount_value, description, start_date, end_date, status, max_discount, usage_limit, used_count, created_at)
 VALUES
-('SALE10', N'Giảm 10%', 'event', N'Giảm 10% cho đơn hàng đủ điều kiện', '2025-01-01', '2025-12-31', 'expired', 50000, NULL, 0, GETDATE()),
-('FREESHIP50K', N'Giảm 50K', 'event', N'Giảm 50.000 cho đơn từ 300.000', '2025-03-01', '2025-12-31', 'expired', 50000, 500, 0, GETDATE()),
-('NEWUSER', N'Khách hàng mới', 'voucher', N'Giảm 20% cho khách hàng mới', '2025-01-01', '2025-06-30', 'expired', 100000, 1, 0, GETDATE()),
-('SUMMER15', N'Khuyến mãi mùa hè', 'event', N'Giảm 15% mùa hè', '2025-06-01', '2025-08-31', 'expired', 100000, 1000, 0, GETDATE()),
-('VIP100K', N'Khách VIP', 'voucher', N'Giảm 100.000 cho khách VIP', '2025-01-01', '2025-12-31', 'expired', 100000, 200, 0, GETDATE()),
-('PROD15', N'Giảm 15% Coca/Pepsi', 'product', N'Giảm 15% cho một số sản phẩm đồ uống', '2025-01-01', '2025-12-31', 'expired', 100000, 500, 0, GETDATE());
+('SALE10', N'Giảm 10%', 'event', 'percent', 10, N'Giảm 10% cho đơn hàng đủ điều kiện', '2025-01-01', '2025-12-31', 'expired', 50000, NULL, 0, GETDATE()),
+('FREESHIP50K', N'Giảm 50K', 'event', 'fixed', 50000, N'Giảm 50.000 cho đơn từ 300.000', '2025-03-01', '2025-12-31', 'expired', NULL, 500, 0, GETDATE()),
+('NEWUSER', N'Khách hàng mới', 'voucher', 'percent', 20, N'Giảm 20% cho khách hàng mới', '2025-01-01', '2025-06-30', 'expired', 100000, 1, 0, GETDATE()),
+('SUMMER15', N'Khuyến mãi mùa hè', 'event', 'percent', 15, N'Giảm 15% mùa hè', '2025-06-01', '2025-08-31', 'expired', 100000, 1000, 0, GETDATE()),
+('VIP100K', N'Khách VIP', 'voucher', 'fixed', 100000, N'Giảm 100.000 cho khách VIP', '2025-01-01', '2025-12-31', 'expired', NULL, 200, 0, GETDATE()),
+('PROD15', N'Giảm 15% Coca/Pepsi', 'product', 'percent', 15, N'Giảm 15% cho một số sản phẩm đồ uống', '2025-01-01', '2025-12-31', 'expired', 100000, 500, 0, GETDATE());
 
 -- Chi tiết event promotion
-INSERT INTO event_promotions (promotion_id, min_order_amount, discount_percent, max_discount_amount)
+INSERT INTO event_promotions (promotion_id, min_order_amount)
 VALUES
-(1, 0, 10, 50000),
-(2, 300000, 0, 50000),
-(4, 50000, 15, 100000);
+(1, 0),
+(2, 300000),
+(4, 50000);
 
 -- Chi tiết voucher promotion
-INSERT INTO voucher_promotions
-(promotion_id, voucher_code, discount_percent, max_discount_amount, usage_limit, used_count)
+INSERT INTO voucher_promotions (promotion_id, voucher_code)
 VALUES
-(3, 'NEWUSER20', 20, 100000, 1, 0),
-(5, 'VIP100K', 0, 100000, 200, 0);
+(3, 'NEWUSER20'),
+(5, 'VIP100K');
 
 -- Khuyến mãi áp dụng trực tiếp cho sản phẩm
-INSERT INTO product_promotions (promotion_id, product_id, discount_percent)
+INSERT INTO product_promotions (promotion_id, product_id)
 VALUES
-(6, 1, 15),
-(6, 2, 15);
+(6, 1),
+(6, 2);
 
 -- ===== ORDERS với giá mới hợp lý =====
-INSERT INTO orders (order_number, customer_id, employee_id, order_type, status, subtotal, discount, total_amount, promotion_id, payment_method, payment_status, created_at)
+INSERT INTO orders (order_number, customer_id, user_id, order_type, status, subtotal, discount, total_amount, promotion_id, payment_method, payment_status, created_at)
 VALUES
 (CONVERT(varchar(36), NEWID()), 5, 3, 'pos', 'completed', 285000, 28500, 256500, 1, 'cash', 'paid', GETDATE()), -- Order 1: 10% discount
 (CONVERT(varchar(36), NEWID()), 17, 3, 'pos', 'completed', 420000, 0, 420000, NULL, 'e_wallet', 'paid', GETDATE()), -- Order 2: No discount
@@ -839,6 +830,6 @@ SELECT COUNT(*) AS products_count FROM products;
 SELECT COUNT(*) AS orders_count FROM [orders];
 SELECT COUNT(*) AS purchase_orders_count FROM purchase_orders;
 SELECT COUNT(*) AS promotions_count FROM promotions;
-SELECT COUNT(*) AS employees_count FROM users WHERE role = 'staff';
+SELECT COUNT(*) AS staff_count FROM users WHERE role = 'staff';
 SELECT COUNT(*) AS admins_count FROM users WHERE role = 'admin';
 GO

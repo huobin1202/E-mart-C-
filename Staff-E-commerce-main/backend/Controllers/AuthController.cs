@@ -38,7 +38,8 @@ namespace backend.Controllers
                 PasswordHash = HashPassword(req.Password),
                 FullName = req.Username,
                 Role = "staff",
-                IsActive = true
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
             };
 
             _db.Users.Add(user);

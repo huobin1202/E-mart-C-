@@ -62,8 +62,14 @@ namespace backend.Services
         public async Task<PromotionDTO> CreatePromotionAsync(Promotion promotion)
         {
             // Validation
-            if (string.IsNullOrWhiteSpace(promotion.Code))
-                throw new ArgumentException("Code is required", nameof(promotion.Code));
+            if (string.IsNullOrWhiteSpace(promotion.Name))
+                throw new ArgumentException("Name is required", nameof(promotion.Name));
+            if (promotion.Type == "voucher" && string.IsNullOrWhiteSpace(promotion.VoucherDetails?.VoucherCode))
+                throw new ArgumentException("Voucher code is required");
+            if (promotion.Type == "product" && (promotion.ProductDetails == null || !promotion.ProductDetails.Any()))
+                throw new ArgumentException("Select at least one product");
+            if (!promotion.StartDate.HasValue || !promotion.EndDate.HasValue)
+                throw new ArgumentException("Start date and end date are required");
 
             if (string.IsNullOrWhiteSpace(promotion.Name))
                 promotion.Name = promotion.Code;
@@ -75,7 +81,11 @@ namespace backend.Services
             if (promotion.Value <= 0)
                 throw new ArgumentException("Value must be greater than 0", nameof(promotion.Value));
 
-            if (promotion.Type == "percent" && promotion.Value > 100)
+            if (!new[] { "product", "event", "voucher" }.Contains(promotion.Type))
+                throw new ArgumentException("Type must be product, event, or voucher", nameof(promotion.Type));
+            if (!new[] { "percent", "fixed" }.Contains(promotion.DiscountType))
+                throw new ArgumentException("DiscountType must be percent or fixed", nameof(promotion.DiscountType));
+            if (promotion.DiscountType == "percent" && promotion.Value > 100)
                 throw new ArgumentException("Percent value cannot exceed 100", nameof(promotion.Value));
 
             if (promotion.Type is not ("percent" or "fixed"))
@@ -84,10 +94,13 @@ namespace backend.Services
             if (promotion.StartDate.HasValue && promotion.EndDate.HasValue && promotion.StartDate > promotion.EndDate)
                 throw new ArgumentException("Start date must be before end date");
 
-            // Check if code already exists
-            var existing = await _promotionRepository.GetByCodeAsync(promotion.Code);
-            if (existing != null)
-                throw new ArgumentException($"Promotion code '{promotion.Code}' already exists");
+            if (promotion.Type == "voucher")
+            {
+                promotion.VoucherDetails!.VoucherCode = promotion.VoucherDetails.VoucherCode.Trim().ToUpperInvariant();
+                var existing = await _promotionRepository.GetByCodeAsync(promotion.VoucherDetails.VoucherCode);
+                if (existing != null)
+                    throw new ArgumentException($"Voucher code '{promotion.VoucherDetails.VoucherCode}' already exists");
+            }
 
             var created = await _promotionRepository.CreateAsync(promotion);
             return MapToDTO(created);
@@ -104,21 +117,32 @@ namespace backend.Services
             if (promotion.Value <= 0)
                 throw new ArgumentException("Value must be greater than 0", nameof(promotion.Value));
 
-            if (promotion.Type is not ("percent" or "fixed"))
-                throw new ArgumentException("Discount type must be percent or fixed", nameof(promotion.Type));
-
-            if (promotion.Type == "percent" && promotion.Value > 100)
+            if (!new[] { "product", "event", "voucher" }.Contains(promotion.Type))
+                throw new ArgumentException("Type must be product, event, or voucher", nameof(promotion.Type));
+            if (!new[] { "percent", "fixed" }.Contains(promotion.DiscountType))
+                throw new ArgumentException("DiscountType must be percent or fixed", nameof(promotion.DiscountType));
+            if (string.IsNullOrWhiteSpace(promotion.Name))
+                throw new ArgumentException("Name is required", nameof(promotion.Name));
+            if (promotion.Type == "voucher" && string.IsNullOrWhiteSpace(promotion.VoucherDetails?.VoucherCode))
+                throw new ArgumentException("Voucher code is required");
+            if (promotion.Type == "product" && (promotion.ProductDetails == null || !promotion.ProductDetails.Any()))
+                throw new ArgumentException("Select at least one product");
+            if (!promotion.StartDate.HasValue || !promotion.EndDate.HasValue)
+                throw new ArgumentException("Start date and end date are required");
+            if (promotion.DiscountType == "percent" && promotion.Value > 100)
                 throw new ArgumentException("Percent value cannot exceed 100", nameof(promotion.Value));
 
             if (promotion.StartDate.HasValue && promotion.EndDate.HasValue && promotion.StartDate > promotion.EndDate)
                 throw new ArgumentException("Start date must be before end date");
 
             // Check if changing code conflicts with another promotion
-            if (promotion.Code != existing.Code)
+            promotion.Code = existing.Code; // Internal identifier; customer-facing codes belong to vouchers only.
+            if (promotion.Type == "voucher")
             {
-                var codeExists = await _promotionRepository.GetByCodeAsync(promotion.Code);
-                if (codeExists != null && codeExists.Id != promotion.Id)
-                    throw new ArgumentException($"Promotion code '{promotion.Code}' already exists");
+                promotion.VoucherDetails!.VoucherCode = promotion.VoucherDetails.VoucherCode.Trim().ToUpperInvariant();
+                var duplicate = await _promotionRepository.GetByCodeAsync(promotion.VoucherDetails.VoucherCode);
+                if (duplicate != null && duplicate.Id != promotion.Id)
+                    throw new ArgumentException($"Voucher code '{promotion.VoucherDetails.VoucherCode}' already exists");
             }
 
             promotion.CreatedAt = existing.CreatedAt;
@@ -166,7 +190,17 @@ namespace backend.Services
                 };
             }
 
-            if (!promotion.Active)
+            if (promotion.Type != "voucher")
+            {
+                return new ValidatePromotionResult
+                {
+                    IsValid = false,
+                    Message = "Khuyến mãi này áp dụng trực tiếp cho sản phẩm, không áp dụng bằng mã đơn hàng",
+                    DiscountAmount = 0
+                };
+            }
+
+            if (promotion.Status != "active")
             {
                 return new ValidatePromotionResult
                 {
@@ -207,12 +241,13 @@ namespace backend.Services
                 };
             }
 
-            if (orderAmount < promotion.MinOrderAmount)
+            promotion.MinOrderAmount = promotion.EventDetails?.MinOrderAmount ?? 0;
+            if (promotion.Type == "event" && orderAmount < promotion.MinOrderAmount)
             {
                 return new ValidatePromotionResult
                 {
                     IsValid = false,
-                    Message = $"Đơn hàng tối thiểu {promotion.MinOrderAmount:N0}đ để sử dụng mã này",
+                    Message = $"Đơn hàng tối thiểu {promotion.MinOrderAmount:N0}đ để sử dụng chương trình này",
                     DiscountAmount = 0
                 };
             }
@@ -241,7 +276,7 @@ namespace backend.Services
         {
             decimal discount = 0;
 
-            if (promotion.Type == "percent")
+            if (promotion.DiscountType == "percent")
             {
                 discount = orderAmount * (promotion.Value / 100);
 
@@ -360,12 +395,14 @@ namespace backend.Services
             return new PromotionDTO
             {
                 Id = p.Id,
-                Code = p.Code,
+                Code = p.Type == "voucher" ? p.VoucherDetails?.VoucherCode ?? string.Empty : string.Empty,
                 Name = p.Name,
-                PromotionKind = p.PromotionKind,
                 Type = p.Type,
+                DiscountType = p.DiscountType,
                 Value = p.Value,
-                MinOrderAmount = p.MinOrderAmount,
+                MinOrderAmount = p.EventDetails?.MinOrderAmount ?? 0,
+                VoucherCode = p.VoucherDetails?.VoucherCode,
+                ProductIds = p.ProductDetails?.Select(d => d.ProductId).ToList() ?? new List<int>(),
                 MaxDiscount = p.MaxDiscount,
                 StartDate = p.StartDate,
                 EndDate = p.EndDate,

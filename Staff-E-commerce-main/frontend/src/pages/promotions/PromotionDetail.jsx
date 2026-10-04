@@ -117,7 +117,8 @@ export default function PromotionDetail({ promotionId, onClose, onEdit }) {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-2xl font-bold text-white">Chi tiết khuyến mãi</h2>
-              <p className="text-white mt-1 font-mono text-lg">{promotion.code}</p>
+              <p className="text-white mt-1">{promotion.name}</p>
+              <p className="text-white mt-1 font-mono text-lg">{promotion.type === "voucher" ? promotion.voucherCode : "Chương trình tự động"}</p>
             </div>
             <div className="flex items-center gap-3">
               {getStatusBadge()}
@@ -178,7 +179,7 @@ export default function PromotionDetail({ promotionId, onClose, onEdit }) {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs font-medium text-blue-700">Mã khuyến mãi</label>
-                    <p className="mt-1 text-base font-bold text-blue-900 font-mono">{promotion.code}</p>
+                    <p className="mt-1 text-base font-bold text-blue-900 font-mono">{promotion.type === "voucher" ? promotion.voucherCode : "Không có mã nhập"}</p>
                   </div>
                   <div>
                     <label className="text-xs font-medium text-blue-700">ID</label>
@@ -192,30 +193,20 @@ export default function PromotionDetail({ promotionId, onClose, onEdit }) {
                 <h3 className="text-sm font-semibold text-gray-900 mb-3">Thông tin giảm giá</h3>
                 <div className="grid grid-cols-2 gap-6">
                 <div>
-                    <label className="text-sm font-medium text-gray-500">Nhóm khuyến mãi</label>
-                    <p className="mt-1 text-gray-900">
-                      {promotion.promotionKind === "event"
-                        ? "Theo đơn hàng"
-                        : promotion.promotionKind === "voucher"
-                          ? `Voucher${promotion.voucherCode ? ` (${promotion.voucherCode})` : ""}`
-                          : `Theo sản phẩm (${(promotion.productIds || []).length} sản phẩm)`}
-                    </p>
-                  </div>
-                  <div>
-                  <label className="text-sm font-medium text-gray-500">Loại giảm giá</label>
+                  <label className="text-sm font-medium text-gray-500">Loại chương trình</label>
                   <p className="mt-1 text-lg font-semibold text-gray-900">
-                    {promotion.type === "percent" ? "Giảm theo %" : "Giảm cố định"}
+                    {{ product: "Theo sản phẩm", event: "Sự kiện", voucher: "Voucher" }[promotion.type] || promotion.type}
                   </p>
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-500">Giá trị</label>
                   <p className="mt-1 text-lg font-semibold text-gray-900">
-                    {promotion.type === "percent" ? `${promotion.value}%` : formatCurrency(promotion.value)}
+                    {promotion.discountType === "percent" ? `${promotion.value}%` : formatCurrency(promotion.value)}
                   </p>
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-500">Đơn hàng tối thiểu</label>
-                  <p className="mt-1 text-lg font-semibold text-gray-900">{formatCurrency(promotion.minOrderAmount)}</p>
+                  <p className="mt-1 text-lg font-semibold text-gray-900">{promotion.type === "event" ? formatCurrency(promotion.minOrderAmount) : "—"}</p>
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-500">Giảm tối đa</label>

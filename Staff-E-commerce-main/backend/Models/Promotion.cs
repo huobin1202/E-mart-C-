@@ -19,23 +19,17 @@ namespace backend.Models
         [StringLength(100)]
         public string Code { get; set; } = string.Empty;
 
-        [Required]
-        [Column("name")]
-        [StringLength(150)]
-        public string Name { get; set; } = string.Empty;
-
+        // Campaign kind: product, event, or voucher.
         [Column("type")]
         [StringLength(20)]
-        public string PromotionKind { get; set; } = "event";
+        public string Type { get; set; } = "event";
 
-        [NotMapped]
-        public string Type { get; set; } = "percent";
+        [Column("discount_type")]
+        [StringLength(10)]
+        public string DiscountType { get; set; } = "percent";
 
-        [NotMapped]
+        [Column("discount_value", TypeName = "decimal(12,2)")]
         public decimal Value { get; set; } = 0m;
-
-        [NotMapped]
-        public decimal MinOrderAmount { get; set; } = 0m;
 
         [Column("max_discount", TypeName = "decimal(12,2)")]
         public decimal? MaxDiscount { get; set; }
@@ -52,8 +46,19 @@ namespace backend.Models
         [Column("used_count")]
         public int UsedCount { get; set; } = 0;
 
+        [Column("name")]
+        [StringLength(150)]
+        public string Name { get; set; } = string.Empty;
+
+        [Column("status")]
+        [StringLength(20)]
+        public string Status { get; set; } = "active";
+
         [NotMapped]
-        public bool Active { get; set; } = true;
+        public bool Active { get => Status == "active"; set => Status = value ? "active" : "disabled"; }
+
+        [NotMapped]
+        public decimal MinOrderAmount { get; set; }
 
         [Column("status")]
         [StringLength(20)]
@@ -79,14 +84,8 @@ namespace backend.Models
         // Navigation
         public virtual ICollection<Order>? Orders { get; set; }
         public virtual ICollection<PromotionRedemption>? Redemptions { get; set; }
-        public virtual EventPromotion? EventPromotion { get; set; }
-        public virtual VoucherPromotion? VoucherPromotion { get; set; }
-        public virtual ICollection<ProductPromotion> ProductPromotions { get; set; } = new List<ProductPromotion>();
-
-        [NotMapped]
-        public List<int> ProductIds { get; set; } = new();
-
-        [NotMapped]
-        public string? VoucherCode { get; set; }
+        public virtual EventPromotion? EventDetails { get; set; }
+        public virtual VoucherPromotion? VoucherDetails { get; set; }
+        public virtual ICollection<ProductPromotion>? ProductDetails { get; set; }
     }
 }
