@@ -23,6 +23,7 @@ namespace backend.Services
             {
                 Id = s.Id,
                 Name = s.Name,
+                ContactName = s.ContactName,
                 Phone = s.Phone,
                 Email = s.Email,
                 Address = s.Address,
@@ -96,6 +97,7 @@ namespace backend.Services
                 throw new ArgumentException("Supplier name already exists");
 
             existing.Name = supplier.Name;
+            existing.ContactName = supplier.ContactName;
             existing.Phone = supplier.Phone;
             existing.Email = supplier.Email;
             existing.Address = supplier.Address;

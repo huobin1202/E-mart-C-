@@ -1,7 +1,6 @@
 "# Staff-E-commerce" 
+.\run-backend.ps1
 
-.\Staff-E-commerce-main\run-backend.ps1
-
-cd C:\Staff-E-commerce-main\Staff-E-commerce-main\frontend
-npm install
+# Frontend
+cd .\frontend
 npm run dev

@@ -111,20 +111,9 @@ export const useOrders = () => {
 
   async function cancelOrder(orderId) {
       try {
-          const response = await fetch(`/api/orders/${orderId}/cancel`, {
-              method: "POST",
-              headers: {
-                  "Content-Type": "application/json"
-              }
+          const result = await request(`/orders/${orderId}/cancel`, {
+              method: "POST"
           });
-
-          if (!response.ok) {
-              console.error("API trả về lỗi HTTP:", response.status);
-              alert("Không thể hủy đơn!");
-              return;
-          }
-
-          const result = await response.json(); // true / false
 
           if (result === true) {
               alert("Hủy đơn hàng thành công!");
@@ -360,12 +349,9 @@ const pay = async (method = "cash", currentOrder) => {
         counter++;
 
         try {
-          const statusRes = await fetch(
-            `http://localhost:5099/api/payment/status/${currentOrder.id}`
-          );
+          const data = await request(`/payment/status/${currentOrder.id}`);
 
-          if (statusRes.ok) {
-            const data = await statusRes.json();
+          if (data) {
 
             if (data.status === "completed" && !finished) {
               finished = true;
@@ -741,7 +727,7 @@ const orderObject = (currentOrder, promotion, payment) => {
     Status: paymentStatus,
     Subtotal: currentOrder.subtotal,
     Discount: currentOrder.discount,
-    TotalAmount: currentOrder.total_amount,
+    TotalAmount: currentOrder.totalAmount ?? currentOrder.total_amount ?? 0,
     PromotionId: promotion?.id ?? null, 
     Note: currentOrder.note,
     CreatedAt: new Date().toISOString(),
@@ -793,16 +779,7 @@ const loadOrdersAdvanced = async () => {
             params.append("endDate", new Date(selectedEndDate).toISOString());
         }
 
-        const url = `http://localhost:5099/api/orders/search?${params.toString()}`;
-
-        const res = await fetch(url);
-
-        if (!res.ok) {
-            console.error("Lỗi tải danh sách đơn hàng:", res.status, await res.text());
-            return;
-        }
-
-        const data = await res.json();
+        const data = await request(`/orders/search?${params.toString()}`);
 
         setListOrders(data.items || []);
         setTotalPages(data.totalPages);

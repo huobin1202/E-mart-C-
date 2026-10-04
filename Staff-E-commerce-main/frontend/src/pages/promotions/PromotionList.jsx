@@ -439,7 +439,9 @@ export default function PromotionList() {
                             className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
                               promo.discountType === "percent"
                                 ? "bg-purple-100 text-purple-800"
-                                : "bg-blue-100 text-blue-800"
+                                : promo.promotionKind === "voucher"
+                                  ? "bg-blue-100 text-blue-800"
+                                  : "bg-emerald-100 text-emerald-800"
                             }`}
                           >
                             {{ product: "Theo sản phẩm", event: "Sự kiện", voucher: "Voucher" }[promo.type]} · {promo.discountType === "percent" ? "%" : "VNĐ"}

@@ -60,6 +60,10 @@ namespace backend.Models
         [NotMapped]
         public decimal MinOrderAmount { get; set; }
 
+        [Column("status")]
+        [StringLength(20)]
+        public string Status { get; set; } = "active";
+
         [Column("description")]
         [StringLength(1000)]
         public string? Description { get; set; }

@@ -46,11 +46,6 @@ namespace backend.Services
                     return id;
             }
 
-            // fallback đọc từ header
-            var headerUid = context?.Request?.Headers["X-User-Id"].FirstOrDefault();
-            if (!string.IsNullOrEmpty(headerUid) && int.TryParse(headerUid, out int headerId))
-                return headerId;
-
             throw new InvalidOperationException("Không tìm thấy user_id trong token");
         }
 
@@ -109,6 +104,22 @@ namespace backend.Services
         // Lưu đơn hàng (frontend đã gửi đủ dữ liệu)
         public async Task<Order> SaveOrderAsync(Order order)
         {
+            if (order.Subtotal < 0 || order.Discount < 0 || order.TotalAmount < 0)
+                throw new ArgumentException("Các giá trị tiền không được âm.");
+
+            if (!new[] { "pending", "processing", "completed", "cancelled" }
+                .Contains(order.Status, StringComparer.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Trạng thái đơn hàng không hợp lệ.");
+            }
+
+            order.Id = 0;
+            order.UserId = GetCurrentUserId();
+            order.OrderNumber = string.IsNullOrWhiteSpace(order.OrderNumber)
+                ? $"DH-{Guid.NewGuid():N}"
+                : order.OrderNumber.Trim();
+            order.CreatedAt = DateTime.UtcNow;
+            order.UpdatedAt = DateTime.UtcNow;
             return await _orderRepo.CreateOrderAsync(order);
         }
 
@@ -166,15 +177,7 @@ namespace backend.Services
         public async Task<bool> CancelOrderAsync(int orderId)
         {
             // 1. Lấy user hiện tại
-            int currentUserId = 2;
-            try
-            {
-                currentUserId=GetCurrentUserId();
-            }
-            catch
-            {
-                
-            }
+            int currentUserId = GetCurrentUserId();
 
             // 2. Kiểm tra order tồn tại
             var order = await _orderRepo.GetByIdAsync(orderId);

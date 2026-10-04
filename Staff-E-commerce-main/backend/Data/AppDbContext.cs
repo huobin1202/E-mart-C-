@@ -165,6 +165,30 @@ namespace backend.Data
                 .HasForeignKey(pr => pr.OrderId)
                 .OnDelete(DeleteBehavior.SetNull);
 
+            modelBuilder.Entity<PurchaseOrder>()
+                .HasOne(po => po.Supplier)
+                .WithMany()
+                .HasForeignKey(po => po.SupplierId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<PurchaseOrder>()
+                .HasOne(po => po.User)
+                .WithMany()
+                .HasForeignKey(po => po.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<PurchaseOrderDetail>()
+                .HasOne(detail => detail.PurchaseOrder)
+                .WithMany(po => po.Details)
+                .HasForeignKey(detail => detail.PurchaseOrderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<PurchaseOrderDetail>()
+                .HasOne(detail => detail.Product)
+                .WithMany()
+                .HasForeignKey(detail => detail.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             // Global query filters
             modelBuilder.Entity<Promotion>()
                 .HasQueryFilter(p => !p.IsDeleted);

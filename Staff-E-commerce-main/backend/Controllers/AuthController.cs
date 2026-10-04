@@ -11,7 +11,6 @@ namespace backend.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [AllowAnonymous]
     public class AuthController : ControllerBase
     {
         private readonly AppDbContext _db;
@@ -24,6 +23,7 @@ namespace backend.Controllers
         }
 
         [HttpPost("register")]
+        [Authorize(Roles = "admin")]
         public async Task<IActionResult> Register([FromBody] LoginRequest req)
         {
             if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.Password))
@@ -49,6 +49,7 @@ namespace backend.Controllers
         }
 
         [HttpPost("login")]
+        [AllowAnonymous]
         public async Task<IActionResult> Login([FromBody] LoginRequest req)
         {
             Console.WriteLine($"🔍 Login attempt - Username: '{req.Username}', Password length: {req.Password}");
@@ -70,7 +71,7 @@ namespace backend.Controllers
 
             Console.WriteLine($"✅ User found - ID: {user.Id}, IsActive: {user.IsActive}");
 
-            if (!user.IsActive)
+            if (!user.IsActive || user.IsLocked)
             {
                 Console.WriteLine("❌ User is inactive");
                 return Unauthorized(new { message = "Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên" });

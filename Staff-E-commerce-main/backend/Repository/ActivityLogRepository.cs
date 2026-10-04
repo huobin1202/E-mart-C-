@@ -36,7 +36,7 @@ namespace backend.Repository
                 .Select(l => new ActivityLogCreateDTO
                 {
                     UserId = l.UserId ?? 0,
-                    Username = l.User != null ? l.User.FullName : "Unknown",
+                    Username = l.User != null ? l.User.FirstName + " " + l.User.LastName : "Unknown",
                     Action = l.Action,
                     EntityType = l.EntityType,
                     EntityId = l.EntityId,
@@ -77,7 +77,7 @@ namespace backend.Repository
                 .Select(l => new ActivityLogCreateDTO
                 {
                     UserId = l.UserId ?? 0,
-                    Username = l.User != null ? l.User.FullName : "Unknown",
+                    Username = l.User != null ? l.User.FirstName + " " + l.User.LastName : "Unknown",
                     Action = l.Action,
                     EntityType = l.EntityType,
                     EntityId = l.EntityId,

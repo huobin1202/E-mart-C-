@@ -59,6 +59,7 @@ namespace backend.Controllers
                 var supplier = new Supplier
                 {
                     Name = dto.Name,
+                    ContactName = dto.ContactName,
                     Phone = dto.Phone,
                     Email = dto.Email,
                     Address = dto.Address,
@@ -89,6 +90,7 @@ namespace backend.Controllers
                 {
                     Id = id,
                     Name = dto.Name,
+                    ContactName = dto.ContactName,
                     Phone = dto.Phone,
                     Email = dto.Email,
                     Address = dto.Address,
@@ -114,7 +116,7 @@ namespace backend.Controllers
         {
             var ok = await _service.DeleteSupplierAsync(id);
             if (!ok) return NotFound("Supplier not found");
-            return Ok("Deleted");
+            return Ok(new { message = "Đã ngừng hoạt động nhà cung cấp." });
         }
     }
 }

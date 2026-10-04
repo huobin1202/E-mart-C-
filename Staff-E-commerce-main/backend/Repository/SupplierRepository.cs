@@ -72,7 +72,8 @@ namespace backend.Repository
             var entity = await _context.Suppliers.FindAsync(id);
             if (entity == null) return false;
 
-            _context.Suppliers.Remove(entity);
+            entity.IsActive = false;
+            entity.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
             return true;
         }

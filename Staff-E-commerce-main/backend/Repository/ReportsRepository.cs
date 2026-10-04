@@ -341,7 +341,7 @@ namespace backend.Repository
                 {
                     UserId = g.Key,
                     UserName = g.First().User!.Username,
-                    FullName = g.First().User.FullName,
+                    FullName = g.First().User.FirstName + " " + g.First().User.LastName,
                     OrderCount = g.Count(),
                     TotalRevenue = g.Sum(o => o.TotalAmount),
                     AverageOrderValue = g.Count() > 0 ? g.Average(o => o.TotalAmount) : 0

@@ -2,34 +2,57 @@ using System;
 using System.Linq;
 using backend.Models;
 using backend.DTO;
+using backend.Data;
 using backend.Repository;
+using Microsoft.EntityFrameworkCore;
+using System.Data;
 
 namespace backend.Services
 {
     public class InventoryService
     {
         private readonly InventoryRepository _inventoryRepo;
+        private readonly AppDbContext _context;
 
-        public InventoryService(InventoryRepository inventoryRepo)
+        public InventoryService(InventoryRepository inventoryRepo, AppDbContext context)
         {
             _inventoryRepo = inventoryRepo;
+            _context = context;
         }
 
         public async Task<bool> ReduceInventoryAsync(List<ReduceInventoryDto> items)
         {
-            var inventoriesToUpdate = new List<Inventory>();
+            if (items == null || items.Count == 0)
+                throw new ArgumentException("Danh sách sản phẩm không được để trống.");
 
-            foreach (var item in items)
+            var requestedQuantities = items
+                .GroupBy(item => item.ProductId)
+                .Select(group => new { ProductId = group.Key, Quantity = group.Sum(item => item.Quantity) })
+                .ToList();
+
+            if (requestedQuantities.Any(item => item.ProductId <= 0 || item.Quantity <= 0))
+                throw new ArgumentException("Sản phẩm và số lượng phải hợp lệ.");
+
+            await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+            var productIds = requestedQuantities.Select(item => item.ProductId).ToList();
+            var inventories = await _context.Inventory
+                .Where(inventory => productIds.Contains(inventory.ProductId))
+                .ToDictionaryAsync(inventory => inventory.ProductId);
+
+            foreach (var requested in requestedQuantities)
             {
-                var inventory = await _inventoryRepo.GetByProductIdAsync(item.ProductId);
+                if (!inventories.TryGetValue(requested.ProductId, out var inventory))
+                    throw new ArgumentException($"Không tìm thấy tồn kho cho sản phẩm ID {requested.ProductId}.");
 
-                inventory.Quantity = inventory.Quantity - item.Quantity;
-                inventory.UpdatedAt = DateTime.Now;
-                inventoriesToUpdate.Add(inventory);
+                if (inventory.Quantity < requested.Quantity)
+                    throw new InvalidOperationException($"Sản phẩm ID {requested.ProductId} không đủ tồn kho.");
+
+                inventory.Quantity -= requested.Quantity;
+                inventory.UpdatedAt = DateTime.UtcNow;
             }
 
-            // Cập nhật tất cả cùng lúc
-            await _inventoryRepo.UpdateRangeAsync(inventoriesToUpdate);
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
             return true;
         }
 

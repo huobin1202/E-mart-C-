@@ -71,6 +71,13 @@ namespace backend.Services
             if (!promotion.StartDate.HasValue || !promotion.EndDate.HasValue)
                 throw new ArgumentException("Start date and end date are required");
 
+            if (string.IsNullOrWhiteSpace(promotion.Name))
+                promotion.Name = promotion.Code;
+
+            promotion.StartDate ??= DateTimeHelper.VietnamToday;
+            promotion.EndDate ??= promotion.StartDate;
+            promotion.Status = promotion.Active ? "active" : "disabled";
+
             if (promotion.Value <= 0)
                 throw new ArgumentException("Value must be greater than 0", nameof(promotion.Value));
 
@@ -80,6 +87,9 @@ namespace backend.Services
                 throw new ArgumentException("DiscountType must be percent or fixed", nameof(promotion.DiscountType));
             if (promotion.DiscountType == "percent" && promotion.Value > 100)
                 throw new ArgumentException("Percent value cannot exceed 100", nameof(promotion.Value));
+
+            if (promotion.Type is not ("percent" or "fixed"))
+                throw new ArgumentException("Discount type must be percent or fixed", nameof(promotion.Type));
 
             if (promotion.StartDate.HasValue && promotion.EndDate.HasValue && promotion.StartDate > promotion.EndDate)
                 throw new ArgumentException("Start date must be before end date");
@@ -137,6 +147,12 @@ namespace backend.Services
 
             promotion.CreatedAt = existing.CreatedAt;
             promotion.UpdatedAt = DateTimeHelper.UtcNow;
+            promotion.Name = string.IsNullOrWhiteSpace(promotion.Name) ? existing.Name : promotion.Name;
+            promotion.StartDate ??= existing.StartDate;
+            promotion.EndDate ??= existing.EndDate;
+            promotion.Status = promotion.Status is "active" or "expired" or "disabled"
+                ? promotion.Status
+                : promotion.Active ? "active" : "disabled";
             var updated = await _promotionRepository.UpdateAsync(promotion);
             return MapToDTO(updated);
         }
@@ -154,7 +170,7 @@ namespace backend.Services
             var promotion = await _promotionRepository.GetByIdAsync(id);
             if (promotion == null) return false;
 
-            promotion.Active = !promotion.Active;
+            promotion.Status = promotion.Status == "disabled" ? "active" : "disabled";
             await _promotionRepository.UpdateAsync(promotion);
             return true;
         }
@@ -284,11 +300,7 @@ namespace backend.Services
             var promotion = await _promotionRepository.GetByIdAsync(promotionId);
             if (promotion == null) return false;
 
-            // Nếu UsedCount != null → mới được tính giới hạn → mới tăng
-            if (promotion.UsedCount != null)
-            {
-                await _promotionRepository.IncrementUsedCountAsync(promotionId);
-            }
+            await _promotionRepository.IncrementUsedCountAsync(promotionId);
 
             // Add redemption record
             await _promotionRepository.AddRedemptionAsync(new PromotionRedemption
@@ -399,6 +411,8 @@ namespace backend.Services
                 Active = p.Active,
                 Status = p.Status,
                 Description = p.Description,
+                VoucherCode = p.VoucherCode,
+                ProductIds = p.ProductIds,
                 CreatedAt = p.CreatedAt,
                 UpdatedAt = p.UpdatedAt
             };

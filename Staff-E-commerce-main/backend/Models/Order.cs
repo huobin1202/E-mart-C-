@@ -9,7 +9,7 @@ namespace backend.Models
     [Table("orders")]
     [Index(nameof(OrderNumber), IsUnique = true, Name = "ux_orders_order_number")]
     [Index(nameof(CustomerId), Name = "idx_orders_customer")]
-    [Index(nameof(UserId), Name = "idx_orders_user")]
+    [Index(nameof(UserId), Name = "idx_orders_employee")]
     [Index(nameof(Status), Name = "idx_orders_status")]
     public class Order
     {
@@ -25,8 +25,12 @@ namespace backend.Models
         [Column("customer_id")]
         public int? CustomerId { get; set; }
 
-        [Column("user_id")]
+        [Column("employee_id")]
         public int? UserId { get; set; }
+
+        [Column("order_type")]
+        [StringLength(20)]
+        public string OrderType { get; set; } = "pos";
 
         // Use string to match DB ENUM; alternatively use enum + conversion
         [Column("status")]
@@ -41,6 +45,14 @@ namespace backend.Models
 
         [Column("total_amount", TypeName = "decimal(12,2)")]
         public decimal TotalAmount { get; set; } = 0m;
+
+        [Column("payment_method")]
+        [StringLength(20)]
+        public string? PaymentMethod { get; set; }
+
+        [Column("payment_status")]
+        [StringLength(20)]
+        public string PaymentStatus { get; set; } = "pending";
 
         [Column("promotion_id")]
         public int? PromotionId { get; set; }

@@ -64,10 +64,14 @@ namespace backend.Controllers
 
                 return Ok(savedOrder);
             }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
             catch (Exception ex)
             {
-                // NÊN log ex ở đây
-                return StatusCode(500, ex.Message);
+                Console.Error.WriteLine($"Create order failed: {ex}");
+                return StatusCode(500, new { message = "Không thể tạo đơn hàng. Vui lòng thử lại." });
             }
         }
 
