@@ -15,11 +15,30 @@ namespace backend.Controllers
     {
         private readonly AppDbContext _db;
         private readonly JwtService _jwt;
+        private readonly PromotionService _promotions;
 
-        public StorefrontController(AppDbContext db, JwtService jwt)
+        public StorefrontController(AppDbContext db, JwtService jwt, PromotionService promotions)
         {
             _db = db;
             _jwt = jwt;
+            _promotions = promotions;
+        }
+
+        [HttpGet("promotions")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetStorefrontPromotions()
+        {
+            var promotions = await _promotions.GetActivePromotionsAsync();
+            return Ok(promotions.Where(item => item.Type == "voucher"));
+        }
+
+        [HttpPost("promotions/validate")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ValidateStorefrontPromotion([FromBody] StorefrontPromotionRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Code)) return BadRequest(new { message = "Nhập mã phiếu mua hàng." });
+            var result = await _promotions.ValidatePromotionAsync(request.Code, request.OrderAmount);
+            return Ok(result);
         }
 
         [HttpPost("login")]
@@ -259,6 +278,16 @@ namespace backend.Controllers
                     };
                 }).ToList();
                 var subtotal = items.Sum(item => item.TotalPrice);
+                var discount = 0m;
+                Promotion? appliedPromotion = null;
+                if (!string.IsNullOrWhiteSpace(request.PromotionCode))
+                {
+                    var validation = await _promotions.ValidatePromotionAsync(request.PromotionCode, subtotal);
+                    if (!validation.IsValid || validation.Promotion == null)
+                        return BadRequest(new { message = validation.Message });
+                    discount = Math.Min(subtotal, validation.DiscountAmount);
+                    appliedPromotion = await _db.Promotions.FirstOrDefaultAsync(p => p.Id == validation.Promotion.Id);
+                }
 
                 var order = new Order
                 {
@@ -268,8 +297,9 @@ namespace backend.Controllers
                     UserId = null,
                     Status = "pending",
                     Subtotal = subtotal,
-                    Discount = 0,
-                    TotalAmount = subtotal,
+                    Discount = discount,
+                    TotalAmount = subtotal - discount,
+                    PromotionId = appliedPromotion?.Id,
                     Note = $"Người nhận: {request.FullName.Trim()}\nSố điện thoại: {request.Phone.Trim()}\nĐịa chỉ giao hàng: {request.Address.Trim()}{(string.IsNullOrWhiteSpace(request.Note) ? "" : $"\nGhi chú: {request.Note.Trim()}")}",
                     CreatedAt = now,
                     UpdatedAt = now,
@@ -277,6 +307,7 @@ namespace backend.Controllers
                 };
 
                 _db.Orders.Add(order);
+                if (appliedPromotion != null) appliedPromotion.UsedCount++;
                 await _db.SaveChangesAsync();
 
                 foreach (var line in requestedLines)
@@ -302,6 +333,7 @@ namespace backend.Controllers
                     order.OrderNumber,
                     order.Status,
                     order.Subtotal,
+                    order.Discount,
                     order.TotalAmount,
                     order.CreatedAt
                 });
@@ -368,6 +400,8 @@ namespace backend.Controllers
         [StringLength(500)]
         public string? Note { get; set; }
 
+        public string? PromotionCode { get; set; }
+
         [Required, MinLength(1), MaxLength(30)]
         public List<StorefrontOrderLine> Items { get; set; } = new();
     }
@@ -379,5 +413,11 @@ namespace backend.Controllers
 
         [Range(1, 1000)]
         public int Quantity { get; set; }
+    }
+
+    public class StorefrontPromotionRequest
+    {
+        public string Code { get; set; } = string.Empty;
+        public decimal OrderAmount { get; set; }
     }
 }

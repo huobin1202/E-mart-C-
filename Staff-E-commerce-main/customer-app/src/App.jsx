@@ -22,6 +22,7 @@ const API_ORIGIN = API_URL.replace(/\/api$/, "");
 const CART_KEY = "e-mart-mobile-cart";
 const CUSTOMER_KEY = "e-mart-mobile-customer";
 const CUSTOMER_TOKEN_KEY = "e-mart-mobile-customer-token";
+const ADDRESS_KEY = "e-mart-mobile-delivery-address";
 const GREEN = "#126a43";
 const DARK = "#1f3027";
 const MUTED = "#78857c";
@@ -111,6 +112,24 @@ export default function App() {
   const [accountBusy, setAccountBusy] = useState(false);
   const [accountError, setAccountError] = useState("");
   const [accountMessage, setAccountMessage] = useState("");
+  const [profilePage, setProfilePage] = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState({ city: "", ward: "", street: "", otherReceiver: false });
+  const [addressMessage, setAddressMessage] = useState("");
+  const [voucherOpen, setVoucherOpen] = useState(false);
+  const [voucherCode, setVoucherCode] = useState("");
+  const [voucherList, setVoucherList] = useState([]);
+  const [voucherBusy, setVoucherBusy] = useState(false);
+  const [voucherMessage, setVoucherMessage] = useState("");
+  const [appliedVoucher, setAppliedVoucher] = useState(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem(ADDRESS_KEY).then((stored) => {
+      if (!stored) return;
+      const address = JSON.parse(stored);
+      setDeliveryAddress(address);
+      setCheckoutForm((form) => ({ ...form, address: [address.street, address.ward, address.city].filter(Boolean).join(", ") }));
+    }).catch(() => {});
+  }, []);
 
   const loadStore = useCallback(async () => {
     setLoading(true);
@@ -255,6 +274,18 @@ export default function App() {
     }
   };
 
+  const saveDeliveryAddress = async () => {
+    if (!deliveryAddress.city.trim() || !deliveryAddress.ward.trim() || !deliveryAddress.street.trim()) {
+      setAddressMessage("Vui lòng nhập tỉnh/thành phố, phường/xã và số nhà, tên đường.");
+      return;
+    }
+    const address = { ...deliveryAddress, city: deliveryAddress.city.trim(), ward: deliveryAddress.ward.trim(), street: deliveryAddress.street.trim() };
+    await AsyncStorage.setItem(ADDRESS_KEY, JSON.stringify(address));
+    setDeliveryAddress(address);
+    setCheckoutForm((form) => ({ ...form, address: [address.street, address.ward, address.city].join(", ") }));
+    setAddressMessage("Đã lưu địa chỉ nhận hàng.");
+  };
+
   const logoutCustomer = () => {
     Alert.alert("Đăng xuất", "Bạn muốn đăng xuất khỏi tài khoản này?", [
       { text: "Ở lại", style: "cancel" },
@@ -282,6 +313,45 @@ export default function App() {
   }), [products, query, categoryId]);
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const payable = Math.max(0, subtotal - (appliedVoucher?.discountAmount || 0));
+
+  const openVouchers = async () => {
+    setVoucherOpen(true);
+    setVoucherMessage("");
+    try {
+      const response = await fetch(`${API_URL}/storefront/promotions`);
+      if (!response.ok) throw new Error(await readError(response));
+      const data = await response.json();
+      setVoucherList(Array.isArray(data) ? data : []);
+    } catch (error) {
+      setVoucherMessage(error.message || "Không tải được phiếu mua hàng.");
+    }
+  };
+
+  const applyVoucher = async (code = voucherCode) => {
+    const normalizedCode = code.trim();
+    if (!normalizedCode) { setVoucherMessage("Nhập mã phiếu mua hàng."); return; }
+    setVoucherBusy(true);
+    setVoucherMessage("");
+    try {
+      const response = await fetch(`${API_URL}/storefront/promotions/validate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: normalizedCode, orderAmount: subtotal }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.isValid) throw new Error(result.message || "Phiếu mua hàng không hợp lệ.");
+      setAppliedVoucher({ code: normalizedCode, discountAmount: result.discountAmount, promotion: result.promotion });
+      setVoucherCode(normalizedCode);
+      setVoucherMessage(`Đã áp dụng ${money(result.discountAmount)} giảm giá.`);
+      setVoucherOpen(false);
+    } catch (error) {
+      setAppliedVoucher(null);
+      setVoucherMessage(error.message || "Không thể áp dụng phiếu mua hàng.");
+    } finally {
+      setVoucherBusy(false);
+    }
+  };
 
   const addToCart = (product) => {
     setCart((current) => {
@@ -316,6 +386,7 @@ export default function App() {
           fullName: customer?.fullName?.trim() || checkoutForm.fullName.trim(),
           phone: customer?.phone || checkoutForm.phone.trim(),
           items: cart.map((item) => ({ productId: item.id, quantity: item.quantity })),
+          promotionCode: appliedVoucher?.code || null,
         }),
       });
       if (!response.ok) throw new Error(await readError(response));
@@ -372,7 +443,7 @@ export default function App() {
       <Text style={styles.pageTitle}>{itemCount} sản phẩm</Text>
       {!cart.length ? <View style={styles.emptyState}><Text style={styles.emptyEmoji}>🛍️</Text><Text style={styles.emptyTitle}>Giỏ hàng đang trống</Text><Text style={styles.stateText}>Chọn vài món ngon cho hôm nay nhé.</Text><AppButton title="Tiếp tục mua sắm" onPress={() => setTab("home")} style={styles.emptyCta} /></View> : <>
         {cart.map((item) => <View key={item.id} style={styles.cartRow}><View style={styles.cartThumb}><ProductImage imagePath={item.image} productId={item.id} style={styles.cartImage} /></View><View style={styles.cartInfo}><Text style={styles.cartName} numberOfLines={2}>{item.name}</Text><Text style={styles.cartPrice}>{money(item.price)}</Text><View style={styles.quantityControl}><Pressable onPress={() => changeQuantity(item.id, -1)} style={styles.quantityButton}><Text style={styles.quantityText}>−</Text></Pressable><Text style={styles.quantityValue}>{item.quantity}</Text><Pressable onPress={() => changeQuantity(item.id, 1)} style={styles.quantityButton}><Text style={styles.quantityText}>＋</Text></Pressable></View></View></View>)}
-        <View style={styles.summaryCard}><View style={styles.summaryLine}><Text style={styles.summaryLabel}>Tạm tính</Text><Text style={styles.summaryValue}>{money(subtotal)}</Text></View><View style={styles.summaryLine}><Text style={styles.summaryLabel}>Thanh toán</Text><Text style={styles.freeShipping}>Khi nhận hàng</Text></View><View style={styles.summaryTotal}><Text style={styles.summaryTotalLabel}>Tổng cộng</Text><Text style={styles.summaryTotalValue}>{money(subtotal)}</Text></View><AppButton title="Tiến hành đặt hàng  →" onPress={() => { setOrderError(""); setCompletedOrder(null); setCheckoutOpen(true); }} /></View>
+        <View style={styles.summaryCard}><View style={styles.summaryLine}><Text style={styles.summaryLabel}>Tạm tính</Text><Text style={styles.summaryValue}>{money(subtotal)}</Text></View><View style={styles.summaryLine}><Text style={styles.summaryLabel}>Thanh toán</Text><Text style={styles.freeShipping}>Khi nhận hàng</Text></View><Pressable style={styles.voucherRow} onPress={openVouchers}><Text style={styles.voucherLabel}>Phiếu mua hàng</Text><Text style={styles.voucherAction}>{appliedVoucher ? `-${money(appliedVoucher.discountAmount)} · Đổi` : "Sử dụng  ›"}</Text></Pressable>{appliedVoucher ? <Pressable onPress={() => setAppliedVoucher(null)}><Text style={styles.voucherRemove}>Bỏ phiếu mua hàng</Text></Pressable> : null}<View style={styles.summaryTotal}><Text style={styles.summaryTotalLabel}>Tổng cộng</Text><Text style={styles.summaryTotalValue}>{money(payable)}</Text></View><AppButton title="Tiến hành đặt hàng  →" onPress={() => { setOrderError(""); setCompletedOrder(null); setCheckoutOpen(true); }} /><AppButton title="Xóa hết sản phẩm" secondary onPress={() => Alert.alert("Xóa giỏ hàng", "Bạn có chắc muốn xóa tất cả sản phẩm khỏi giỏ hàng?", [{ text: "Hủy", style: "cancel" }, { text: "Xóa hết", style: "destructive", onPress: () => { setCart([]); setAppliedVoucher(null); } }])} /></View>
       </>}
     </ScrollView>
   );
@@ -481,6 +552,27 @@ export default function App() {
 
   const renderProfile = () => (
     <ScrollView contentContainerStyle={styles.pageContent} keyboardShouldPersistTaps="handled">
+      {profilePage ? <>
+        <View style={styles.accountPageHeading}><Pressable style={styles.accountBackButton} onPress={() => { setProfilePage(""); setAccountError(""); setAccountMessage(""); setAddressMessage(""); }}><Text style={styles.accountBack}>‹</Text></Pressable><Text style={styles.accountPageTitle}>{profilePage === "personal" ? "Thông tin tài khoản" : "Địa chỉ nhận hàng"}</Text></View>
+        {profilePage === "personal" ? <View style={styles.infoCard}>
+          <TextInput value={accountName} onChangeText={setAccountName} placeholder="Họ và tên *" style={styles.accountInput} maxLength={150} autoCapitalize="words" />
+          <Text style={[styles.accountInput, styles.phoneReadonly]}><Text style={styles.phoneHint}>Số điện thoại *</Text>{"\n"}{customer?.phone}</Text>
+          {accountError ? <Text style={styles.orderError}>{accountError}</Text> : null}
+          {accountMessage ? <Text style={styles.accountMessage}>{accountMessage}</Text> : null}
+          <AppButton title={accountBusy ? "Đang lưu..." : "Lưu chỉnh sửa"} onPress={saveAccountName} disabled={accountBusy} />
+
+        </View> : <View style={styles.infoCard}>
+          <Pressable style={styles.locationButton} onPress={() => Alert.alert("Lấy vị trí hiện tại", "Tính năng định vị sẽ được bổ sung khi ứng dụng tích hợp quyền truy cập vị trí.")}><Text style={styles.locationButtonText}>◎ Lấy vị trí hiện tại</Text></Pressable>
+          <TextInput value={deliveryAddress.city} onChangeText={(city) => setDeliveryAddress((a) => ({ ...a, city }))} placeholder="Tỉnh/Thành phố" style={styles.accountInput} />
+          <TextInput value={deliveryAddress.ward} onChangeText={(ward) => setDeliveryAddress((a) => ({ ...a, ward }))} placeholder="Phường/Xã" style={styles.accountInput} />
+          <TextInput value={deliveryAddress.street} onChangeText={(street) => setDeliveryAddress((a) => ({ ...a, street }))} placeholder="Số nhà, tên đường" style={styles.accountInput} />
+          <Text style={styles.receiverLine}>Người nhận:  <Text style={styles.receiverPhone}>{customer?.phone}</Text></Text>
+          <Pressable style={styles.receiverCheck} onPress={() => setDeliveryAddress((a) => ({ ...a, otherReceiver: !a.otherReceiver }))}><Text style={styles.checkBox}>{deliveryAddress.otherReceiver ? "☑" : "□"}</Text><Text style={styles.genderText}>Gọi người khác nhận hàng (nếu có)</Text></Pressable>
+          {deliveryAddress.otherReceiver ? <TextInput placeholder="Tên và số điện thoại người nhận" style={styles.accountInput} /> : null}
+          {addressMessage ? <Text style={styles.accountMessage}>{addressMessage}</Text> : null}
+          <AppButton title="Lưu địa chỉ" onPress={saveDeliveryAddress} />
+        </View>}
+      </> : <>
       <Text style={styles.eyebrow}>E-MART</Text>
       <Text style={styles.pageTitle}>Tài khoản</Text>
       {!accountReady ? <View style={styles.centerState}><ActivityIndicator color={GREEN} /><Text style={styles.stateText}>Đang tải tài khoản...</Text></View> : customer ? <>
@@ -489,13 +581,9 @@ export default function App() {
           <Text style={styles.emptyTitle}>{customer.fullName || "Chào mừng bạn"}</Text>
           <Text style={styles.stateText}>{customer.phone}</Text>
         </View>
-        <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>Cài đặt tài khoản</Text>
-          <Text style={styles.inputLabel}>HỌ VÀ TÊN</Text>
-          <TextInput value={accountName} onChangeText={setAccountName} placeholder="Nhập họ tên của bạn" style={styles.formInput} maxLength={150} autoCapitalize="words" />
-          <AppButton title={accountBusy ? "Đang lưu..." : "Lưu họ tên"} onPress={saveAccountName} disabled={accountBusy} />
-          {accountError ? <Text style={styles.orderError}>{accountError}</Text> : null}
-          {accountMessage ? <Text style={styles.accountMessage}>{accountMessage}</Text> : null}
+        <View style={styles.infoCard}><Text style={styles.infoTitle}>Thông tin cá nhân</Text>
+          <Pressable style={styles.profileMenuRow} onPress={() => { setAccountName(customer.fullName || ""); setProfilePage("personal"); }}><Text style={styles.profileMenuIcon}>♙</Text><Text style={styles.profileMenuText}>Sửa thông tin cá nhân</Text><Text style={styles.profileMenuArrow}>›</Text></Pressable>
+          <Pressable style={styles.profileMenuRow} onPress={() => { setAddressMessage(""); setProfilePage("address"); }}><Text style={styles.profileMenuIcon}>♧</Text><Text style={styles.profileMenuText}>Địa chỉ nhận hàng</Text><Text style={styles.profileMenuArrow}>›</Text></Pressable>
         </View>
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>Hỗ trợ khách hàng</Text>
@@ -517,6 +605,7 @@ export default function App() {
         </View>
       </>}
       <View style={styles.infoCard}><Text style={styles.infoTitle}>Hỗ trợ khách hàng</Text><Text style={styles.stateText}>Đơn hàng hiện thanh toán khi nhận hàng.</Text></View>
+      </>}
     </ScrollView>
   );
 
@@ -549,6 +638,21 @@ export default function App() {
             </ScrollView>}
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+      <Modal visible={voucherOpen} transparent animationType="slide" onRequestClose={() => setVoucherOpen(false)}>
+        <View style={styles.voucherBackdrop}>
+          <View style={styles.voucherSheet}>
+            <View style={styles.voucherHeading}><Text style={styles.voucherTitle}>Phiếu mua hàng</Text><Pressable style={styles.voucherCloseButton} onPress={() => setVoucherOpen(false)}><Text style={styles.voucherClose}>×</Text></Pressable></View>
+            <View style={styles.voucherCodeRow}><TextInput value={voucherCode} onChangeText={setVoucherCode} placeholder="Nhập mã phiếu" autoCapitalize="characters" style={styles.voucherInput} /><Pressable disabled={voucherBusy} onPress={() => applyVoucher()} style={[styles.voucherAdd, voucherBusy && styles.buttonDisabled]}><Text style={styles.voucherAddText}>{voucherBusy ? "..." : "Thêm"}</Text></Pressable></View>
+            <Text style={styles.voucherSubheading}>Phiếu mua hàng khả dụng</Text>
+            <ScrollView style={styles.voucherList} keyboardShouldPersistTaps="handled">
+              {voucherList.map((voucher) => <View key={voucher.id} style={styles.voucherCard}><View style={styles.voucherCardTop}><View style={styles.voucherBadge}><Text style={styles.voucherBadgeText}>{voucher.discountType === "percent" ? `${voucher.value}%` : money(voucher.value)}</Text></View><View style={styles.voucherInfo}><Text style={styles.voucherName}>{voucher.name || "Phiếu mua hàng"}</Text><Text style={styles.voucherExpiry}>{voucher.code}{voucher.endDate ? ` · Hạn ${new Date(voucher.endDate).toLocaleDateString("vi-VN")}` : ""}</Text></View><Pressable onPress={() => applyVoucher(voucher.code)}><Text style={styles.voucherUse}>Dùng</Text></Pressable></View>{voucher.description ? <Text style={styles.voucherDescription}>{voucher.description}</Text> : null}{voucher.minOrderAmount > 0 ? <Text style={styles.voucherExpiry}>Đơn tối thiểu {money(voucher.minOrderAmount)}</Text> : null}</View>)}
+              {!voucherList.length && !voucherMessage ? <View style={styles.centerState}><Text style={styles.stateText}>Chưa có phiếu mua hàng khả dụng.</Text></View> : null}
+              {voucherMessage ? <Text style={styles.voucherMessage}>{voucherMessage}</Text> : null}
+            </ScrollView>
+            <AppButton title={appliedVoucher ? `Đang dùng · giảm ${money(appliedVoucher.discountAmount)}` : "Chọn phiếu mua hàng"} disabled={!appliedVoucher} onPress={() => setVoucherOpen(false)} />
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -700,6 +804,52 @@ const styles = StyleSheet.create({
   profileEmoji: { fontSize: 39, marginBottom: 8 },
   infoCard: { backgroundColor: "#fff", borderRadius: 13, padding: 16, marginTop: 13 },
   infoTitle: { color: DARK, fontSize: 13, fontWeight: "900" },
+  voucherRow: { minHeight: 43, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: "#edf0ec", marginTop: 8, paddingTop: 7 },
+  voucherLabel: { color: "#344054", fontSize: 13, fontWeight: "700" },
+  voucherAction: { color: "#83909c", fontSize: 12 },
+  voucherRemove: { color: "#b0443c", fontSize: 11, textAlign: "right", marginBottom: 5 },
+  voucherBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "#14221966" },
+  voucherSheet: { height: "78%", backgroundColor: "#f8faff", borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingHorizontal: 16, paddingBottom: 14 },
+  voucherHeading: { height: 62, marginHorizontal: -16, paddingHorizontal: 20, backgroundColor: "#fff", borderBottomWidth: 1, borderBottomColor: "#e7eaf0", borderTopLeftRadius: 22, borderTopRightRadius: 22, flexDirection: "row", alignItems: "center", justifyContent: "center" },
+  voucherTitle: { color: DARK, fontSize: 18, fontWeight: "900" },
+  voucherCloseButton: { position: "absolute", right: 18, top: 15 },
+  voucherClose: { color: "#fff", backgroundColor: "#9da8ba", overflow: "hidden", borderRadius: 20, width: 30, height: 30, textAlign: "center", lineHeight: 28, fontSize: 25 },
+  voucherCodeRow: { flexDirection: "row", gap: 9, marginTop: 14, marginBottom: 14 },
+  voucherInput: { flex: 1, minHeight: 48, backgroundColor: "#fff", borderColor: "#dce3e9", borderWidth: 1, borderRadius: 10, paddingHorizontal: 13, color: DARK, fontSize: 14 },
+  voucherAdd: { width: 86, borderRadius: 10, backgroundColor: GREEN, alignItems: "center", justifyContent: "center" },
+  voucherAddText: { color: "#fff", fontSize: 14, fontWeight: "900" },
+  voucherSubheading: { color: "#59636f", fontSize: 13, fontWeight: "800", marginBottom: 8 },
+  voucherList: { flex: 1 },
+  voucherCard: { backgroundColor: "#fff", borderRadius: 12, borderColor: "#e2e8ef", borderWidth: 1, padding: 12, marginBottom: 9 },
+  voucherCardTop: { flexDirection: "row", alignItems: "center", gap: 10 },
+  voucherBadge: { minWidth: 58, minHeight: 45, paddingHorizontal: 5, borderRadius: 7, backgroundColor: "#e9edf5", alignItems: "center", justifyContent: "center" },
+  voucherBadgeText: { color: "#49576a", fontWeight: "900", fontSize: 13 },
+  voucherInfo: { flex: 1 },
+  voucherName: { color: "#303b4b", fontSize: 13, lineHeight: 18, fontWeight: "700" },
+  voucherExpiry: { color: "#8b95a1", fontSize: 11, marginTop: 4 },
+  voucherUse: { color: "#25976c", fontSize: 12, fontWeight: "900" },
+  voucherDescription: { color: "#d58b3d", fontSize: 11, lineHeight: 16, marginTop: 8 },
+  voucherMessage: { color: "#b0443c", fontSize: 12, marginVertical: 8 },
+  accountPageHeading: { minHeight: 54, backgroundColor: "#fff", flexDirection: "row", alignItems: "center", justifyContent: "center", borderRadius: 12, marginBottom: 10, position: "relative" },
+  accountBackButton: { position: "absolute", left: 7, top: 5, zIndex: 1, width: 42, height: 44, justifyContent: "center" },
+  accountBack: { color: DARK, fontSize: 34, lineHeight: 40 },
+  accountPageTitle: { color: DARK, fontSize: 17, fontWeight: "900" },
+  profileMenuRow: { minHeight: 55, flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderTopColor: "#edf0ec", marginTop: 12, paddingTop: 7 },
+  profileMenuIcon: { width: 35, color: "#78857c", fontSize: 21 },
+  profileMenuText: { flex: 1, color: "#29352f", fontSize: 14 },
+  profileMenuArrow: { color: "#111", fontSize: 29, fontWeight: "700" },
+  genderText: { color: "#293443", fontSize: 16 },
+  accountInput: { minHeight: 53, borderWidth: 1, borderColor: "#dce3e9", borderRadius: 10, paddingHorizontal: 14, color: DARK, fontSize: 16, marginBottom: 12, justifyContent: "center" },
+  phoneReadonly: { backgroundColor: "#e5eaf6", borderColor: "#e5eaf6", paddingTop: 8, fontSize: 16 },
+  phoneHint: { color: "#98a0ac", fontSize: 12 },
+  deleteHint: { color: "#293443", fontSize: 14, lineHeight: 21, textAlign: "center", marginTop: 22 },
+  deleteLink: { color: "#c44343", textDecorationLine: "underline", fontSize: 16, textAlign: "center", marginTop: 12, marginBottom: 5 },
+  locationButton: { minHeight: 48, borderWidth: 1, borderColor: "#e1e5e1", borderRadius: 10, alignItems: "center", justifyContent: "center", marginBottom: 15 },
+  locationButtonText: { color: GREEN, fontSize: 16, fontWeight: "800" },
+  receiverLine: { color: "#293443", fontSize: 15, marginTop: 5, marginBottom: 10 },
+  receiverPhone: { fontWeight: "900" },
+  receiverCheck: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 9 },
+  checkBox: { color: "#75808c", fontSize: 21 },
   bottomNav: { height: 62, backgroundColor: "#fff", borderTopWidth: 1, borderTopColor: "#e9ede8", flexDirection: "row", justifyContent: "space-around", alignItems: "center", paddingBottom: 3 },
   navItem: { minWidth: 60, alignItems: "center", justifyContent: "center", gap: 2 },
   navIcon: { color: "#849087", fontSize: 20, fontWeight: "700", height: 24 },
