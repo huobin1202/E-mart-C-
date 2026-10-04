@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { createPromotion } from "../../api/promotionApi";
+import ProductPickerModal from "../../components/promotions/ProductPickerModal";
 
 export default function PromotionCreate({ onCancel, onSuccess }) {
   const [formData, setFormData] = useState({
@@ -20,14 +21,7 @@ export default function PromotionCreate({ onCancel, onSuccess }) {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [products, setProducts] = useState([]);
-
-  useEffect(() => {
-    fetch("/api/products/available?page=1&pageSize=100")
-      .then((res) => res.ok ? res.json() : Promise.reject(new Error("Không tải được danh sách sản phẩm")))
-      .then((data) => setProducts(data.items || []))
-      .catch((err) => setError(err.message));
-  }, []);
+  const [showProductPicker, setShowProductPicker] = useState(false);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -164,7 +158,13 @@ export default function PromotionCreate({ onCancel, onSuccess }) {
             </div>
           </div>}
           {formData.type === "voucher" && <div><label className="block text-sm font-medium text-gray-700 mb-2">Mã voucher</label><input name="voucherCode" value={formData.voucherCode} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg" required /></div>}
-          {formData.type === "product" && <div><label className="block text-sm font-medium text-gray-700 mb-2">Sản phẩm áp dụng</label><div className="max-h-40 overflow-y-auto rounded-lg border p-3 space-y-2">{products.map((product) => { const selected = formData.productIdsText.split(",").map((id) => id.trim()).includes(String(product.id)); return <label key={product.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={selected} onChange={(e) => { const ids = formData.productIdsText.split(",").map((id) => id.trim()).filter(Boolean); const next = e.target.checked ? [...ids, String(product.id)] : ids.filter((id) => id !== String(product.id)); setFormData((prev) => ({ ...prev, productIdsText: next.join(",") })); }} /><span>{product.name} (#{product.id})</span></label>; })}{products.length === 0 && <p className="text-sm text-gray-500">Không có sản phẩm để chọn.</p>}</div></div>}
+          {formData.type === "product" && <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Sản phẩm áp dụng <span className="text-red-500">*</span></label>
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="button" onClick={() => setShowProductPicker(true)} className="rounded-lg border border-blue-600 px-4 py-2 font-medium text-blue-700 hover:bg-blue-50">Chọn sản phẩm</button>
+              <span className="text-sm text-gray-600">Đã chọn {formData.productIdsText ? formData.productIdsText.split(",").filter(Boolean).length : 0} sản phẩm</span>
+            </div>
+          </div>}
           <div><label className="block text-sm font-medium text-gray-700 mb-2">Giảm tối đa (VNĐ, tùy chọn)</label><input type="number" name="maxDiscount" value={formData.maxDiscount} onChange={handleChange} min="0" step="1000" disabled={formData.discountType === "fixed"} className="w-full px-4 py-2 border border-gray-300 rounded-lg disabled:bg-gray-100" /></div>
 
           {/* Thời gian */}
@@ -254,6 +254,11 @@ export default function PromotionCreate({ onCancel, onSuccess }) {
           </div>
         </form>
       </div>
+      {showProductPicker && <ProductPickerModal
+        selectedIds={formData.productIdsText.split(",").filter(Boolean).map(Number)}
+        onChange={(ids) => setFormData((previous) => ({ ...previous, productIdsText: ids.join(",") }))}
+        onClose={() => setShowProductPicker(false)}
+      />}
     </div>
   );
 }
