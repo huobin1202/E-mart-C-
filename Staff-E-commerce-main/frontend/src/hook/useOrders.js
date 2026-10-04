@@ -3,6 +3,14 @@ import { useState,useEffect,useRef } from "react";
 
 import { request } from "../api/apiClient"; 
 
+const getPayableTotal = (order) => {
+  const subtotal = Number(order?.subtotal);
+  if (Number.isFinite(subtotal)) {
+    return Math.max(0, subtotal - Number(order?.discount || 0));
+  }
+  return Number(order?.total_amount ?? order?.totalAmount ?? 0);
+};
+
 
 export const useOrders = () => {
   // --- Modal states ---
@@ -30,6 +38,7 @@ export const useOrders = () => {
   });
 
   const isSubmittingRef = useRef(false);
+  const latestOrdersRequestRef = useRef(0);
 
 
   // --- Promotion ---
@@ -125,6 +134,23 @@ export const useOrders = () => {
       } catch (error) {
           console.error("Lỗi khi hủy đơn:", error);
           alert("Có lỗi kết nối khi hủy đơn!");
+      }
+  }
+
+  async function completePendingOrder(orderId) {
+      if (!window.confirm("Tạo đơn hàng này và chuyển trạng thái sang hoàn thành?")) return;
+      try {
+          const result = await request(`/orders/${orderId}/complete`, { method: "POST" });
+          if (result === true) {
+              alert("Đơn hàng đã được chuyển sang hoàn thành.");
+              closeOrderModal();
+              loadOrdersAdvanced(currentPage);
+          } else {
+              alert("Không thể hoàn thành đơn hàng này.");
+          }
+      } catch (error) {
+          console.error("Lỗi khi hoàn thành đơn:", error);
+          alert(error.message || "Có lỗi khi hoàn thành đơn hàng.");
       }
   }
 
@@ -302,7 +328,7 @@ const pay = async (method = "cash", currentOrder) => {
 
     const body = {
       OrderId: currentOrder.id,
-      Amount: Math.round(currentOrder.totalAmount),
+      Amount: Math.round(getPayableTotal(currentOrder)),
       ReturnUrl: "",
       NotifyUrl:
         "https://stainful-asher-unfeigningly.ngrok-free.dev/api/payment/momo/ipn"
@@ -342,7 +368,7 @@ const pay = async (method = "cash", currentOrder) => {
             message: "Bạn đã đóng cửa sổ MoMo"
           });
           setCurrentPage(1);
-          loadOrdersAdvanced();
+          loadOrdersAdvanced(1);
           return;
         }
 
@@ -398,7 +424,7 @@ const pay = async (method = "cash", currentOrder) => {
   // ======= CASH / OFFLINE =======
   const body = {
     OrderId: currentOrder.id,
-    Amount: Math.round(currentOrder.totalAmount),
+    Amount: Math.round(getPayableTotal(currentOrder)),
     Method: method,
     Status: "completed"
   };
@@ -619,7 +645,7 @@ const Handleclick_buttonCreateNewOrder = async () => {
 
   console.log("=== KẾT THÚC TẠO ĐƠN HÀNG ===");
   setCurrentPage(1);
-  loadOrdersAdvanced();
+  loadOrdersAdvanced(1);
 };
 
 
@@ -727,7 +753,7 @@ const orderObject = (currentOrder, promotion, payment) => {
     Status: paymentStatus,
     Subtotal: currentOrder.subtotal,
     Discount: currentOrder.discount,
-    TotalAmount: currentOrder.totalAmount ?? currentOrder.total_amount ?? 0,
+    TotalAmount: getPayableTotal(currentOrder),
     PromotionId: promotion?.id ?? null, 
     Note: currentOrder.note,
     CreatedAt: new Date().toISOString(),
@@ -762,10 +788,11 @@ const listReduceItemObject = (listOrderProducts)=>{
  * Api lấy danh sách có phân trang nâng cao (Phân trang bình thường, lọc theo trạng thái đơn hàng, lọc theo ngày bắt đầu kết thúc, tìm kiếm )
  */
 
-const loadOrdersAdvanced = async () => {
+const loadOrdersAdvanced = async (pageToLoad = currentPage) => {
+    const requestId = ++latestOrdersRequestRef.current;
     try {
         const params = new URLSearchParams();
-        params.append("pageNumber", currentPage);
+        params.append("pageNumber", pageToLoad);
         params.append("pageSize", pageSize);
 
         if (selectedStatus) params.append("status", selectedStatus);
@@ -781,6 +808,8 @@ const loadOrdersAdvanced = async () => {
 
         const data = await request(`/orders/search?${params.toString()}`);
 
+        if (requestId !== latestOrdersRequestRef.current) return;
+
         setListOrders(data.items || []);
         setTotalPages(data.totalPages);
 
@@ -790,7 +819,7 @@ const loadOrdersAdvanced = async () => {
             search: searchKeyword,
             startDate: selectedStartDate,
             endDate: selectedEndDate,
-            page: currentPage
+            page: pageToLoad
         });
 
 
@@ -938,8 +967,8 @@ const showOrder = async (index) => {
 
 
 useEffect(() => {
-    loadOrdersAdvanced();
-}, [selectedStatus]);
+    loadOrdersAdvanced(currentPage);
+}, [currentPage, selectedStatus]);
 
 
 
@@ -1002,7 +1031,8 @@ return {
   getPromotionById,
   getPaymentByOrder,
   showOrder,
-  cancelOrder
+  cancelOrder,
+  completePendingOrder
 
 };
 

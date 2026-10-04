@@ -8,7 +8,7 @@ import { useOrders } from "../../hook/useOrders";
 export default function OrdersPage() {
   const handleSearch = () => {
       setCurrentPage(1);
-      loadOrdersAdvanced();
+      loadOrdersAdvanced(1);
   };
 
   const handleFilterDate = () => {
@@ -25,7 +25,7 @@ export default function OrdersPage() {
 
     // Reset trang về 1
     setCurrentPage(1);
-    loadOrdersAdvanced();
+    loadOrdersAdvanced(1);
   };
 
   
@@ -66,7 +66,8 @@ export default function OrdersPage() {
     setSearchKeyword,
     loadOrdersAdvanced ,
     showOrder,
-    cancelOrder
+    cancelOrder,
+    completePendingOrder
 
 
  
@@ -84,6 +85,7 @@ export default function OrdersPage() {
           </label>
           <select
               onChange={(e) => {
+                setCurrentPage(1);
                 setSelectedStatus(e.target.value);
                 console.log("Trạng thái đang được chọn",e.target.value );
               }}
@@ -91,6 +93,7 @@ export default function OrdersPage() {
           >
             <option value="">Tất cả trạng thái</option>
             <option value="pending">Chưa xử lý</option>
+            <option value="processing">Đang xử lý</option>
             <option value="paid">Đã thanh toán</option>
             <option value="completed">Hoàn thành</option>
             <option value="cancelled">Đã hủy</option>
@@ -161,6 +164,7 @@ export default function OrdersPage() {
       promotion={promotion}
       setPromotion={setPromotion}
       click_buttonCreateNewOrder={click_buttonCreateNewOrder}
+      completePendingOrder={completePendingOrder}
      
 
 
@@ -178,13 +182,11 @@ export default function OrdersPage() {
         onPrev={() => {
           if (currentPage > 1) {
             setCurrentPage(currentPage - 1);
-            loadOrdersAdvanced();
           }
         }}
         onNext={() => {
           if (currentPage < totalPages) {
             setCurrentPage(currentPage + 1);
-            loadOrdersAdvanced();
           }
         }}
       />

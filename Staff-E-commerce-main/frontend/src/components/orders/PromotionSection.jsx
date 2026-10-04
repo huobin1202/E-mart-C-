@@ -63,10 +63,12 @@ export default function PromotionSection({ isCreateMode, promotion, setPromotion
     }
 
     // cập nhật order
+    const totalAmount = Math.max(0, subtotal - discountAmount);
     setCurrentOrder((prev) => ({
       ...prev,
       discount: discountAmount,
-      total_amount: subtotal - discountAmount,
+      totalAmount,
+      total_amount: totalAmount,
     }));
   };
 

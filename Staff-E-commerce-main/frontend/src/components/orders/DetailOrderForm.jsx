@@ -39,14 +39,14 @@ export default function DetailOrderForm({
     setCurrent(prev => ({ ...prev, total: prev.price * prev.qty }));
   }, [current.price, current.qty]);
 
-  // Cập nhật subtotal và total_amount
+  // Keep both total field names in sync: the API uses totalAmount while older
+  // order-form code also reads total_amount.
   const updateCurrentOrderTotals = (updatedList) => {
     const subtotal = updatedList.reduce((sum, item) => sum + item.total, 0);
-    setCurrentOrder(prev => ({
-      ...prev,
-      subtotal,
-      total_amount: subtotal, // Nếu có giảm giá, xử lý ở đây
-    }));
+    setCurrentOrder((prev) => {
+      const totalAmount = Math.max(0, subtotal - Number(prev?.discount || 0));
+      return { ...prev, subtotal, totalAmount, total_amount: totalAmount };
+    });
   };
 
   // Thêm sản phẩm

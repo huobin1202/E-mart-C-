@@ -201,6 +201,19 @@ namespace backend.Repository
             }
         }
 
+        public async Task<bool> CompletePendingOrderAsync(int orderId, int userId)
+        {
+            var now = DateTime.UtcNow;
+            var updated = await _context.Orders
+                .Where(order => order.Id == orderId && order.Status == "pending")
+                .ExecuteUpdateAsync(update => update
+                    .SetProperty(order => order.Status, "completed")
+                    .SetProperty(order => order.UserId, (int?)userId)
+                    .SetProperty(order => order.UpdatedAt, now));
+
+            return updated == 1;
+        }
+
 
 
     }

@@ -14,11 +14,6 @@ namespace backend.Services
 
         public (string token, int expiresIn) GenerateToken(User user)
         {
-            var key = _config["Jwt:Key"] ?? throw new Exception("Jwt:Key missing");
-            var issuer = _config["Jwt:Issuer"];
-            var audience = _config["Jwt:Audience"];
-            var expiresMinutes = int.Parse(_config["Jwt:ExpireMinutes"] ?? "60");
-
             var claims = new List<Claim>
             {
                 new Claim(JwtRegisteredClaimNames.Sub, user.Username),
@@ -27,19 +22,32 @@ namespace backend.Services
                 new Claim(ClaimTypes.Role, user.Role)
             };
 
+            return GenerateToken(claims);
+        }
+
+        public (string token, int expiresIn) GenerateCustomerToken(Customer customer)
+        {
+            var claims = new List<Claim>
+            {
+                new Claim(JwtRegisteredClaimNames.Sub, customer.Phone ?? customer.Id.ToString()),
+                new Claim("customer_id", customer.Id.ToString()),
+                new Claim(ClaimTypes.Name, customer.Phone ?? customer.Id.ToString()),
+                new Claim(ClaimTypes.Role, "customer")
+            };
+
+            return GenerateToken(claims);
+        }
+
+        private (string token, int expiresIn) GenerateToken(IEnumerable<Claim> claims)
+        {
+            var key = _config["Jwt:Key"] ?? throw new Exception("Jwt:Key missing");
+            var issuer = _config["Jwt:Issuer"];
+            var audience = _config["Jwt:Audience"];
+            var expiresMinutes = int.Parse(_config["Jwt:ExpireMinutes"] ?? "60");
             var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
             var creds = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
-
-            var token = new JwtSecurityToken(
-                issuer,
-                audience,
-                claims,
-                expires: DateTime.UtcNow.AddMinutes(expiresMinutes),
-                signingCredentials: creds
-            );
-
-            var tokenStr = new JwtSecurityTokenHandler().WriteToken(token);
-            return (tokenStr, expiresMinutes * 60); // seconds
+            var token = new JwtSecurityToken(issuer, audience, claims, expires: DateTime.UtcNow.AddMinutes(expiresMinutes), signingCredentials: creds);
+            return (new JwtSecurityTokenHandler().WriteToken(token), expiresMinutes * 60);
         }
     }
 }

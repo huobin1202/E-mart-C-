@@ -18,6 +18,7 @@ export default function OrdersForm({
   promotion,
   setPromotion,
   click_buttonCreateNewOrder,
+  completePendingOrder,
 }) {
   const formMode = mode;
 
@@ -295,7 +296,7 @@ export default function OrdersForm({
             </div>
             <div className="flex justify-between text-xl text-blue-600">
               <span>Phải trả:</span>{" "}
-              <span>{currentOrder.totalAmount ?? currentOrder.total_amount ?? 0}₫</span>
+              <span>{Math.max(0, Number(currentOrder.subtotal || 0) - Number(currentOrder.discount || 0))}₫</span>
             </div>
           </div>
 
@@ -305,6 +306,14 @@ export default function OrdersForm({
               <button
                 onClick={click_buttonCreateNewOrder}
                 className="px-7 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg"
+              >
+                Tạo Đơn Hàng
+              </button>
+            )}
+            {formMode !== "create" && currentOrder?.status === "pending" && (
+              <button
+                onClick={() => completePendingOrder(currentOrder.id)}
+                className="px-7 py-3 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-lg"
               >
                 Tạo Đơn Hàng
               </button>

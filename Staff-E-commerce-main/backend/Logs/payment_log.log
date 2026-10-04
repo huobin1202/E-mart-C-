@@ -110,3 +110,7 @@
 [2026-09-30 22:41:19] [User:1] [Action:CREATE_Payment] [Entity:Payment#offlinepayment] [IP:127.0.0.1] {"OrderId":48,"Amount":288000,"Method":"cash","Status":"completed"}
 [2026-10-01 08:18:03] [User:1] [Action:CREATE_Payment] [Entity:Payment#offlinepayment] [IP:127.0.0.1] {"OrderId":32,"Amount":320000,"Method":"cash","Status":"completed"}
 [2026-10-04 14:54:21] [User:1] [Action:CREATE_Payment] [Entity:Payment#offlinepayment] [IP:127.0.0.1] {"OrderId":31,"Amount":0,"Method":"cash","Status":"completed"}
+[2026-10-04 16:01:14] [User:1] [Action:CREATE_Payment] [Entity:Payment#offlinepayment] [IP:127.0.0.1] {"OrderId":35,"Amount":0,"Method":"cash","Status":"completed"}
+[2026-10-04 17:50:58] [User:1] [Action:CREATE_Payment] [Entity:Payment#offlinepayment] [IP:127.0.0.1] {"OrderId":38,"Amount":0,"Method":"cash","Status":"completed"}
+[2026-10-04 17:53:02] [User:1] [Action:CREATE_Payment] [Entity:Payment#offlinepayment] [IP:127.0.0.1] {"OrderId":39,"Amount":0,"Method":"cash","Status":"completed"}
+[2026-10-04 17:54:31] [User:1] [Action:CREATE_Payment] [Entity:Payment#offlinepayment] [IP:127.0.0.1] {"OrderId":40,"Amount":0,"Method":"cash","Status":"completed"}

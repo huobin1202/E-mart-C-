@@ -44,6 +44,7 @@ export default function OrderTable(  {showOrder,listOrders,
                         <span className={`px-2 py-1 rounded-full text-sm font-medium ${
                           item.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                           item.status === 'paid' ? 'bg-blue-100 text-blue-600' :
+                          item.status === 'processing' ? 'bg-indigo-100 text-indigo-700' :
                           item.status === 'completed' ? 'bg-green-100 text-green-600' :
                           item.status === 'cancelled' ? 'bg-red-100 text-red-600' :
                           'bg-gray-100 text-gray-600'
@@ -70,11 +71,15 @@ export default function OrderTable(  {showOrder,listOrders,
                         <span className={`px-3 py-1 text-sm font-bold rounded-full ${
                           item.status === 'pending' ? 'text-yellow-800 bg-yellow-100' :
                           item.status === 'paid' ? 'text-blue-600 bg-blue-100' :
+                          item.status === 'processing' ? 'text-indigo-700 bg-indigo-100' :
                           item.status === 'completed' ? 'text-green-600 bg-green-100' :
                           item.status === 'cancelled' ? 'text-red-600 bg-red-100' :
                           'text-gray-600 bg-gray-100'
                         }`}>
-                          {item.status}
+                          {item.status === "pending" ? "Chưa xử lý" :
+                            item.status === "processing" ? "Đang xử lý" :
+                            item.status === "completed" ? "Hoàn thành" :
+                            item.status === "cancelled" ? "Đã hủy" : item.status}
                         </span>
                       </td>
 

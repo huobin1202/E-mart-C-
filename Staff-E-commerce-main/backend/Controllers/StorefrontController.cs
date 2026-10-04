@@ -1,6 +1,8 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.RegularExpressions;
 using backend.Data;
 using backend.Models;
+using backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -9,14 +11,160 @@ namespace backend.Controllers
 {
     [ApiController]
     [Route("api/storefront")]
-    [AllowAnonymous]
     public class StorefrontController : ControllerBase
     {
         private readonly AppDbContext _db;
+        private readonly JwtService _jwt;
 
-        public StorefrontController(AppDbContext db) => _db = db;
+        public StorefrontController(AppDbContext db, JwtService jwt)
+        {
+            _db = db;
+            _jwt = jwt;
+        }
+
+        [HttpPost("login")]
+        [AllowAnonymous]
+        public async Task<IActionResult> Login([FromBody] StorefrontPhoneLoginRequest request)
+        {
+            var phone = NormalizePhone(request.Phone);
+            if (!Regex.IsMatch(phone, "^0[35789]\\d{8}$"))
+                return BadRequest(new { message = "Số điện thoại Việt Nam chưa đúng định dạng." });
+
+            var internationalPhone = $"+84{phone[1..]}";
+            var customer = await _db.Customers.FirstOrDefaultAsync(item =>
+                item.Phone == phone || item.Phone == internationalPhone);
+
+            if (customer == null)
+            {
+                customer = new Customer
+                {
+                    FullName = string.Empty,
+                    Phone = phone,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                _db.Customers.Add(customer);
+                try
+                {
+                    await _db.SaveChangesAsync();
+                }
+                catch (DbUpdateException)
+                {
+                    _db.Entry(customer).State = EntityState.Detached;
+                    customer = await _db.Customers.FirstOrDefaultAsync(item =>
+                        item.Phone == phone || item.Phone == internationalPhone);
+                    if (customer == null) throw;
+                }
+            }
+
+            if (!customer.IsActive)
+                return Unauthorized(new { message = "Tài khoản khách hàng đã bị khóa." });
+
+            var (token, expiresIn) = _jwt.GenerateCustomerToken(customer);
+            return Ok(new
+            {
+                token,
+                tokenType = "Bearer",
+                expiresIn,
+                customer = ToCustomerProfile(customer)
+            });
+        }
+
+        [HttpGet("account")]
+        [Authorize(Roles = "customer")]
+        public async Task<IActionResult> GetAccount()
+        {
+            var customer = await GetAuthenticatedCustomerAsync();
+            return customer == null
+                ? Unauthorized(new { message = "Phiên đăng nhập không hợp lệ." })
+                : Ok(ToCustomerProfile(customer));
+        }
+
+        [HttpPut("account")]
+        [Authorize(Roles = "customer")]
+        public async Task<IActionResult> UpdateAccount([FromBody] StorefrontAccountUpdateRequest request)
+        {
+            var fullName = request.FullName.Trim();
+            if (fullName.Length < 2)
+                return BadRequest(new { message = "Họ tên cần có ít nhất 2 ký tự." });
+
+            var customer = await GetAuthenticatedCustomerAsync();
+            if (customer == null)
+                return Unauthorized(new { message = "Phiên đăng nhập không hợp lệ." });
+
+            customer.FullName = fullName;
+            customer.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+            return Ok(ToCustomerProfile(customer));
+        }
+
+        [HttpGet("orders")]
+        [Authorize(Roles = "customer")]
+        public async Task<IActionResult> GetCustomerOrders()
+        {
+            var customer = await GetAuthenticatedCustomerAsync();
+            if (customer == null)
+                return Unauthorized(new { message = "Phiên đăng nhập không hợp lệ." });
+
+            var orders = await _db.Orders
+                .AsNoTracking()
+                .Where(order => order.CustomerId == customer.Id)
+                .OrderByDescending(order => order.CreatedAt)
+                .ThenByDescending(order => order.Id)
+                .Select(order => new
+                {
+                    order.Id,
+                    order.OrderNumber,
+                    orderType = order.OrderNumber.StartsWith("WEB-") ? "mobile" : order.OrderType,
+                    order.Status,
+                    order.PaymentStatus,
+                    order.PaymentMethod,
+                    order.Subtotal,
+                    order.Discount,
+                    order.TotalAmount,
+                    order.Note,
+                    order.CreatedAt,
+                    items = order.OrderItems.Select(line => new
+                    {
+                        productId = line.ProductId,
+                        productName = line.Product != null ? line.Product.ProductName : "Sản phẩm",
+                        imageUrl = line.Product != null ? line.Product.ImageUrl : null,
+                        quantity = line.Quantity,
+                        unitPrice = line.UnitPrice,
+                        totalPrice = line.TotalPrice
+                    }).ToList()
+                })
+                .ToListAsync();
+
+            return Ok(orders);
+        }
+
+        private async Task<Customer?> GetAuthenticatedCustomerAsync()
+        {
+            var idClaim = User.FindFirst("customer_id")?.Value;
+            return int.TryParse(idClaim, out var customerId)
+                ? await _db.Customers.FirstOrDefaultAsync(customer => customer.Id == customerId && customer.IsActive)
+                : null;
+        }
+
+        private static StorefrontCustomerProfile ToCustomerProfile(Customer customer) => new()
+        {
+            Id = customer.Id,
+            FullName = customer.FullName,
+            Phone = customer.Phone ?? string.Empty
+        };
+
+        private static string NormalizePhone(string phone)
+        {
+            var normalized = Regex.Replace(phone.Trim(), "[\\s()-]", string.Empty);
+            if (normalized.StartsWith("+84", StringComparison.Ordinal))
+                normalized = $"0{normalized[3..]}";
+            return normalized;
+        }
 
         [HttpGet("products")]
+        [AllowAnonymous]
         public async Task<ActionResult<List<StorefrontProductResponse>>> GetProducts()
         {
             var products = await _db.Products
@@ -38,6 +186,7 @@ namespace backend.Controllers
         }
 
         [HttpGet("categories")]
+        [AllowAnonymous]
         public async Task<ActionResult<List<StorefrontCategoryResponse>>> GetCategories()
         {
             var categories = await _db.Categories
@@ -55,6 +204,7 @@ namespace backend.Controllers
         }
 
         [HttpPost("orders")]
+        [AllowAnonymous]
         public async Task<IActionResult> CreateOrder([FromBody] StorefrontOrderRequest request)
         {
             var requestedLines = request.Items
@@ -113,6 +263,7 @@ namespace backend.Controllers
                 var order = new Order
                 {
                     OrderNumber = $"WEB-{Guid.NewGuid():N}",
+                    OrderType = "mobile",
                     CustomerId = customer.Id,
                     UserId = null,
                     Status = "pending",
@@ -182,6 +333,25 @@ namespace backend.Controllers
     {
         public int Id { get; set; }
         public string Name { get; set; } = string.Empty;
+    }
+
+    public class StorefrontPhoneLoginRequest
+    {
+        [Required, StringLength(20)]
+        public string Phone { get; set; } = string.Empty;
+    }
+
+    public class StorefrontAccountUpdateRequest
+    {
+        [Required, StringLength(150)]
+        public string FullName { get; set; } = string.Empty;
+    }
+
+    public class StorefrontCustomerProfile
+    {
+        public int Id { get; set; }
+        public string FullName { get; set; } = string.Empty;
+        public string Phone { get; set; } = string.Empty;
     }
 
     public class StorefrontOrderRequest

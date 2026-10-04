@@ -191,6 +191,12 @@ namespace backend.Services
             return await _orderRepo.CancelOrderAsync(orderId);
         }
 
+        public async Task<bool> CompletePendingOrderAsync(int orderId)
+        {
+            var currentUserId = GetCurrentUserId();
+            return await _orderRepo.CompletePendingOrderAsync(orderId, currentUserId);
+        }
+
 
 
 

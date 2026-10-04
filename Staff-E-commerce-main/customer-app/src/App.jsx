@@ -20,12 +20,37 @@ import {
 const API_URL = (process.env.EXPO_PUBLIC_API_URL || "http://10.0.2.2:5099/api").replace(/\/$/, "");
 const API_ORIGIN = API_URL.replace(/\/api$/, "");
 const CART_KEY = "e-mart-mobile-cart";
+const CUSTOMER_KEY = "e-mart-mobile-customer";
+const CUSTOMER_TOKEN_KEY = "e-mart-mobile-customer-token";
 const GREEN = "#126a43";
 const DARK = "#1f3027";
 const MUTED = "#78857c";
 
 const imageUrl = (path) => !path ? null : path.startsWith("http") ? path : `${API_ORIGIN}${path.startsWith("/") ? "" : "/"}${path}`;
 const money = (value) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 }).format(value || 0);
+
+function ProductImage({ imagePath, productId, style }) {
+  const candidates = [
+    imageUrl(imagePath),
+    productId ? `${API_ORIGIN}/assets/images/products/product-${productId}.jpg` : null,
+    `${API_ORIGIN}/assets/images/products/default.jpg`,
+  ].filter((uri, index, all) => uri && all.indexOf(uri) === index);
+  const [candidateIndex, setCandidateIndex] = useState(0);
+
+  useEffect(() => setCandidateIndex(0), [imagePath, productId]);
+
+  const uri = candidates[candidateIndex];
+  if (!uri) return <Text style={styles.productEmoji}>🥬</Text>;
+
+  return (
+    <Image
+      source={{ uri }}
+      style={style}
+      resizeMode="contain"
+      onError={() => setCandidateIndex((index) => Math.min(index + 1, candidates.length))}
+    />
+  );
+}
 
 async function readError(response) {
   const body = await response.json().catch(() => ({}));
@@ -41,11 +66,10 @@ function AppButton({ title, onPress, secondary = false, disabled = false, style 
 }
 
 function ProductCard({ product, onAdd }) {
-  const uri = imageUrl(product.imageUrl);
   return (
     <View style={styles.productCard}>
       <View style={styles.productImageBox}>
-        {uri ? <Image source={{ uri }} style={styles.productImage} resizeMode="contain" /> : <Text style={styles.productEmoji}>🥬</Text>}
+        <ProductImage imagePath={product.imageUrl} productId={product.id} style={styles.productImage} />
       </View>
       <Text style={styles.productCategory} numberOfLines={1}>{product.categoryName || "HÀNG TIÊU DÙNG"}</Text>
       <Text style={styles.productName} numberOfLines={2}>{product.productName}</Text>
@@ -73,6 +97,20 @@ export default function App() {
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [orderError, setOrderError] = useState("");
   const [completedOrder, setCompletedOrder] = useState(null);
+  const [customerOrders, setCustomerOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState("");
+  const [ordersRefreshKey, setOrdersRefreshKey] = useState(0);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [orderFilter, setOrderFilter] = useState("all");
+  const [customer, setCustomer] = useState(null);
+  const [customerToken, setCustomerToken] = useState("");
+  const [accountReady, setAccountReady] = useState(false);
+  const [loginPhone, setLoginPhone] = useState("");
+  const [accountName, setAccountName] = useState("");
+  const [accountBusy, setAccountBusy] = useState(false);
+  const [accountError, setAccountError] = useState("");
+  const [accountMessage, setAccountMessage] = useState("");
 
   const loadStore = useCallback(async () => {
     setLoading(true);
@@ -104,6 +142,138 @@ export default function App() {
   useEffect(() => {
     if (cartLoaded) AsyncStorage.setItem(CART_KEY, JSON.stringify(cart)).catch(() => { });
   }, [cart, cartLoaded]);
+  useEffect(() => {
+    let active = true;
+    const restoreAccount = async () => {
+      try {
+        const values = await AsyncStorage.multiGet([CUSTOMER_TOKEN_KEY, CUSTOMER_KEY]);
+        const token = values[0][1];
+        const storedCustomer = values[1][1] ? JSON.parse(values[1][1]) : null;
+        if (!token || !storedCustomer) return;
+
+        const response = await fetch(`${API_URL}/storefront/account`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) throw new Error("Phiên đăng nhập đã hết hạn.");
+        const profile = await response.json();
+        if (!active) return;
+        setCustomer(profile);
+        setCustomerToken(token);
+        setAccountName(profile.fullName || "");
+        setCheckoutForm((form) => ({ ...form, fullName: profile.fullName || "", phone: profile.phone || "" }));
+      } catch {
+        await AsyncStorage.multiRemove([CUSTOMER_TOKEN_KEY, CUSTOMER_KEY]).catch(() => { });
+      } finally {
+        if (active) setAccountReady(true);
+      }
+    };
+    restoreAccount();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (tab !== "orders" || !customerToken) return undefined;
+    let active = true;
+    setOrdersLoading(true);
+    setOrdersError("");
+    fetch(`${API_URL}/storefront/orders`, {
+      headers: { Authorization: `Bearer ${customerToken}` },
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(await readError(response));
+        return response.json();
+      })
+      .then((data) => { if (active) setCustomerOrders(Array.isArray(data) ? data : []); })
+      .catch((error) => { if (active) setOrdersError(error.message || "Không thể tải lịch sử đơn hàng."); })
+      .finally(() => { if (active) setOrdersLoading(false); });
+    return () => { active = false; };
+  }, [tab, customerToken, ordersRefreshKey]);
+
+  const loginWithPhone = async () => {
+    const phone = loginPhone.trim();
+    if (!/^(0|\+84)[35789]\d{8}$/.test(phone)) {
+      setAccountError("Số điện thoại Việt Nam chưa đúng định dạng.");
+      return;
+    }
+
+    setAccountBusy(true);
+    setAccountError("");
+    setAccountMessage("");
+    try {
+      const response = await fetch(`${API_URL}/storefront/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone }),
+      });
+      if (!response.ok) throw new Error(await readError(response));
+      const result = await response.json();
+      await AsyncStorage.multiSet([
+        [CUSTOMER_TOKEN_KEY, result.token],
+        [CUSTOMER_KEY, JSON.stringify(result.customer)],
+      ]);
+      setCustomerToken(result.token);
+      setCustomer(result.customer);
+      setAccountName(result.customer.fullName || "");
+      setCheckoutForm((form) => ({ ...form, fullName: result.customer.fullName || "", phone: result.customer.phone }));
+      setAccountMessage(result.customer.fullName ? "Đăng nhập thành công." : "Tài khoản đã tạo. Bạn có thể thêm họ tên bên dưới.");
+    } catch (error) {
+      setAccountError(error.message || "Không thể đăng nhập.");
+    } finally {
+      setAccountBusy(false);
+    }
+  };
+
+  const saveAccountName = async () => {
+    const fullName = accountName.trim();
+    if (fullName.length < 2) {
+      setAccountError("Họ tên cần có ít nhất 2 ký tự.");
+      return;
+    }
+
+    setAccountBusy(true);
+    setAccountError("");
+    setAccountMessage("");
+    try {
+      const response = await fetch(`${API_URL}/storefront/account`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${customerToken}`,
+        },
+        body: JSON.stringify({ fullName }),
+      });
+      if (!response.ok) throw new Error(await readError(response));
+      const profile = await response.json();
+      await AsyncStorage.setItem(CUSTOMER_KEY, JSON.stringify(profile));
+      setCustomer(profile);
+      setCheckoutForm((form) => ({ ...form, fullName: profile.fullName }));
+      setAccountMessage("Đã cập nhật họ tên.");
+    } catch (error) {
+      setAccountError(error.message || "Không thể lưu thông tin tài khoản.");
+    } finally {
+      setAccountBusy(false);
+    }
+  };
+
+  const logoutCustomer = () => {
+    Alert.alert("Đăng xuất", "Bạn muốn đăng xuất khỏi tài khoản này?", [
+      { text: "Ở lại", style: "cancel" },
+      {
+        text: "Đăng xuất",
+        style: "destructive",
+        onPress: async () => {
+          await AsyncStorage.multiRemove([CUSTOMER_TOKEN_KEY, CUSTOMER_KEY]);
+          setCustomer(null);
+          setCustomerToken("");
+          setAccountName("");
+          setLoginPhone("");
+          setAccountError("");
+          setAccountMessage("");
+          setCheckoutForm((form) => ({ ...form, fullName: "", phone: "" }));
+        },
+      },
+    ]);
+  };
 
   const visibleProducts = useMemo(() => products.filter((product) => {
     const matchesSearch = product.productName?.toLowerCase().includes(query.trim().toLowerCase());
@@ -143,12 +313,29 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...checkoutForm,
+          fullName: customer?.fullName?.trim() || checkoutForm.fullName.trim(),
+          phone: customer?.phone || checkoutForm.phone.trim(),
           items: cart.map((item) => ({ productId: item.id, quantity: item.quantity })),
         }),
       });
       if (!response.ok) throw new Error(await readError(response));
       const result = await response.json();
       setCompletedOrder(result);
+      const placedOrder = {
+        ...result,
+        note: `Người nhận: ${customer?.fullName?.trim() || checkoutForm.fullName.trim()}\nSố điện thoại: ${customer?.phone || checkoutForm.phone.trim()}\nĐịa chỉ giao hàng: ${checkoutForm.address.trim()}${checkoutForm.note.trim() ? `\nGhi chú: ${checkoutForm.note.trim()}` : ""}`,
+        paymentStatus: "pending",
+        orderType: "mobile",
+        items: cart.map((item) => ({
+          productId: item.id,
+          productName: item.name,
+          imageUrl: item.image,
+          quantity: item.quantity,
+          unitPrice: item.price,
+          totalPrice: item.price * item.quantity,
+        })),
+      };
+      setCustomerOrders((current) => [placedOrder, ...current.filter((order) => order.id !== placedOrder.id)]);
       setCart([]);
     } catch (error) {
       setOrderError(error.message || "Không thể gửi đơn hàng. Kiểm tra kết nối rồi thử lại.");
@@ -184,21 +371,153 @@ export default function App() {
       <Text style={styles.eyebrow}>GIỎ HÀNG CỦA BẠN</Text>
       <Text style={styles.pageTitle}>{itemCount} sản phẩm</Text>
       {!cart.length ? <View style={styles.emptyState}><Text style={styles.emptyEmoji}>🛍️</Text><Text style={styles.emptyTitle}>Giỏ hàng đang trống</Text><Text style={styles.stateText}>Chọn vài món ngon cho hôm nay nhé.</Text><AppButton title="Tiếp tục mua sắm" onPress={() => setTab("home")} style={styles.emptyCta} /></View> : <>
-        {cart.map((item) => <View key={item.id} style={styles.cartRow}><View style={styles.cartThumb}>{imageUrl(item.image) ? <Image source={{ uri: imageUrl(item.image) }} style={styles.cartImage} resizeMode="contain" /> : <Text style={styles.productEmoji}>🥬</Text>}</View><View style={styles.cartInfo}><Text style={styles.cartName} numberOfLines={2}>{item.name}</Text><Text style={styles.cartPrice}>{money(item.price)}</Text><View style={styles.quantityControl}><Pressable onPress={() => changeQuantity(item.id, -1)} style={styles.quantityButton}><Text style={styles.quantityText}>−</Text></Pressable><Text style={styles.quantityValue}>{item.quantity}</Text><Pressable onPress={() => changeQuantity(item.id, 1)} style={styles.quantityButton}><Text style={styles.quantityText}>＋</Text></Pressable></View></View></View>)}
+        {cart.map((item) => <View key={item.id} style={styles.cartRow}><View style={styles.cartThumb}><ProductImage imagePath={item.image} productId={item.id} style={styles.cartImage} /></View><View style={styles.cartInfo}><Text style={styles.cartName} numberOfLines={2}>{item.name}</Text><Text style={styles.cartPrice}>{money(item.price)}</Text><View style={styles.quantityControl}><Pressable onPress={() => changeQuantity(item.id, -1)} style={styles.quantityButton}><Text style={styles.quantityText}>−</Text></Pressable><Text style={styles.quantityValue}>{item.quantity}</Text><Pressable onPress={() => changeQuantity(item.id, 1)} style={styles.quantityButton}><Text style={styles.quantityText}>＋</Text></Pressable></View></View></View>)}
         <View style={styles.summaryCard}><View style={styles.summaryLine}><Text style={styles.summaryLabel}>Tạm tính</Text><Text style={styles.summaryValue}>{money(subtotal)}</Text></View><View style={styles.summaryLine}><Text style={styles.summaryLabel}>Thanh toán</Text><Text style={styles.freeShipping}>Khi nhận hàng</Text></View><View style={styles.summaryTotal}><Text style={styles.summaryTotalLabel}>Tổng cộng</Text><Text style={styles.summaryTotalValue}>{money(subtotal)}</Text></View><AppButton title="Tiến hành đặt hàng  →" onPress={() => { setOrderError(""); setCompletedOrder(null); setCheckoutOpen(true); }} /></View>
       </>}
     </ScrollView>
   );
 
-  const renderOrders = () => (
-    <ScrollView contentContainerStyle={styles.pageContent}>
-      <Text style={styles.eyebrow}>LỊCH SỬ MUA SẮM</Text><Text style={styles.pageTitle}>Đơn hàng</Text>
-      {completedOrder ? <View style={styles.orderCard}><Text style={styles.orderCheck}>✓</Text><Text style={styles.orderTitle}>Đơn hàng đang chờ xác nhận</Text><Text style={styles.orderCode}>{completedOrder.orderNumber}</Text><View style={styles.summaryLine}><Text style={styles.summaryLabel}>Tổng tiền</Text><Text style={styles.summaryValue}>{money(completedOrder.totalAmount)}</Text></View><Text style={styles.stateText}>Cửa hàng sẽ liên hệ với bạn để xác nhận đơn.</Text></View> : <View style={styles.emptyState}><Text style={styles.emptyEmoji}>📦</Text><Text style={styles.emptyTitle}>Chưa có đơn hàng</Text><Text style={styles.stateText}>Đơn bạn vừa đặt sẽ xuất hiện ở đây.</Text><AppButton title="Bắt đầu mua sắm" onPress={() => setTab("home")} style={styles.emptyCta} /></View>}
-    </ScrollView>
-  );
+  const orderStatusLabel = (status) => ({
+    pending: "Chờ xác nhận",
+    processing: "Đang giao",
+    completed: "Giao thành công",
+    cancelled: "Đã hủy",
+    canceled: "Đã hủy",
+  }[String(status || "").toLowerCase()] || status || "Đang cập nhật");
+
+  const orderAddress = (order) => {
+    const match = (order.note || "").match(/Địa chỉ giao hàng:\s*([\s\S]*?)(?:\nGhi chú:|$)/i);
+    return match?.[1]?.trim() || "Nhận hàng tại cửa hàng";
+  };
+
+  const visibleOrders = customerOrders.filter((order) => {
+    const status = String(order.status || "").toLowerCase();
+    if (orderFilter === "store") return order.orderType === "pos";
+    if (orderFilter === "pending") return status === "pending" || status === "processing";
+    if (orderFilter === "completed") return status === "completed";
+    if (orderFilter === "cancelled") return status === "cancelled" || status === "canceled";
+    return true;
+  });
+
+  const renderOrders = () => {
+    if (selectedOrder) {
+      const orderItems = selectedOrder.items || [];
+      const address = orderAddress(selectedOrder);
+      const purchasedAt = selectedOrder.createdAt
+        ? new Date(selectedOrder.createdAt).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })
+        : "";
+      const paidAmount = String(selectedOrder.paymentStatus || "").toLowerCase() === "completed"
+        ? selectedOrder.totalAmount
+        : 0;
+
+      return (
+        <View style={styles.ordersScreen}>
+          <View style={styles.orderDetailHeading}>
+            <Pressable onPress={() => setSelectedOrder(null)} style={styles.orderBack}><Text style={styles.orderBackText}>‹</Text></Pressable>
+            <Text style={styles.orderDetailTitle} numberOfLines={1}>Đơn hàng #{selectedOrder.orderNumber}</Text>
+          </View>
+          <ScrollView contentContainerStyle={styles.orderDetailContent}>
+            <View style={styles.orderInfoCard}>
+              <View style={styles.orderInfoTop}><Text style={styles.orderInfoLabel}>Địa chỉ nhận hàng</Text><Text style={styles.orderInfoDate}>Mua lúc: {purchasedAt}</Text></View>
+              <Text style={styles.orderAddress}>{address}</Text>
+              <Text style={styles.orderStatusText}>Trạng thái: {orderStatusLabel(selectedOrder.status)}</Text>
+            </View>
+            <View style={styles.orderItemsCard}>
+              {orderItems.map((item, index) => (
+                <View key={`${item.productId}-${index}`} style={styles.orderItemRow}>
+                  <View style={styles.orderItemImageBox}><ProductImage imagePath={item.imageUrl} productId={item.productId} style={styles.orderItemImage} /></View>
+                  <View style={styles.orderItemInfo}><Text style={styles.orderItemName}>{item.productName}</Text><Text style={styles.orderItemQuantity}>SL: {item.quantity}</Text></View>
+                  <View style={styles.orderItemAmount}><Text style={styles.orderItemPrice}>{money(item.totalPrice ?? item.unitPrice * item.quantity)}</Text><Text style={styles.orderItemUnitPrice}>{money(item.unitPrice)}</Text></View>
+                </View>
+              ))}
+              <View style={styles.orderTotals}>
+                <View style={styles.summaryLine}><Text style={styles.summaryLabel}>Tổng đơn hàng</Text><Text style={styles.summaryValue}>{money(selectedOrder.totalAmount)}</Text></View>
+                <View style={styles.summaryLine}><Text style={styles.summaryLabel}>{paidAmount > 0 ? "Đã thanh toán" : "Thanh toán khi nhận"}</Text><Text style={styles.summaryValue}>{money(paidAmount || selectedOrder.totalAmount)}</Text></View>
+              </View>
+            </View>
+            <View style={styles.orderInfoCard}>
+              <Text style={styles.orderInfoLabel}>Thông tin thanh toán</Text>
+              <View style={styles.summaryLine}><Text style={styles.summaryLabel}>Phương thức</Text><Text style={styles.summaryValue}>{selectedOrder.paymentMethod || "Tiền mặt khi nhận hàng"}</Text></View>
+              <View style={styles.summaryLine}><Text style={styles.summaryLabel}>Trạng thái thanh toán</Text><Text style={styles.summaryValue}>{paidAmount > 0 ? "Đã thanh toán" : "Chưa thanh toán"}</Text></View>
+            </View>
+          </ScrollView>
+          <View style={styles.orderDetailActions}>
+            <Pressable style={styles.orderActionSecondary} onPress={() => Alert.alert("Liên hệ", "Cửa hàng sẽ liên hệ với bạn để hỗ trợ đơn hàng.")}><Text style={styles.orderActionSecondaryText}>Liên hệ</Text></Pressable>
+            <Pressable style={styles.orderActionPrimary} onPress={() => Alert.alert("Hóa đơn", `Đơn hàng ${selectedOrder.orderNumber}\nTổng tiền: ${money(selectedOrder.totalAmount)}`)}><Text style={styles.orderActionPrimaryText}>Xem hóa đơn</Text></Pressable>
+          </View>
+        </View>
+      );
+    }
+
+    const filters = [["all", "Tất cả"], ["pending", "Chờ giao"], ["store", "Mua tại cửa hàng"], ["completed", "Giao thành công"], ["cancelled", "Đã hủy"]];
+    return (
+      <View style={styles.ordersScreen}>
+        <Text style={styles.ordersTitle}>Đơn hàng từng mua</Text>
+        <ScrollView horizontal style={styles.orderFilterScroll} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.orderFilterRow}>
+          {filters.map(([key, label]) => <Pressable key={key} onPress={() => setOrderFilter(key)} style={[styles.orderFilterChip, orderFilter === key && styles.orderFilterChipActive]}><Text style={[styles.orderFilterText, orderFilter === key && styles.orderFilterTextActive]}>{label}</Text></Pressable>)}
+        </ScrollView>
+        {ordersLoading ? <View style={styles.centerState}><ActivityIndicator color={GREEN} /><Text style={styles.stateText}>Đang tải đơn hàng...</Text></View> : ordersError ? <View style={styles.errorCard}><Text style={styles.errorText}>{ordersError}</Text><AppButton title="Thử lại" onPress={() => setOrdersRefreshKey((key) => key + 1)} /></View> : !customer && customerOrders.length === 0 ? <View style={styles.emptyState}><Text style={styles.emptyEmoji}>📦</Text><Text style={styles.emptyTitle}>Đăng nhập để xem đơn hàng</Text><Text style={styles.stateText}>Đơn hàng cũ được lưu theo số điện thoại của tài khoản.</Text><AppButton title="Đăng nhập" onPress={() => setTab("profile")} style={styles.emptyCta} /></View> : visibleOrders.length === 0 ? <View style={styles.emptyState}><Text style={styles.emptyEmoji}>📦</Text><Text style={styles.emptyTitle}>Chưa có đơn hàng</Text><Text style={styles.stateText}>Đơn đặt hàng sẽ xuất hiện ở đây.</Text><AppButton title="Bắt đầu mua sắm" onPress={() => setTab("home")} style={styles.emptyCta} /></View> : (
+          <ScrollView contentContainerStyle={styles.orderListContent}>
+            {visibleOrders.map((order) => {
+              const items = order.items || [];
+              return (
+                <View key={order.id || order.orderNumber} style={styles.orderListCard}>
+                  <View style={styles.orderListHeader}><Text style={styles.orderListNumber} numberOfLines={1}>Đơn hàng  #{order.orderNumber}</Text><Pressable onPress={() => setSelectedOrder(order)}><Text style={styles.orderViewLink}>Xem chi tiết  ›</Text></Pressable></View>
+                  <View style={styles.orderPickup}><Text style={styles.orderPickupIcon}>⌂</Text><Text style={styles.orderPickupText} numberOfLines={1}>{orderAddress(order)}</Text></View>
+                  <Pressable onPress={() => setSelectedOrder(order)} style={styles.orderThumbnailRow}>
+                    {items.slice(0, 4).map((item, index) => <View key={`${item.productId}-${index}`} style={styles.orderThumbnailBox}><ProductImage imagePath={item.imageUrl} productId={item.productId} style={styles.orderThumbnail} />{index === 3 && items.length > 4 ? <View style={styles.orderMoreOverlay}><Text style={styles.orderMoreText}>+{items.length - 4}</Text></View> : null}</View>)}
+                    {!items.length ? <Text style={styles.orderItemQuantity}>Không có sản phẩm</Text> : null}
+                  </Pressable>
+                  <View style={styles.orderListTotals}><Text style={styles.orderListStatus}>{orderStatusLabel(order.status)}</Text><Text style={styles.orderListTotal}>Tổng đơn hàng: {money(order.totalAmount)}</Text></View>
+                  <View style={styles.orderListActions}><Pressable onPress={() => Alert.alert("Yêu cầu đổi trả", "Vui lòng liên hệ cửa hàng để được hỗ trợ đổi trả.")} style={styles.orderListAction}><Text style={styles.orderListActionText}>Yêu cầu đổi trả</Text></Pressable><Pressable onPress={() => setSelectedOrder(order)} style={styles.orderListAction}><Text style={styles.orderListActionText}>Liên hệ</Text></Pressable></View>
+                </View>
+              );
+            })}
+          </ScrollView>
+        )}
+      </View>
+    );
+  };
 
   const renderProfile = () => (
-    <ScrollView contentContainerStyle={styles.pageContent}><Text style={styles.eyebrow}>E-MART</Text><Text style={styles.pageTitle}>Tài khoản</Text><View style={styles.profileCard}><Text style={styles.profileEmoji}>👋</Text><Text style={styles.emptyTitle}>Xin chào!</Text><Text style={styles.stateText}>Đặt hàng nhanh với thông tin nhận hàng của bạn.</Text></View><View style={styles.infoCard}><Text style={styles.infoTitle}>Hỗ trợ khách hàng</Text><Text style={styles.stateText}>Đơn hàng hiện thanh toán khi nhận hàng.</Text><Text style={styles.apiHint}>Đang kết nối: {API_URL}</Text></View></ScrollView>
+    <ScrollView contentContainerStyle={styles.pageContent} keyboardShouldPersistTaps="handled">
+      <Text style={styles.eyebrow}>E-MART</Text>
+      <Text style={styles.pageTitle}>Tài khoản</Text>
+      {!accountReady ? <View style={styles.centerState}><ActivityIndicator color={GREEN} /><Text style={styles.stateText}>Đang tải tài khoản...</Text></View> : customer ? <>
+        <View style={styles.profileCard}>
+          <Text style={styles.profileEmoji}>👋</Text>
+          <Text style={styles.emptyTitle}>{customer.fullName || "Chào mừng bạn"}</Text>
+          <Text style={styles.stateText}>{customer.phone}</Text>
+        </View>
+        <View style={styles.infoCard}>
+          <Text style={styles.infoTitle}>Cài đặt tài khoản</Text>
+          <Text style={styles.inputLabel}>HỌ VÀ TÊN</Text>
+          <TextInput value={accountName} onChangeText={setAccountName} placeholder="Nhập họ tên của bạn" style={styles.formInput} maxLength={150} autoCapitalize="words" />
+          <AppButton title={accountBusy ? "Đang lưu..." : "Lưu họ tên"} onPress={saveAccountName} disabled={accountBusy} />
+          {accountError ? <Text style={styles.orderError}>{accountError}</Text> : null}
+          {accountMessage ? <Text style={styles.accountMessage}>{accountMessage}</Text> : null}
+        </View>
+        <View style={styles.infoCard}>
+          <Text style={styles.infoTitle}>Hỗ trợ khách hàng</Text>
+          <Text style={styles.stateText}>Đơn hàng hiện thanh toán khi nhận hàng.</Text>
+          <AppButton title="Đăng xuất" secondary onPress={logoutCustomer} />
+        </View>
+      </> : <>
+        <View style={styles.profileCard}>
+          <Text style={styles.profileEmoji}>📱</Text>
+          <Text style={styles.emptyTitle}>Đăng nhập bằng số điện thoại</Text>
+          <Text style={styles.stateText}>Lần đầu đăng nhập, chúng tôi sẽ tạo hồ sơ khách hàng để bạn bổ sung họ tên sau.</Text>
+        </View>
+        <View style={styles.infoCard}>
+          <Text style={styles.inputLabel}>SỐ ĐIỆN THOẠI</Text>
+          <TextInput value={loginPhone} onChangeText={setLoginPhone} placeholder="0912345678" style={styles.formInput} keyboardType="phone-pad" maxLength={13} autoComplete="tel" />
+          {accountError ? <Text style={styles.orderError}>{accountError}</Text> : null}
+          <AppButton title={accountBusy ? "Đang đăng nhập..." : "Đăng nhập / Tạo tài khoản"} onPress={loginWithPhone} disabled={accountBusy} />
+          {accountMessage ? <Text style={styles.accountMessage}>{accountMessage}</Text> : null}
+        </View>
+      </>}
+      <View style={styles.infoCard}><Text style={styles.infoTitle}>Hỗ trợ khách hàng</Text><Text style={styles.stateText}>Đơn hàng hiện thanh toán khi nhận hàng.</Text></View>
+    </ScrollView>
   );
 
   return (
@@ -219,8 +538,8 @@ export default function App() {
           <View style={styles.checkoutSheet}>
             <View style={styles.sheetHandle} />
             {completedOrder ? <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.successContent}><Text style={styles.successIcon}>✓</Text><Text style={styles.eyebrow}>ĐẶT HÀNG THÀNH CÔNG</Text><Text style={styles.successTitle}>Cảm ơn bạn đã mua hàng!</Text><Text style={styles.inputLabel}>MÃ ĐƠN HÀNG</Text><Text selectable style={styles.successCode}>{completedOrder.orderNumber}</Text><View style={styles.summaryTotal}><Text style={styles.summaryTotalLabel}>Thanh toán khi nhận hàng</Text><Text style={styles.summaryTotalValue}>{money(completedOrder.totalAmount)}</Text></View><AppButton title="Xong" onPress={() => { setCheckoutOpen(false); setTab("orders"); }} /></ScrollView> : <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.checkoutContent}><Text style={styles.eyebrow}>GIAO HÀNG TẬN NHÀ</Text><Text style={styles.checkoutTitle}>Thông tin nhận hàng</Text><Text style={styles.checkoutDescription}>Thanh toán tiền mặt khi nhận hàng.</Text>
-              <Text style={styles.inputLabel}>HỌ VÀ TÊN</Text><TextInput value={checkoutForm.fullName} onChangeText={(value) => setCheckoutForm((form) => ({ ...form, fullName: value }))} placeholder="Nguyễn Văn An" style={styles.formInput} maxLength={150} autoCapitalize="words" />
-              <Text style={styles.inputLabel}>SỐ ĐIỆN THOẠI</Text><TextInput value={checkoutForm.phone} onChangeText={(value) => setCheckoutForm((form) => ({ ...form, phone: value }))} placeholder="0912345678" style={styles.formInput} keyboardType="phone-pad" maxLength={13} />
+              <Text style={styles.inputLabel}>HỌ VÀ TÊN</Text><TextInput value={customer?.fullName || checkoutForm.fullName} onChangeText={(value) => setCheckoutForm((form) => ({ ...form, fullName: value }))} placeholder="Nguyễn Văn An" style={styles.formInput} maxLength={150} autoCapitalize="words" editable={!customer?.fullName} />
+              <Text style={styles.inputLabel}>SỐ ĐIỆN THOẠI</Text><TextInput value={customer?.phone || checkoutForm.phone} onChangeText={(value) => setCheckoutForm((form) => ({ ...form, phone: value }))} placeholder="0912345678" style={styles.formInput} keyboardType="phone-pad" maxLength={13} editable={!customer} />
               <Text style={styles.inputLabel}>ĐỊA CHỈ GIAO HÀNG</Text><TextInput value={checkoutForm.address} onChangeText={(value) => setCheckoutForm((form) => ({ ...form, address: value }))} placeholder="Số nhà, đường, phường/xã, quận/huyện" style={[styles.formInput, styles.addressInput]} multiline maxLength={500} />
               <Text style={styles.inputLabel}>GHI CHÚ (KHÔNG BẮT BUỘC)</Text><TextInput value={checkoutForm.note} onChangeText={(value) => setCheckoutForm((form) => ({ ...form, note: value }))} placeholder="Ví dụ: gọi trước khi giao" style={[styles.formInput, styles.noteInput]} multiline maxLength={500} />
               {orderError ? <Text style={styles.orderError}>{orderError}</Text> : null}
@@ -299,6 +618,60 @@ const styles = StyleSheet.create({
   buttonSecondary: { backgroundColor: "#edf5ed" },
   buttonSecondaryText: { color: GREEN },
   buttonDisabled: { opacity: 0.65 },
+  ordersScreen: { flex: 1, backgroundColor: "#f4f4f4" },
+  ordersTitle: { color: DARK, fontSize: 20, fontWeight: "900", textAlign: "center", paddingVertical: 16, backgroundColor: "#fff", borderBottomWidth: 1, borderBottomColor: "#e5e7eb" },
+  orderFilterScroll: { height: 48, flexGrow: 0, flexShrink: 0 },
+  orderFilterRow: { paddingHorizontal: 14, alignItems: "center", gap: 8 },
+  orderFilterChip: { paddingHorizontal: 14, paddingVertical: 4, borderRadius: 24, backgroundColor: "#e4eaf7" },
+  orderFilterChipActive: { backgroundColor: "#328656" },
+  orderFilterText: { color: "#344054", fontSize: 12, fontWeight: "600" },
+  orderFilterTextActive: { color: "#fff" },
+  orderListContent: { padding: 14, paddingTop: 4, paddingBottom: 20 },
+  orderListCard: { backgroundColor: "#fff", borderRadius: 14, padding: 12, marginBottom: 12 },
+  orderListHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 },
+  orderListNumber: { flex: 1, color: DARK, fontSize: 14, fontWeight: "900" },
+  orderViewLink: { color: "#344054", fontSize: 12, fontWeight: "700" },
+  orderPickup: { flexDirection: "row", alignItems: "center", gap: 9, borderRadius: 9, backgroundColor: "#f0f3fa", padding: 10 },
+  orderPickupIcon: { color: "#78857c", fontSize: 17 },
+  orderPickupText: { flex: 1, color: "#586273", fontSize: 12, fontWeight: "600" },
+  orderThumbnailRow: { flexDirection: "row", gap: 8, paddingVertical: 13, minHeight: 83, alignItems: "center" },
+  orderThumbnailBox: { width: 57, height: 68, borderRadius: 7, backgroundColor: "#f7f8f5", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  orderThumbnail: { width: "90%", height: "90%" },
+  orderMoreOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "#17202b99", alignItems: "center", justifyContent: "center" },
+  orderMoreText: { color: "#fff", fontSize: 17, fontWeight: "900" },
+  orderListTotals: { borderTopWidth: 1, borderTopColor: "#edf0ec", paddingTop: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 6 },
+  orderListStatus: { color: GREEN, fontSize: 11, fontWeight: "800", flexShrink: 1 },
+  orderListTotal: { color: DARK, fontSize: 13, fontWeight: "700" },
+  orderListActions: { flexDirection: "row", marginHorizontal: -12, marginTop: 12, borderTopWidth: 1, borderTopColor: "#edf0ec" },
+  orderListAction: { flex: 1, alignItems: "center", paddingVertical: 12 },
+  orderListActionText: { color: DARK, fontSize: 12, fontWeight: "800" },
+  orderDetailHeading: { minHeight: 52, backgroundColor: "#fff", flexDirection: "row", alignItems: "center", justifyContent: "center", paddingHorizontal: 15, borderBottomWidth: 1, borderBottomColor: "#edf0ec" },
+  orderBack: { position: "absolute", left: 13, height: 44, justifyContent: "center", paddingHorizontal: 5 },
+  orderBackText: { color: DARK, fontSize: 34, lineHeight: 38 },
+  orderDetailTitle: { color: DARK, fontSize: 15, fontWeight: "900", maxWidth: "82%" },
+  orderDetailContent: { padding: 14, paddingBottom: 20 },
+  orderInfoCard: { backgroundColor: "#fff", borderRadius: 13, padding: 15, marginBottom: 12 },
+  orderInfoTop: { flexDirection: "row", justifyContent: "space-between", gap: 8, marginBottom: 10 },
+  orderInfoLabel: { color: "#59636f", fontSize: 13, fontWeight: "900" },
+  orderInfoDate: { color: "#67717d", fontSize: 10, textAlign: "right" },
+  orderAddress: { color: DARK, fontSize: 14, lineHeight: 20 },
+  orderStatusText: { color: GREEN, fontSize: 11, fontWeight: "800", marginTop: 10 },
+  orderItemsCard: { backgroundColor: "#fff", borderRadius: 13, paddingHorizontal: 12, paddingTop: 5, paddingBottom: 12, marginBottom: 12 },
+  orderItemRow: { flexDirection: "row", alignItems: "center", minHeight: 92, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#edf0ec", gap: 10 },
+  orderItemImageBox: { width: 65, height: 72, alignItems: "center", justifyContent: "center", backgroundColor: "#fff", borderRadius: 7, overflow: "hidden" },
+  orderItemImage: { width: "90%", height: "90%" },
+  orderItemInfo: { flex: 1 },
+  orderItemName: { color: "#344054", fontSize: 12, lineHeight: 18 },
+  orderItemQuantity: { color: "#8b95a1", fontSize: 11, marginTop: 5 },
+  orderItemAmount: { alignItems: "flex-end", maxWidth: 100 },
+  orderItemPrice: { color: DARK, fontSize: 13, fontWeight: "900" },
+  orderItemUnitPrice: { color: "#9aa2ad", fontSize: 10, marginTop: 5, textDecorationLine: "line-through" },
+  orderTotals: { paddingTop: 10 },
+  orderDetailActions: { flexDirection: "row", backgroundColor: "#fff", paddingHorizontal: 14, paddingVertical: 10, gap: 10, borderTopWidth: 1, borderTopColor: "#e8ebe8" },
+  orderActionSecondary: { flex: 1, minHeight: 45, borderRadius: 10, borderWidth: 1, borderColor: "#cfd7d0", alignItems: "center", justifyContent: "center" },
+  orderActionSecondaryText: { color: "#56615a", fontSize: 13, fontWeight: "700" },
+  orderActionPrimary: { flex: 1.3, minHeight: 45, borderRadius: 10, backgroundColor: GREEN, alignItems: "center", justifyContent: "center" },
+  orderActionPrimaryText: { color: "#fff", fontSize: 13, fontWeight: "800" },
   pageContent: { padding: 18, paddingBottom: 25 },
   pageTitle: { color: DARK, fontSize: 24, fontWeight: "900", marginTop: 4, marginBottom: 17 },
   cartRow: { flexDirection: "row", gap: 12, backgroundColor: "#fff", borderRadius: 12, padding: 10, marginBottom: 9, borderWidth: 1, borderColor: "#edf0ec" },
@@ -344,6 +717,7 @@ const styles = StyleSheet.create({
   addressInput: { minHeight: 62, textAlignVertical: "top", paddingTop: 10 },
   noteInput: { minHeight: 48, textAlignVertical: "top", paddingTop: 9 },
   orderError: { color: "#a33e36", fontSize: 11, backgroundColor: "#fff1ef", borderRadius: 8, padding: 10, marginTop: 10 },
+  accountMessage: { color: GREEN, fontSize: 11, marginTop: 10, textAlign: "center" },
   checkoutTotal: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderTopWidth: 1, borderTopColor: "#edf0ec", paddingTop: 13, marginTop: 15 },
   cancelCheckout: { alignItems: "center", paddingVertical: 12 },
   cancelText: { color: MUTED, fontSize: 11, fontWeight: "700" },

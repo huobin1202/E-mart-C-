@@ -112,6 +112,24 @@ namespace backend.Controllers
             }
         }
 
+        [HttpPost("{orderId}/complete")]
+        public async Task<IActionResult> CompletePendingOrder(int orderId)
+        {
+            try
+            {
+                var result = await _orderService.CompletePendingOrderAsync(orderId);
+                if (!result)
+                    return Conflict(new { message = "Đơn hàng không còn ở trạng thái chờ xử lý." });
+
+                return Ok(true);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Complete pending order failed: {ex}");
+                return StatusCode(500, new { message = "Không thể hoàn thành đơn hàng." });
+            }
+        }
+
 
 
     }
