@@ -1,4 +1,7 @@
-export const API_URL = (process.env.EXPO_PUBLIC_API_URL || "http://10.0.2.2:5099/api").replace(/\/$/, "");
+const defaultHost = typeof window !== "undefined" && window.location?.hostname
+  ? `http://${window.location.hostname}:5099/api`
+  : "http://10.0.2.2:5099/api";
+export const API_URL = (process.env.EXPO_PUBLIC_API_URL || defaultHost).replace(/\/$/, "");
 const API_ORIGIN = API_URL.replace(/\/api$/, "");
 
 export const imageUrl = (path) => !path ? null : path.startsWith("http") ? path : `${API_ORIGIN}${path.startsWith("/") ? "" : "/"}${path}`;

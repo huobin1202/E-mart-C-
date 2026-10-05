@@ -6,7 +6,10 @@
     "orientation": "portrait",
     "scheme": "emart",
     "userInterfaceStyle": "light",
-    "platforms": ["android"],
+    "platforms": ["android", "ios", "web"],
+    "web": {
+      "bundler": "metro"
+    },
     "android": {
       "package": "vn.emart.customerapp",
       "versionCode": 1

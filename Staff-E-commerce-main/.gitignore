@@ -10,6 +10,16 @@
 *.dll
 *.exe
 *.webconfig
+.dotnet-home/
+.tmp/
+.nuget-cache/
 
-## Log files
+## Node / Frontend
+**/node_modules/
+**/dist/
+*.log
+
+## Logs
+backend/Logs/*.log
 backend/request_log.txt
+backend/server.log
