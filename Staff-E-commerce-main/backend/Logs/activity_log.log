@@ -344,3 +344,4 @@
 [2026-10-04 23:46:31] [User:1] [Action:CREATE_Promotions] [Entity:Promotions#0] [IP:127.0.0.1] {"name":"c\u00E1","type":"voucher","discountType":"percent","value":1,"minOrderAmount":0,"voucherCode":"123","productIds":[],"maxDiscount":null,"usageLimit":null,"description":"","startDate":"2026-10-04","endDate":"2026-10-15","active":true,"status":"active"}
 [2026-10-04 23:46:45] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#promotions] [IP:192.168.1.2] {"code":"123","orderAmount":90000}
 [2026-10-04 23:47:16] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#promotions] [IP:192.168.1.2] {"code":"123","orderAmount":90000}
+[2026-10-05 14:40:16] [User:1] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"username":"admin","password":"[REDACTED]"}
