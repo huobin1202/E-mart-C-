@@ -16,10 +16,11 @@ import "./App.css";
 import CustomerList from "./pages/customers/CustomerList";
 import CategoryList from "./pages/categories/CategoryList";
 import ReportsPage from "./pages/reports/ReportsPage";
-import InventoryList from "./pages/inventory/InventoryList";
+import InventoryPage from "./pages/inventory/InventoryPage";
 import UnitList from "./pages/units/UnitList";
 import SupplierList from "./pages/suppliers/SupplierList";
 import PurchaseOrderList from "./pages/purchaseOrders/PurchaseOrderList";
+import POS from "./pages/pos/POS";
 
 // Component để xử lý redirect từ root
 function RootRedirect() {
@@ -48,8 +49,9 @@ function App() {
         >
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/products" element={<ProductList />} />
-          <Route path="/inventory" element={<InventoryList />} />
+          <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/orders" element={<OrdersPage />} />
+          <Route path="/pos" element={<POS />} />
           <Route path="/audit" element={<AuditPage />} />
           <Route path="/users" element={<UserManagement />} />
           <Route path="/profile" element={<ProfilePage />} />

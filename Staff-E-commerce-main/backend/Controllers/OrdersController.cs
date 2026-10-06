@@ -130,7 +130,89 @@ namespace backend.Controllers
             }
         }
 
+        /// <summary>
+        /// Lấy danh sách đơn hàng online (order_type = 'mobile') với phân trang
+        /// </summary>
+        [HttpGet("online")]
+        public async Task<IActionResult> GetOnlineOrders(
+            int pageNumber = 1,
+            int pageSize = 20,
+            string? status = null,
+            string? search = null)
+        {
+            var result = await _orderService.GetOnlineOrdersAsync(pageNumber, pageSize, status, search);
+            return Ok(result);
+        }
 
+        /// <summary>
+        /// Xác nhận đơn hàng online: pending -> processing
+        /// </summary>
+        [HttpPost("{orderId}/confirm")]
+        public async Task<IActionResult> ConfirmOnlineOrder(int orderId)
+        {
+            try
+            {
+                var result = await _orderService.ConfirmOnlineOrderAsync(orderId);
+                if (!result)
+                    return Conflict(new { message = "Đơn hàng không thể xác nhận (không tồn tại hoặc không ở trạng thái pending)." });
+                return Ok(new { success = true, message = "Đã xác nhận đơn hàng." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
 
+        /// <summary>
+        /// Từ chối đơn hàng online: pending -> cancelled
+        /// </summary>
+        [HttpPost("{orderId}/reject")]
+        public async Task<IActionResult> RejectOnlineOrder(int orderId, [FromBody] RejectOrderDTO? dto)
+        {
+            try
+            {
+                var result = await _orderService.RejectOnlineOrderAsync(orderId, dto?.Reason);
+                if (!result)
+                    return Conflict(new { message = "Đơn hàng không thể từ chối (không tồn tại hoặc không ở trạng thái pending/processing)." });
+                return Ok(new { success = true, message = "Đã từ chối đơn hàng." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Hoàn thành giao hàng: processing -> completed
+        /// </summary>
+        [HttpPost("{orderId}/deliver")]
+        public async Task<IActionResult> DeliverOnlineOrder(int orderId)
+        {
+            try
+            {
+                var result = await _orderService.DeliverOnlineOrderAsync(orderId);
+                if (!result)
+                    return Conflict(new { message = "Đơn hàng không thể chuyển sang trạng thái giao hàng." });
+                return Ok(new { success = true, message = "Đã hoàn thành giao hàng." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("{orderId}/items")]
+        public async Task<IActionResult> GetOrderItems(int orderId)
+        {
+            try
+            {
+                var items = await _orderService.GetOrderItemsAsync(orderId);
+                return Ok(items);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
     }
 }

@@ -35,9 +35,20 @@ export async function getInventoryStats() {
   return request("/inventory/stats");
 }
 
+// Lấy lịch sử điều chỉnh kho
+export async function getInventoryAdjustmentHistory(page = 1, pageSize = 20, productId = null, search = '') {
+  const params = new URLSearchParams({
+    page: page.toString(),
+    pageSize: pageSize.toString(),
+    ...(productId && { productId: productId.toString() }),
+    ...(search && { search }),
+  });
+  return request(`/inventory/adjustments?${params}`);
+}
+
 export default {
   getInventoryPaginated,
   adjustInventory,
   getInventoryStats,
+  getInventoryAdjustmentHistory,
 };
-

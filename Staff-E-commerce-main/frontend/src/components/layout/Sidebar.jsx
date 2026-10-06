@@ -118,13 +118,17 @@ export default function Sidebar({ collapsed, onClose }) {
           <span className="text-sm">Tổng quan</span>
         </NavLink>
 
-        {/* POS */}
-        <NavLink to="/orders" className={linkClass}>
-          <span className="w-5 h-5">🧾</span>
+        {/* POS - Bán hàng & Đơn hàng online */}
+        <NavLink to="/pos" className={linkClass}>
+          <span className="w-5 h-5">🖥️</span>
           <span className="text-sm">Bán hàng (POS)</span>
         </NavLink>
 
-        {/* <div className="border-t my-2" /> */}
+        {/* Lịch sử đơn hàng */}
+        <NavLink to="/orders" className={linkClass}>
+          <span className="w-5 h-5">🧾</span>
+          <span className="text-sm">Lịch sử đơn hàng</span>
+        </NavLink>
 
         {/* Products Menu với submenu */}
         <div className="border-b mb-2">

@@ -89,5 +89,23 @@ namespace backend.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+
+        [HttpGet("adjustments")]
+        public async Task<IActionResult> GetAdjustmentHistory(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            [FromQuery] int? productId = null,
+            [FromQuery] string? search = null)
+        {
+            try
+            {
+                var result = await _inventoryService.GetAdjustmentHistoryAsync(page, pageSize, productId, search);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
+        }
     }
 }

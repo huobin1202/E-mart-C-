@@ -13,11 +13,31 @@ namespace backend.Services
     {
         private readonly InventoryRepository _inventoryRepo;
         private readonly AppDbContext _context;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public InventoryService(InventoryRepository inventoryRepo, AppDbContext context)
+        public InventoryService(InventoryRepository inventoryRepo, AppDbContext context, IHttpContextAccessor httpContextAccessor)
         {
             _inventoryRepo = inventoryRepo;
             _context = context;
+            _httpContextAccessor = httpContextAccessor;
+        }
+
+        private int? TryGetCurrentUserId()
+        {
+            try
+            {
+                var context = _httpContextAccessor.HttpContext;
+                if (context?.User?.Identity?.IsAuthenticated == true)
+                {
+                    var claim = context.User.FindFirst("uid")
+                                ?? context.User.FindFirst("userId")
+                                ?? context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+                    if (claim != null && int.TryParse(claim.Value, out int id))
+                        return id;
+                }
+            }
+            catch { }
+            return null;
         }
 
         public async Task<bool> ReduceInventoryAsync(List<ReduceInventoryDto> items)
@@ -98,11 +118,26 @@ namespace backend.Services
             if (inventory == null)
                 throw new ArgumentException($"Không tìm thấy inventory với ID {dto.InventoryId}");
 
+            int oldQuantity = inventory.Quantity;
+            int changeAmount = dto.NewQuantity - oldQuantity;
+
             inventory.Quantity = dto.NewQuantity;
             inventory.UpdatedAt = DateTime.UtcNow;
             inventory.LastCheckedAt = DateTime.UtcNow;
 
             await _inventoryRepo.UpdateAsync(inventory);
+
+            // Ghi lịch sử điều chỉnh
+            var adjustment = new InventoryAdjustment
+            {
+                ProductId = inventory.ProductId,
+                ChangeAmount = changeAmount,
+                Reason = string.IsNullOrWhiteSpace(dto.Reason) ? null : dto.Reason.Trim(),
+                UserId = TryGetCurrentUserId(),
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.InventoryAdjustments.Add(adjustment);
+            await _context.SaveChangesAsync();
 
             return new InventoryListDTO
             {
@@ -117,6 +152,68 @@ namespace backend.Services
                 CategoryName = inventory.Product?.Category?.Name,
                 Price = inventory.Product?.Price,
                 Unit = inventory.Product?.Unit?.Name ?? inventory.Product?.Unit?.Code ?? "—"
+            };
+        }
+
+        public async Task<PaginationResult<InventoryAdjustmentDTO>> GetAdjustmentHistoryAsync(
+            int page = 1,
+            int pageSize = 20,
+            int? productId = null,
+            string? search = null)
+        {
+            if (page < 1) page = 1;
+            if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+            var query = _context.InventoryAdjustments
+                .Include(a => a.Product)
+                .Include(a => a.User)
+                .AsQueryable();
+
+            if (productId.HasValue)
+                query = query.Where(a => a.ProductId == productId.Value);
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var s = search.Trim();
+                query = query.Where(a =>
+                    (a.Product != null && a.Product.ProductName.Contains(s)) ||
+                    (a.Product != null && a.Product.Sku != null && a.Product.Sku.Contains(s)) ||
+                    (a.Reason != null && a.Reason.Contains(s)) ||
+                    (a.User != null && a.User.FullName.Contains(s))
+                );
+            }
+
+            var totalItems = await query.CountAsync();
+            var totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
+
+            var items = await query
+                .OrderByDescending(a => a.CreatedAt)
+                .ThenByDescending(a => a.Id)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(a => new InventoryAdjustmentDTO
+                {
+                    Id = a.Id,
+                    ProductId = a.ProductId,
+                    ProductName = a.Product != null ? a.Product.ProductName : "",
+                    Sku = a.Product != null ? a.Product.Sku : null,
+                    ChangeAmount = a.ChangeAmount,
+                    Reason = a.Reason,
+                    UserId = a.UserId,
+                    UserName = a.User != null ? a.User.FullName : null,
+                    CreatedAt = a.CreatedAt
+                })
+                .ToListAsync();
+
+            return new PaginationResult<InventoryAdjustmentDTO>
+            {
+                Items = items,
+                TotalItems = totalItems,
+                CurrentPage = page,
+                PageSize = pageSize,
+                TotalPages = totalPages,
+                HasPrevious = page > 1,
+                HasNext = page < totalPages
             };
         }
 

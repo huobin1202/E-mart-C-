@@ -41,4 +41,17 @@ namespace backend.DTO
         public int LowStock { get; set; }
         public int InStock { get; set; }
     }
+
+    public class InventoryAdjustmentDTO
+    {
+        public int Id { get; set; }
+        public int ProductId { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public string? Sku { get; set; }
+        public int ChangeAmount { get; set; }
+        public string? Reason { get; set; }
+        public int? UserId { get; set; }
+        public string? UserName { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
 }

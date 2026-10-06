@@ -8,7 +8,7 @@ import {
 import { formatPrice } from "../../utils/formatPrice";
 import { useAuth } from "../../hook/useAuth";
 
-export default function InventoryList() {
+export default function InventoryList({ embedded = false }) {
   const { user } = useAuth();
   const isStaff = user?.role?.toLowerCase() === "staff";
 
@@ -245,31 +245,45 @@ export default function InventoryList() {
   };
 
   return (
-    <div className="p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-semibold text-gray-800">
-            Quản lý Tồn kho
-          </h1>
+    <div className={embedded ? "" : "p-6"}>
+      <div className={embedded ? "" : "max-w-7xl mx-auto"}>
+        {/* Header - chỉ hiển thị khi không embedded */}
+        {!embedded && (
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-2xl font-semibold text-gray-800">Quản lý Tồn kho</h1>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleRefresh}
+                className="px-3 py-2 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700"
+                title="Làm mới"
+              >🔄</button>
+              <input
+                type="text"
+                placeholder="Tìm kiếm sản phẩm..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="px-3 py-2 border rounded-md focus:outline-none focus:ring focus:border-indigo-300"
+              />
+            </div>
+          </div>
+        )}
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleRefresh}
-              className="px-3 py-2 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700"
-              title="Làm mới"
-            >
-              🔄
-            </button>
+        {/* Search + refresh khi embedded */}
+        {embedded && (
+          <div className="flex items-center gap-3 mb-4">
             <input
               type="text"
               placeholder="Tìm kiếm sản phẩm..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="px-3 py-2 border rounded-md focus:outline-none focus:ring focus:border-indigo-300"
+              className="flex-1 px-4 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
             />
+            <button
+              onClick={handleRefresh}
+              className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium"
+            >🔄 Làm mới</button>
           </div>
-        </div>
+        )}
 
         {/* Thống kê */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
