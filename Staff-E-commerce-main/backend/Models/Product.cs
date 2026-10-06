@@ -25,9 +25,9 @@ namespace backend.Models
         [StringLength(255)]
         public string ProductName { get; set; } = string.Empty;
 
-        // [Column("barcode")]
-        // [StringLength(191)]
-        // public string? Barcode { get; set; }
+        [Column("barcode")]
+        [StringLength(191)]
+        public string? Barcode { get; set; }
 
         // FK -> categories.id
         [Column("category_id")]

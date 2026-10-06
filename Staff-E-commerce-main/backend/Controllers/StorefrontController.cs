@@ -1,11 +1,14 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.RegularExpressions;
 using backend.Data;
+using backend.DTO;
 using backend.Models;
 using backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using backend.Hubs;
 
 namespace backend.Controllers
 {
@@ -16,12 +19,24 @@ namespace backend.Controllers
         private readonly AppDbContext _db;
         private readonly JwtService _jwt;
         private readonly PromotionService _promotions;
+        private readonly PaymentService _paymentService;
+        private readonly IConfiguration _config;
+        private readonly IHubContext<OrderHub>? _orderHub;
 
-        public StorefrontController(AppDbContext db, JwtService jwt, PromotionService promotions)
+        public StorefrontController(
+            AppDbContext db,
+            JwtService jwt,
+            PromotionService promotions,
+            PaymentService paymentService,
+            IConfiguration config,
+            IHubContext<OrderHub>? orderHub = null)
         {
             _db = db;
             _jwt = jwt;
             _promotions = promotions;
+            _paymentService = paymentService;
+            _config = config;
+            _orderHub = orderHub;
         }
 
         [HttpGet("promotions")]
@@ -171,7 +186,8 @@ namespace backend.Controllers
         {
             Id = customer.Id,
             FullName = customer.FullName,
-            Phone = customer.Phone ?? string.Empty
+            Phone = customer.Phone ?? string.Empty,
+            RewardPoints = customer.RewardPoints
         };
 
         private static string NormalizePhone(string phone)
@@ -289,6 +305,30 @@ namespace backend.Controllers
                     appliedPromotion = await _db.Promotions.FirstOrDefaultAsync(p => p.Id == validation.Promotion.Id);
                 }
 
+                // Áp dụng điểm thưởng khách hàng (nếu có yêu cầu dùng điểm)
+                int pointsUsed = 0;
+                if (request.PointsUsed > 0 && customer != null && customer.RewardPoints > 0)
+                {
+                    int maxPointsUsable = Math.Min(customer.RewardPoints, (int)((subtotal - discount) / 1000m));
+                    pointsUsed = Math.Min(request.PointsUsed, maxPointsUsable);
+                    if (pointsUsed > 0)
+                    {
+                        decimal pointsDiscount = pointsUsed * 1000m; // 1 điểm = 1.000 VNĐ
+                        discount += pointsDiscount;
+                        customer.RewardPoints -= pointsUsed;
+                        customer.UpdatedAt = now;
+                    }
+                }
+
+                // Phương thức thanh toán chuẩn hóa theo check constraint DB
+                string requestedMethod = (request.PaymentMethod ?? "cod").ToLowerInvariant();
+                string dbPaymentMethod = requestedMethod switch
+                {
+                    "momo" => "e_wallet",
+                    "card" or "bank" => "card",
+                    _ => "cash"
+                };
+
                 var order = new Order
                 {
                     OrderNumber = $"WEB-{Guid.NewGuid():N}",
@@ -298,7 +338,9 @@ namespace backend.Controllers
                     Status = "pending",
                     Subtotal = subtotal,
                     Discount = discount,
-                    TotalAmount = subtotal - discount,
+                    TotalAmount = Math.Max(0, subtotal - discount),
+                    PaymentMethod = dbPaymentMethod,
+                    PaymentStatus = "pending",
                     PromotionId = appliedPromotion?.Id,
                     Note = $"Người nhận: {request.FullName.Trim()}\nSố điện thoại: {request.Phone.Trim()}\nĐịa chỉ giao hàng: {request.Address.Trim()}{(string.IsNullOrWhiteSpace(request.Note) ? "" : $"\nGhi chú: {request.Note.Trim()}")}",
                     CreatedAt = now,
@@ -327,6 +369,54 @@ namespace backend.Controllers
                 }
 
                 await transaction.CommitAsync();
+
+                // Tạo liên kết thanh toán MoMo nếu khách chọn MoMo
+                string? momoPayUrl = null;
+                if (requestedMethod == "momo")
+                {
+                    try
+                    {
+                        var backendBase = _config["App:BaseUrl"] ?? "http://localhost:5099";
+                        var momoReq = new MomoPaymentRequestDTO
+                        {
+                            OrderId = order.Id,
+                            Amount = order.TotalAmount,
+                            ReturnUrl = $"{backendBase}/api/payment/momo/return",
+                            NotifyUrl = $"{backendBase}/api/payment/momo/ipn"
+                        };
+                        var momoResult = await _paymentService.CreatePaymentAsync(momoReq);
+                        if (momoResult.Success)
+                            momoPayUrl = momoResult.PayUrl;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"[MoMo] Failed to create payment URL: {ex.Message}");
+                    }
+                }
+
+                // Mã VietQR nếu khách chọn chuyển khoản ngân hàng
+                string? vietQrUrl = null;
+                if (requestedMethod == "bank")
+                {
+                    vietQrUrl = $"https://img.vietqr.io/image/MB-0987654321-compact2.png?amount={Math.Round(order.TotalAmount):0}&addInfo=EMART_{order.OrderNumber}&accountName=EMART%20STORE";
+                }
+
+                // Bắn thông báo Realtime SignalR tới Web POS
+                if (_orderHub != null)
+                {
+                    _ = _orderHub.Clients.All.SendAsync("NewOrderReceived", new
+                    {
+                        orderId = order.Id,
+                        orderNumber = order.OrderNumber,
+                        customerName = request.FullName.Trim(),
+                        phone = request.Phone.Trim(),
+                        totalAmount = order.TotalAmount,
+                        itemCount = items.Count,
+                        paymentMethod = requestedMethod,
+                        createdAt = order.CreatedAt
+                    });
+                }
+
                 return Ok(new
                 {
                     order.Id,
@@ -335,7 +425,12 @@ namespace backend.Controllers
                     order.Subtotal,
                     order.Discount,
                     order.TotalAmount,
-                    order.CreatedAt
+                    paymentMethod = requestedMethod,
+                    order.PaymentStatus,
+                    order.CreatedAt,
+                    momoPayUrl,
+                    vietQrUrl,
+                    pointsUsed
                 });
             }
             catch (DbUpdateException)
@@ -347,6 +442,61 @@ namespace backend.Controllers
             {
                 await transaction.RollbackAsync();
                 throw;
+            }
+        }
+
+        [HttpGet("orders/{id}/payment-status")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetOrderPaymentStatus(int id)
+        {
+            var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id);
+            if (order == null) return NotFound(new { message = "Không tìm thấy đơn hàng." });
+
+            string? vietQrUrl = null;
+            if (order.PaymentStatus == "pending")
+            {
+                vietQrUrl = $"https://img.vietqr.io/image/MB-0987654321-compact2.png?amount={Math.Round(order.TotalAmount):0}&addInfo=EMART_{order.OrderNumber}&accountName=EMART%20STORE";
+            }
+
+            return Ok(new
+            {
+                order.Id,
+                order.OrderNumber,
+                order.Status,
+                order.PaymentStatus,
+                paymentMethod = order.PaymentMethod == "e_wallet" ? "momo" : (order.PaymentMethod == "card" ? "bank" : "cod"),
+                order.TotalAmount,
+                vietQrUrl
+            });
+        }
+
+        [HttpPost("orders/{id}/pay-momo")]
+        [AllowAnonymous]
+        public async Task<IActionResult> RecreateMomoPayment(int id)
+        {
+            var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id);
+            if (order == null) return NotFound(new { message = "Không tìm thấy đơn hàng." });
+            if (order.PaymentStatus == "paid") return BadRequest(new { message = "Đơn hàng đã được thanh toán." });
+
+            try
+            {
+                var backendBase = _config["App:BaseUrl"] ?? "http://localhost:5099";
+                var momoReq = new MomoPaymentRequestDTO
+                {
+                    OrderId = order.Id,
+                    Amount = order.TotalAmount,
+                    ReturnUrl = $"{backendBase}/api/payment/momo/return",
+                    NotifyUrl = $"{backendBase}/api/payment/momo/ipn"
+                };
+                var momoResult = await _paymentService.CreatePaymentAsync(momoReq);
+                if (momoResult.Success)
+                    return Ok(new { payUrl = momoResult.PayUrl, orderId = order.Id });
+
+                return BadRequest(new { message = momoResult.Message ?? "Không thể tạo liên kết thanh toán MoMo." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
             }
         }
     }
@@ -384,6 +534,7 @@ namespace backend.Controllers
         public int Id { get; set; }
         public string FullName { get; set; } = string.Empty;
         public string Phone { get; set; } = string.Empty;
+        public int RewardPoints { get; set; } = 0;
     }
 
     public class StorefrontOrderRequest
@@ -401,6 +552,13 @@ namespace backend.Controllers
         public string? Note { get; set; }
 
         public string? PromotionCode { get; set; }
+
+        /// <summary>Số điểm thưởng muốn dùng để giảm giá (1 điểm = 1.000 VNĐ)</summary>
+        public int PointsUsed { get; set; } = 0;
+
+        /// <summary>Phương thức thanh toán: "cod" (mặc định) | "momo" | "bank"</summary>
+        [StringLength(20)]
+        public string? PaymentMethod { get; set; } = "cod";
 
         [Required, MinLength(1), MaxLength(30)]
         public List<StorefrontOrderLine> Items { get; set; } = new();

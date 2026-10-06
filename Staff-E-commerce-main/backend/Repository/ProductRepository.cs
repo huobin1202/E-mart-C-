@@ -253,5 +253,18 @@ namespace backend.Repository
             };
         }
 
+        public async Task<Product?> GetByBarcodeAsync(string barcode)
+        {
+            if (string.IsNullOrWhiteSpace(barcode))
+                return null;
+
+            var clean = barcode.Trim();
+            return await _context.Products
+                .Include(p => p.Category)
+                .Include(p => p.Supplier)
+                .Include(p => p.Unit)
+                .Include(p => p.Inventory)
+                .FirstOrDefaultAsync(p => p.Barcode == clean || p.Sku == clean);
+        }
     }
 }

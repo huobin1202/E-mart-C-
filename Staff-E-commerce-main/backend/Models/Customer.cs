@@ -31,6 +31,9 @@ namespace backend.Models
         [Column("address")]
         public string? Address { get; set; }
 
+        [Column("reward_points")]
+        public int RewardPoints { get; set; } = 0;
+
         [Column("note")]
         public string? Note { get; set; }
 

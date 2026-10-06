@@ -124,7 +124,24 @@ namespace backend.Services
                 : order.OrderNumber.Trim();
             order.CreatedAt = DateTime.UtcNow;
             order.UpdatedAt = DateTime.UtcNow;
-            return await _orderRepo.CreateOrderAsync(order);
+            var created = await _orderRepo.CreateOrderAsync(order);
+
+            // Tích điểm nếu đơn hoàn tất tại quầy
+            if (created.Status == "completed" && created.CustomerId.HasValue && created.CustomerId.Value > 0)
+            {
+                var pointsEarned = (int)(created.TotalAmount / 10000m);
+                if (pointsEarned > 0)
+                {
+                    var customer = await _context.Customers.FindAsync(created.CustomerId.Value);
+                    if (customer != null)
+                    {
+                        customer.RewardPoints += pointsEarned;
+                        customer.UpdatedAt = DateTime.UtcNow;
+                        await _context.SaveChangesAsync();
+                    }
+                }
+            }
+            return created;
         }
 
 
@@ -343,13 +360,34 @@ namespace backend.Services
         {
             int userId = GetCurrentUserId();
             var now = DateTime.UtcNow;
-            var updated = await _context.Orders
-                .Where(o => o.Id == orderId && o.Status == "processing")
-                .ExecuteUpdateAsync(u => u
-                    .SetProperty(o => o.Status, "completed")
-                    .SetProperty(o => o.UserId, (int?)userId)
-                    .SetProperty(o => o.UpdatedAt, now));
-            return updated == 1;
+            var order = await _context.Orders
+                .Include(o => o.Customer)
+                .FirstOrDefaultAsync(o => o.Id == orderId && o.Status == "processing");
+
+            if (order == null) return false;
+
+            order.Status = "completed";
+            order.PaymentStatus = "paid";
+            order.UserId = userId;
+            order.UpdatedAt = now;
+
+            // Tích điểm thưởng cho khách hàng nếu có tài khoản: 10.000đ = 1 điểm
+            if (order.CustomerId.HasValue)
+            {
+                var pointsEarned = (int)(order.TotalAmount / 10000m);
+                if (pointsEarned > 0)
+                {
+                    var customer = await _context.Customers.FindAsync(order.CustomerId.Value);
+                    if (customer != null)
+                    {
+                        customer.RewardPoints += pointsEarned;
+                        customer.UpdatedAt = now;
+                    }
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            return true;
         }
 
         /// <summary>Lấy danh sách items của đơn hàng</summary>

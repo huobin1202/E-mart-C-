@@ -11,7 +11,7 @@ namespace backend.DTO
 
         public string ProductName { get; set; } = string.Empty;
 
-        // public string? Barcode { get; set; }
+        public string? Barcode { get; set; }
 
         public int? CategoryId { get; set; }
 

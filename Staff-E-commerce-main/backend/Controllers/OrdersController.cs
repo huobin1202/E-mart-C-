@@ -1,7 +1,9 @@
 using backend.DTO;
 using backend.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using backend.Models;
+using backend.Hubs;
 
 namespace backend.Controllers
 {
@@ -10,9 +12,12 @@ namespace backend.Controllers
     public class OrdersController : ControllerBase
     {
         private readonly OrderService _orderService;
-        public OrdersController(OrderService orderService)
+        private readonly IHubContext<OrderHub>? _orderHub;
+
+        public OrdersController(OrderService orderService, IHubContext<OrderHub>? orderHub = null)
         {
             _orderService = orderService;
+            _orderHub = orderHub;
         }
 
         //1. Khởi tạo một đối tượng đơn hàng tạm thời để truyền xuống frontend
@@ -50,6 +55,7 @@ namespace backend.Controllers
         // }
 
         [HttpPost("create")]
+        [HttpPost("")]
         public async Task<IActionResult> CreateOrder([FromBody] Order order)
         {
             if (order == null)
@@ -155,6 +161,12 @@ namespace backend.Controllers
                 var result = await _orderService.ConfirmOnlineOrderAsync(orderId);
                 if (!result)
                     return Conflict(new { message = "Đơn hàng không thể xác nhận (không tồn tại hoặc không ở trạng thái pending)." });
+
+                if (_orderHub != null)
+                {
+                    _ = _orderHub.Clients.All.SendAsync("OrderStatusChanged", new { orderId, status = "processing" });
+                }
+
                 return Ok(new { success = true, message = "Đã xác nhận đơn hàng." });
             }
             catch (Exception ex)
@@ -174,6 +186,12 @@ namespace backend.Controllers
                 var result = await _orderService.RejectOnlineOrderAsync(orderId, dto?.Reason);
                 if (!result)
                     return Conflict(new { message = "Đơn hàng không thể từ chối (không tồn tại hoặc không ở trạng thái pending/processing)." });
+
+                if (_orderHub != null)
+                {
+                    _ = _orderHub.Clients.All.SendAsync("OrderStatusChanged", new { orderId, status = "cancelled" });
+                }
+
                 return Ok(new { success = true, message = "Đã từ chối đơn hàng." });
             }
             catch (Exception ex)
@@ -193,6 +211,12 @@ namespace backend.Controllers
                 var result = await _orderService.DeliverOnlineOrderAsync(orderId);
                 if (!result)
                     return Conflict(new { message = "Đơn hàng không thể chuyển sang trạng thái giao hàng." });
+
+                if (_orderHub != null)
+                {
+                    _ = _orderHub.Clients.All.SendAsync("OrderStatusChanged", new { orderId, status = "completed" });
+                }
+
                 return Ok(new { success = true, message = "Đã hoàn thành giao hàng." });
             }
             catch (Exception ex)

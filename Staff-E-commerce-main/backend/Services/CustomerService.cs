@@ -30,7 +30,8 @@ namespace backend.Services
                 FullName = c.FullName,
                 Phone = c.Phone,
                 Email = c.Email,
-                Address = c.Address
+                Address = c.Address,
+                RewardPoints = c.RewardPoints
             }).ToList();
 
             return (dtos, totalPages);
@@ -46,7 +47,8 @@ namespace backend.Services
                 FullName = c.FullName,
                 Phone = c.Phone,
                 Email = c.Email,
-                Address = c.Address
+                Address = c.Address,
+                RewardPoints = c.RewardPoints
             }).ToList();
         }
 
@@ -190,6 +192,7 @@ namespace backend.Services
                 Email = customer.Email,
                 Address = customer.Address,
                 IsActive = customer.IsActive,
+                RewardPoints = customer.RewardPoints,
                 CreatedAt = customer.CreatedAt,
                 UpdatedAt = customer.UpdatedAt,
             };

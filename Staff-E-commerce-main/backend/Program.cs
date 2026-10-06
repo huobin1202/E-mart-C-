@@ -13,6 +13,7 @@ using backend.Services.AI.SemanticSearch;
 using backend.Services.AI.VectorStore;
 
 using backend.Middlewares;
+using backend.Hubs;
 using Microsoft.Extensions.FileProviders;
 using System.Text;
 using System.Text.Json;
@@ -48,6 +49,7 @@ builder.Services.AddControllers()
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddSignalR();
 builder.Services.AddAuthorization(options =>
 {
     // Yêu cầu đăng nhập cho tất cả endpoint trừ khi đánh dấu [AllowAnonymous]
@@ -202,6 +204,7 @@ app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseHttpsRedirection();
 
 app.MapControllers();
+app.MapHub<OrderHub>("/hub/orders").AllowAnonymous();
 
 // -------------------------
 // Serve frontend SPA (Vite)

@@ -157,7 +157,14 @@ namespace backend.Services
                 {
                     payment.Status = "completed";
                     await _paymentRepo.UpdatePaymentAsync(payment);
-                    await _orderRepo.UpdateOrderStatusAsync(payment.OrderId, "completed");
+
+                    var order = await _orderRepo.GetByIdAsync(payment.OrderId);
+                    if (order != null)
+                    {
+                        var newStatus = order.OrderType == "pos" ? "completed" : (order.Status == "pending" ? "processing" : order.Status);
+                        await _orderRepo.UpdateOrderPaymentAsync(order.Id, "paid", newStatus);
+                    }
+
                     await _logService.LogAsync(payment.OrderId, "PAYMENT_SUCCESS", "Payment", payment.TransactionRef, JsonConvert.SerializeObject(callback), "system");
                 }
             }

@@ -69,6 +69,24 @@ namespace backend.Controllers
             }
         }
 
+        // GET api/products/barcode/{code}
+        [HttpGet("barcode/{code}")]
+        public async Task<ActionResult<ProductDTO>> GetProductByBarcode(string code)
+        {
+            try
+            {
+                var product = await _productService.GetProductByBarcodeAsync(code);
+                if (product == null)
+                    return NotFound(new { message = $"Không tìm thấy sản phẩm có mã vạch: {code}" });
+
+                return Ok(product);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
+        }
+
         // POST api/products
         // Accept ProductDTO in body and map to Product entity before creating
         [HttpPost]

@@ -339,6 +339,12 @@ export async function getProductsPaginated(
   return request(`/products/paginated?${params}`);
 }
 
+export async function getProductByBarcode(barcode) {
+  return request(`/products/barcode/${encodeURIComponent(barcode)}`);
+}
+
+export const getPaginatedProducts = getProductsPaginated;
+
 // Users -------------------------------------------------------------
 
 export async function getUsersPaginated(page = 1, pageSize = 10) {

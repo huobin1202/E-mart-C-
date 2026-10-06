@@ -228,7 +228,7 @@ namespace backend.Services
                 Id = p.Id,
                 Sku = p.Sku,
                 ProductName = p.ProductName,
-                // Barcode = p.Barcode,
+                Barcode = p.Barcode,
                 CategoryId = p.CategoryId,
                 SupplierId = p.SupplierId,
                 Price = p.Price,
@@ -298,5 +298,10 @@ namespace backend.Services
             return filtered.Items.Select(MapToProductDto).ToList();
         }
 
+        public async Task<ProductDTO?> GetProductByBarcodeAsync(string barcode)
+        {
+            var product = await _productRepository.GetByBarcodeAsync(barcode);
+            return product == null ? null : MapToProductDto(product);
+        }
     }
 }

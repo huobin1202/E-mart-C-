@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { getProductByBarcode } from "../../api/apiClient";
 
 export default function DetailOrderForm({
   openProductModal,
@@ -19,6 +20,31 @@ export default function DetailOrderForm({
 
   const [mode, setMode] = useState("add"); // add | edit
   const [editIndex, setEditIndex] = useState(null);
+  const [barcodeInput, setBarcodeInput] = useState("");
+
+  const handleBarcodeScan = async (e) => {
+    if (e.key === "Enter" && barcodeInput.trim()) {
+      e.preventDefault();
+      try {
+        const prod = await getProductByBarcode(barcodeInput.trim());
+        if (prod) {
+          setCurrent({
+            id: prod.id,
+            product: prod.productName,
+            price: prod.price,
+            qty: 1,
+            total: prod.price,
+            quantity: prod.inventory?.quantity || 999,
+          });
+          setBarcodeInput("");
+        } else {
+          alert(`Không tìm thấy sản phẩm có mã vạch: ${barcodeInput}`);
+        }
+      } catch (err) {
+        alert(`Không tìm thấy sản phẩm có mã vạch: ${barcodeInput}`);
+      }
+    }
+  };
 
   // Khi chọn sản phẩm từ ProductModal
   useEffect(() => {
@@ -109,6 +135,21 @@ export default function DetailOrderForm({
 
       {isCreateMode === "create" && (
         <div className="space-y-4 mb-4">
+          {/* Ô quét mã vạch */}
+          <div className="bg-white p-3 rounded-lg border border-indigo-200">
+            <label className="block text-xs font-bold text-indigo-700 mb-1">
+              📟 Quét mã vạch (Barcode):
+            </label>
+            <input
+              type="text"
+              placeholder="Quét mã vạch hoặc nhập mã rồi nhấn Enter..."
+              value={barcodeInput}
+              onChange={(e) => setBarcodeInput(e.target.value)}
+              onKeyDown={handleBarcodeScan}
+              className="w-full px-3 py-1.5 border border-indigo-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-400"
+            />
+          </div>
+
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Sản phẩm</label>
             <div className="flex gap-2">

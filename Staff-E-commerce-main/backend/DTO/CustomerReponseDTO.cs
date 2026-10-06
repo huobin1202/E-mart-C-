@@ -10,6 +10,7 @@ namespace backend.DTO
         public string? Address { get; set; }
 
         public bool IsActive { get; set; }
+        public int RewardPoints { get; set; } = 0;
 
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }

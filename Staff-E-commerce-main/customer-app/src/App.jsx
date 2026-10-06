@@ -5,6 +5,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -123,6 +124,8 @@ export default function App() {
   const [voucherBusy, setVoucherBusy] = useState(false);
   const [voucherMessage, setVoucherMessage] = useState("");
   const [appliedVoucher, setAppliedVoucher] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState("cod");
+  const [useRewardPoints, setUseRewardPoints] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem(ADDRESS_KEY).then((stored) => {
@@ -315,7 +318,11 @@ export default function App() {
   }), [products, query, categoryId]);
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const payable = Math.max(0, subtotal - (appliedVoucher?.discountAmount || 0));
+  const voucherDiscount = appliedVoucher?.discountAmount || 0;
+  const afterVoucher = Math.max(0, subtotal - voucherDiscount);
+  const maxPointsUsable = Math.min(customer?.rewardPoints || 0, Math.floor(afterVoucher / 1000));
+  const pointsDiscount = useRewardPoints ? maxPointsUsable * 1000 : 0;
+  const payable = Math.max(0, afterVoucher - pointsDiscount);
 
   const openVouchers = async () => {
     setVoucherOpen(true);
@@ -387,15 +394,26 @@ export default function App() {
           ...checkoutForm,
           fullName: customer?.fullName?.trim() || checkoutForm.fullName.trim(),
           phone: customer?.phone || checkoutForm.phone.trim(),
+          paymentMethod,
+          pointsUsed: useRewardPoints ? maxPointsUsable : 0,
           items: cart.map((item) => ({ productId: item.id, quantity: item.quantity })),
           promotionCode: appliedVoucher?.code || null,
         }),
       });
       if (!response.ok) throw new Error(await readError(response));
       const result = await response.json();
-      setCompletedOrder(result);
+      setCompletedOrder({
+        ...result,
+        paymentMethod,
+        pointsDiscount,
+        vietQrUrl: result.vietQrUrl || (paymentMethod === "bank" ? `https://img.vietqr.io/image/MB-0987654321-compact2.png?amount=${result.totalAmount}&addInfo=EMART_${result.orderNumber}&accountName=EMART%20STORE` : null)
+      });
+      if (customer && useRewardPoints && maxPointsUsable > 0) {
+        setCustomer((prev) => prev ? ({ ...prev, rewardPoints: Math.max(0, (prev.rewardPoints || 0) - maxPointsUsable) }) : null);
+      }
       const placedOrder = {
         ...result,
+        paymentMethod,
         note: `Người nhận: ${customer?.fullName?.trim() || checkoutForm.fullName.trim()}\nSố điện thoại: ${customer?.phone || checkoutForm.phone.trim()}\nĐịa chỉ giao hàng: ${checkoutForm.address.trim()}${checkoutForm.note.trim() ? `\nGhi chú: ${checkoutForm.note.trim()}` : ""}`,
         paymentStatus: "pending",
         orderType: "mobile",
@@ -410,6 +428,7 @@ export default function App() {
       };
       setCustomerOrders((current) => [placedOrder, ...current.filter((order) => order.id !== placedOrder.id)]);
       setCart([]);
+      setUseRewardPoints(false);
     } catch (error) {
       setOrderError(error.message || "Không thể gửi đơn hàng. Kiểm tra kết nối rồi thử lại.");
     } finally {
@@ -582,6 +601,15 @@ export default function App() {
           <Text style={styles.profileEmoji}>👋</Text>
           <Text style={styles.emptyTitle}>{customer.fullName || "Chào mừng bạn"}</Text>
           <Text style={styles.stateText}>{customer.phone}</Text>
+          <View style={{ marginTop: 10, backgroundColor: "#eef7ef", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Text style={{ fontSize: 14 }}>⭐</Text>
+            <Text style={{ fontSize: 13, fontWeight: "800", color: GREEN }}>
+              {customer.rewardPoints || 0} điểm thưởng
+            </Text>
+            <Text style={{ fontSize: 11, color: MUTED }}>
+              (đổi được {money((customer.rewardPoints || 0) * 1000)})
+            </Text>
+          </View>
         </View>
         <View style={styles.infoCard}><Text style={styles.infoTitle}>Thông tin cá nhân</Text>
           <Pressable style={styles.profileMenuRow} onPress={() => { setAccountName(customer.fullName || ""); setProfilePage("personal"); }}><Text style={styles.profileMenuIcon}>♙</Text><Text style={styles.profileMenuText}>Sửa thông tin cá nhân</Text><Text style={styles.profileMenuArrow}>›</Text></Pressable>
@@ -628,16 +656,169 @@ export default function App() {
         <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <View style={styles.checkoutSheet}>
             <View style={styles.sheetHandle} />
-            {completedOrder ? <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.successContent}><Text style={styles.successIcon}>✓</Text><Text style={styles.eyebrow}>ĐẶT HÀNG THÀNH CÔNG</Text><Text style={styles.successTitle}>Cảm ơn bạn đã mua hàng!</Text><Text style={styles.inputLabel}>MÃ ĐƠN HÀNG</Text><Text selectable style={styles.successCode}>{completedOrder.orderNumber}</Text><View style={styles.summaryTotal}><Text style={styles.summaryTotalLabel}>Thanh toán khi nhận hàng</Text><Text style={styles.summaryTotalValue}>{money(completedOrder.totalAmount)}</Text></View><AppButton title="Xong" onPress={() => { setCheckoutOpen(false); setTab("orders"); }} /></ScrollView> : <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.checkoutContent}><Text style={styles.eyebrow}>GIAO HÀNG TẬN NHÀ</Text><Text style={styles.checkoutTitle}>Thông tin nhận hàng</Text><Text style={styles.checkoutDescription}>Thanh toán tiền mặt khi nhận hàng.</Text>
-              <Text style={styles.inputLabel}>HỌ VÀ TÊN</Text><TextInput value={customer?.fullName || checkoutForm.fullName} onChangeText={(value) => setCheckoutForm((form) => ({ ...form, fullName: value }))} placeholder="Nguyễn Văn An" style={styles.formInput} maxLength={150} autoCapitalize="words" editable={!customer?.fullName} />
-              <Text style={styles.inputLabel}>SỐ ĐIỆN THOẠI</Text><TextInput value={customer?.phone || checkoutForm.phone} onChangeText={(value) => setCheckoutForm((form) => ({ ...form, phone: value }))} placeholder="0912345678" style={styles.formInput} keyboardType="phone-pad" maxLength={13} editable={!customer} />
-              <Text style={styles.inputLabel}>ĐỊA CHỈ GIAO HÀNG</Text><TextInput value={checkoutForm.address} onChangeText={(value) => setCheckoutForm((form) => ({ ...form, address: value }))} placeholder="Số nhà, đường, phường/xã, quận/huyện" style={[styles.formInput, styles.addressInput]} multiline maxLength={500} />
-              <Text style={styles.inputLabel}>GHI CHÚ (KHÔNG BẮT BUỘC)</Text><TextInput value={checkoutForm.note} onChangeText={(value) => setCheckoutForm((form) => ({ ...form, note: value }))} placeholder="Ví dụ: gọi trước khi giao" style={[styles.formInput, styles.noteInput]} multiline maxLength={500} />
-              {orderError ? <Text style={styles.orderError}>{orderError}</Text> : null}
-              <View style={styles.checkoutTotal}><Text style={styles.summaryLabel}>{itemCount} sản phẩm · thanh toán khi nhận</Text><Text style={styles.summaryTotalValue}>{money(subtotal)}</Text></View>
-              <AppButton title={orderSubmitting ? "Đang gửi đơn hàng..." : "Xác nhận đặt hàng"} disabled={orderSubmitting} onPress={submitOrder} />
-              <Pressable disabled={orderSubmitting} onPress={() => setCheckoutOpen(false)} style={styles.cancelCheckout}><Text style={styles.cancelText}>Quay lại giỏ hàng</Text></Pressable>
-            </ScrollView>}
+            {completedOrder ? (
+              <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.successContent}>
+                <Text style={styles.successIcon}>✓</Text>
+                <Text style={styles.eyebrow}>ĐẶT HÀNG THÀNH CÔNG</Text>
+                <Text style={styles.successTitle}>Cảm ơn bạn đã mua hàng!</Text>
+                <Text style={styles.inputLabel}>MÃ ĐƠN HÀNG</Text>
+                <Text selectable style={styles.successCode}>{completedOrder.orderNumber}</Text>
+
+                {/* Khối thanh toán MoMo */}
+                {completedOrder.paymentMethod === "momo" && (
+                  <View style={{ marginTop: 14, padding: 14, borderRadius: 12, backgroundColor: "#fff0f6", borderWidth: 1, borderColor: "#ffadd2", alignItems: "center" }}>
+                    <Text style={{ fontSize: 14, fontWeight: "900", color: "#a50064", marginBottom: 6 }}>
+                      🟣 Thanh toán qua Ví MoMo
+                    </Text>
+                    <Text style={{ fontSize: 11, color: "#595959", textAlign: "center", marginBottom: 12 }}>
+                      Nhấn nút bên dưới để mở ứng dụng MoMo và thanh toán số tiền {money(completedOrder.totalAmount)}.
+                    </Text>
+                    {completedOrder.momoPayUrl ? (
+                      <Pressable
+                        onPress={() => Linking.openURL(completedOrder.momoPayUrl)}
+                        style={{ backgroundColor: "#a50064", paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10, alignSelf: "stretch", alignItems: "center" }}
+                      >
+                        <Text style={{ color: "#fff", fontWeight: "900", fontSize: 13 }}>
+                          Mở Ví MoMo để thanh toán ngay →
+                        </Text>
+                      </Pressable>
+                    ) : (
+                      <Text style={{ fontSize: 11, color: MUTED }}>Liên kết thanh toán MoMo đang được tạo...</Text>
+                    )}
+                  </View>
+                )}
+
+                {/* Khối quét mã VietQR */}
+                {completedOrder.paymentMethod === "bank" && (
+                  <View style={{ marginTop: 14, padding: 14, borderRadius: 12, backgroundColor: "#f0f5ff", borderWidth: 1, borderColor: "#adc6ff", alignItems: "center" }}>
+                    <Text style={{ fontSize: 14, fontWeight: "900", color: "#1d39c4", marginBottom: 6 }}>
+                      🏦 Quét mã QR chuyển khoản ngân hàng
+                    </Text>
+                    <Text style={{ fontSize: 11, color: "#595959", textAlign: "center", marginBottom: 10 }}>
+                      Dùng app ngân hàng bất kỳ để quét mã VietQR chuyển khoản nhanh:
+                    </Text>
+                    {completedOrder.vietQrUrl && (
+                      <Image
+                        source={{ uri: completedOrder.vietQrUrl }}
+                        style={{ width: 210, height: 210, borderRadius: 10, marginVertical: 6, backgroundColor: "#fff" }}
+                        resizeMode="contain"
+                      />
+                    )}
+                    <View style={{ width: "100%", backgroundColor: "#fff", padding: 10, borderRadius: 8, marginTop: 8 }}>
+                      <Text style={{ fontSize: 11, color: DARK }}>• Ngân hàng: <Text style={{ fontWeight: "700" }}>MBBank (Quân Đội)</Text></Text>
+                      <Text style={{ fontSize: 11, color: DARK }}>• STK: <Text style={{ fontWeight: "700" }}>0987654321</Text></Text>
+                      <Text style={{ fontSize: 11, color: DARK }}>• Chủ TK: <Text style={{ fontWeight: "700" }}>EMART STORE</Text></Text>
+                      <Text style={{ fontSize: 11, color: DARK }}>• Số tiền: <Text style={{ fontWeight: "700", color: "#1d39c4" }}>{money(completedOrder.totalAmount)}</Text></Text>
+                      <Text style={{ fontSize: 11, color: DARK }}>• Nội dung: <Text style={{ fontWeight: "700", color: "#d4380d" }}>EMART_{completedOrder.orderNumber}</Text></Text>
+                    </View>
+                  </View>
+                )}
+
+                <View style={[styles.summaryTotal, { marginTop: 14 }]}>
+                  <Text style={styles.summaryTotalLabel}>
+                    {completedOrder.paymentMethod === "cod" ? "Thanh toán khi nhận hàng" : "Tổng tiền đơn hàng"}
+                  </Text>
+                  <Text style={styles.summaryTotalValue}>{money(completedOrder.totalAmount)}</Text>
+                </View>
+                <AppButton title="Xong" onPress={() => { setCheckoutOpen(false); setTab("orders"); }} />
+              </ScrollView>
+            ) : (
+              <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.checkoutContent}>
+                <Text style={styles.eyebrow}>GIAO HÀNG TẬN NHÀ</Text>
+                <Text style={styles.checkoutTitle}>Thông tin đặt hàng</Text>
+                <Text style={styles.checkoutDescription}>Chọn phương thức thanh toán thuận tiện nhất cho bạn.</Text>
+                <Text style={styles.inputLabel}>HỌ VÀ TÊN</Text>
+                <TextInput value={customer?.fullName || checkoutForm.fullName} onChangeText={(value) => setCheckoutForm((form) => ({ ...form, fullName: value }))} placeholder="Nguyễn Văn An" style={styles.formInput} maxLength={150} autoCapitalize="words" editable={!customer?.fullName} />
+                <Text style={styles.inputLabel}>SỐ ĐIỆN THOẠI</Text>
+                <TextInput value={customer?.phone || checkoutForm.phone} onChangeText={(value) => setCheckoutForm((form) => ({ ...form, phone: value }))} placeholder="0912345678" style={styles.formInput} keyboardType="phone-pad" maxLength={13} editable={!customer} />
+                <Text style={styles.inputLabel}>ĐỊA CHỈ GIAO HÀNG</Text>
+                <TextInput value={checkoutForm.address} onChangeText={(value) => setCheckoutForm((form) => ({ ...form, address: value }))} placeholder="Số nhà, đường, phường/xã, quận/huyện" style={[styles.formInput, styles.addressInput]} multiline maxLength={500} />
+                <Text style={styles.inputLabel}>GHI CHÚ (KHÔNG BẮT BUỘC)</Text>
+                <TextInput value={checkoutForm.note} onChangeText={(value) => setCheckoutForm((form) => ({ ...form, note: value }))} placeholder="Ví dụ: gọi trước khi giao" style={[styles.formInput, styles.noteInput]} multiline maxLength={500} />
+
+                {/* Lựa chọn phương thức thanh toán */}
+                <Text style={styles.inputLabel}>PHƯƠNG THỨC THANH TOÁN</Text>
+                <View style={{ gap: 8, marginTop: 4, marginBottom: 8 }}>
+                  {[
+                    { key: "cod", icon: "💵", label: "Tiền mặt khi nhận (COD)", desc: "Nhận hàng rồi thanh toán tiền mặt" },
+                    { key: "momo", icon: "🟣", label: "Ví điện tử MoMo", desc: "Thanh toán online qua ví MoMo" },
+                    { key: "bank", icon: "🏦", label: "Chuyển khoản QR ngân hàng", desc: "Quét mã VietQR chuyển khoản nhanh" },
+                  ].map((m) => (
+                    <Pressable
+                      key={m.key}
+                      onPress={() => setPaymentMethod(m.key)}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        padding: 10,
+                        borderRadius: 10,
+                        borderWidth: 1.5,
+                        borderColor: paymentMethod === m.key ? GREEN : "#e6ebe5",
+                        backgroundColor: paymentMethod === m.key ? "#f0f8f2" : "#fff",
+                      }}
+                    >
+                      <Text style={{ fontSize: 20, marginRight: 10 }}>{m.icon}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontWeight: "800", color: paymentMethod === m.key ? GREEN : DARK }}>
+                          {m.label}
+                        </Text>
+                        <Text style={{ fontSize: 10, color: MUTED }}>{m.desc}</Text>
+                      </View>
+                      <View style={{
+                        width: 18, height: 18, borderRadius: 9, borderWidth: 2,
+                        borderColor: paymentMethod === m.key ? GREEN : "#c7d1c6",
+                        alignItems: "center", justifyContent: "center"
+                      }}>
+                        {paymentMethod === m.key ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: GREEN }} /> : null}
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+
+                {/* Điểm thưởng khách hàng */}
+                {customer && (customer.rewardPoints || 0) > 0 && maxPointsUsable > 0 && (
+                  <Pressable
+                    onPress={() => setUseRewardPoints(!useRewardPoints)}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      padding: 10,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: useRewardPoints ? "#e0a133" : "#e6ebe5",
+                      backgroundColor: useRewardPoints ? "#fff9ed" : "#fafcfa",
+                      marginTop: 6,
+                      marginBottom: 8,
+                    }}
+                  >
+                    <Text style={{ fontSize: 18, marginRight: 8 }}>⭐</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 12, fontWeight: "800", color: "#8a5814" }}>
+                        Dùng {maxPointsUsable} điểm thưởng (-{money(maxPointsUsable * 1000)})
+                      </Text>
+                      <Text style={{ fontSize: 10, color: MUTED }}>
+                        Bạn có {customer.rewardPoints} điểm tích lũy (1 điểm = 1.000đ)
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 18, color: useRewardPoints ? "#d48806" : "#a1aba3" }}>
+                      {useRewardPoints ? "☑" : "□"}
+                    </Text>
+                  </Pressable>
+                )}
+
+                {orderError ? <Text style={styles.orderError}>{orderError}</Text> : null}
+                <View style={styles.checkoutTotal}>
+                  <Text style={styles.summaryLabel}>
+                    {itemCount} sản phẩm{useRewardPoints ? ` · giảm ${money(pointsDiscount)} điểm` : ""}
+                  </Text>
+                  <Text style={styles.summaryTotalValue}>{money(payable)}</Text>
+                </View>
+                <AppButton title={orderSubmitting ? "Đang gửi đơn hàng..." : "Xác nhận đặt hàng"} disabled={orderSubmitting} onPress={submitOrder} />
+                <Pressable disabled={orderSubmitting} onPress={() => setCheckoutOpen(false)} style={styles.cancelCheckout}>
+                  <Text style={styles.cancelText}>Quay lại giỏ hàng</Text>
+                </Pressable>
+              </ScrollView>
+            )}
           </View>
         </KeyboardAvoidingView>
       </Modal>

@@ -36,6 +36,19 @@ namespace backend.Repository
             }
         }
 
+        public async Task UpdateOrderPaymentAsync(int orderId, string paymentStatus, string? newOrderStatus = null)
+        {
+            var order = await _context.Orders.FindAsync(orderId);
+            if (order != null)
+            {
+                order.PaymentStatus = paymentStatus;
+                if (!string.IsNullOrEmpty(newOrderStatus))
+                    order.Status = newOrderStatus;
+                order.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+            }
+        }
+
         //3. Lấy max Id hiện tại trong bảng Orders => nếu chưa có đơn hàng nào thì trả về 0
         public async Task<int> GetMaxIdAsync()
         {
