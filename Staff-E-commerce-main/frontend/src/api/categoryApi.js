@@ -1,25 +1,4 @@
-const BASE_URL = "http://localhost:5099/api";
-
-async function request(path, options = {}) {
-  const url = `${BASE_URL}${path}`;
-  const res = await fetch(url, {
-    headers: {
-      "Content-Type": "application/json",
-    },
-    ...options,
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`${res.status} ${res.statusText} - ${errText}`);
-  }
-
-  const contentType = res.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) {
-    return res.json();
-  }
-  return res.text();
-}
+import { request } from "./apiClient";
 
 // Lấy danh sách categories với phân trang
 export async function getCategories(
@@ -75,7 +54,8 @@ export async function deleteCategory(categoryId) {
 
 // Lấy tất cả categories (không phân trang)
 export async function getAllCategories() {
-  return request("/categories/all");
+  const data = await request("/categories/all");
+  return Array.isArray(data) ? data : (data?.items || data?.value || []);
 }
 
 export default {

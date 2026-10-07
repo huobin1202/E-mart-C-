@@ -57,7 +57,7 @@ export default function ProductList() {
   const fetchCategories = async () => {
     try {
       const data = await getAllCategories();
-      setCategories(data);
+      setCategories(Array.isArray(data) ? data : (data?.items || data?.value || []));
     } catch (error) {
       console.error("Lỗi khi tải danh mục:", error);
     }
@@ -67,7 +67,7 @@ export default function ProductList() {
   const fetchSuppliers = async () => {
     try {
       const data = await request("/suppliers");
-      setSuppliers(data);
+      setSuppliers(Array.isArray(data) ? data : (data?.items || []));
     } catch (error) {
       console.error("Lỗi khi tải nhà cung cấp:", error);
     }
@@ -77,7 +77,7 @@ export default function ProductList() {
   const fetchUnits = async () => {
     try {
       const data = await request("/units");
-      setUnits(data);
+      setUnits(Array.isArray(data) ? data : (data?.items || []));
     } catch (error) {
       console.error("Lỗi khi tải đơn vị:", error);
     }
@@ -265,12 +265,12 @@ export default function ProductList() {
           productName: productData.productName,
           price: Number(productData.price ?? 0),
           sku: productData.sku,
-          unitId: productData.unitId,
-          categoryId: productData.categoryId,
-          supplierId: productData.supplierId,
-          isActive: !!productData.isActive,
-          description: productData.description,
-          imageUrl: productData.imageUrl, // Lưu URL đã upload
+          unitId: productData.unitId ? Number(productData.unitId) : null,
+          categoryId: productData.categoryId ? Number(productData.categoryId) : null,
+          supplierId: productData.supplierId ? Number(productData.supplierId) : null,
+          isActive: productData.isActive !== undefined ? !!productData.isActive : true,
+          description: productData.description || "",
+          imageUrl: productData.imageUrl || "", // Lưu URL đã upload
         };
 
         await request(`/products/${productData.id}`, {

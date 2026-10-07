@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
 import CustomSelect from "../ui/CustomSelect";
+import { request } from "../../api/apiClient";
+import { getAllCategories } from "../../api/categoryApi";
 
 const ProductModal = ({
   title = null,
@@ -16,6 +18,51 @@ const ProductModal = ({
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
 
+  // Fallback options nếu component cha chưa tải xong
+  const [categoryList, setCategoryList] = useState(Array.isArray(categories) ? categories : []);
+  const [supplierList, setSupplierList] = useState(Array.isArray(suppliers) ? suppliers : []);
+  const [unitList, setUnitList] = useState(Array.isArray(units) ? units : []);
+
+  useEffect(() => {
+    if (Array.isArray(categories) && categories.length > 0) {
+      setCategoryList(categories);
+    } else {
+      getAllCategories()
+        .then((data) => {
+          const list = Array.isArray(data) ? data : (data?.items || data?.value || []);
+          if (list.length > 0) setCategoryList(list);
+        })
+        .catch(() => {});
+    }
+  }, [categories]);
+
+  useEffect(() => {
+    if (Array.isArray(suppliers) && suppliers.length > 0) {
+      setSupplierList(suppliers);
+    } else {
+      request("/suppliers")
+        .then((data) => {
+          const list = Array.isArray(data) ? data : (data?.items || []);
+          if (list.length > 0) setSupplierList(list);
+        })
+        .catch(() => {});
+    }
+  }, [suppliers]);
+
+  useEffect(() => {
+    if (Array.isArray(units) && units.length > 0) {
+      setUnitList(units);
+    } else {
+      request("/units")
+        .then((data) => {
+          const list = Array.isArray(data) ? data : (data?.items || []);
+          if (list.length > 0) setUnitList(list);
+        })
+        .catch(() => {});
+    }
+  }, [units]);
+
+  // Khởi tạo formData
   useEffect(() => {
     if (mode === "create") {
       setFormData({
@@ -30,21 +77,51 @@ const ProductModal = ({
         imageFile: null,
         isActive: true,
       });
+      setErrors({});
     } else if (product) {
+      const p = product;
       setFormData({
-        productName: product.productName || "",
-        price: product.price || "",
-        sku: product.sku || "",
-        unitId: product.unitId || "",
-        categoryId: product.categoryId || "",
-        supplierId: product.supplierId || "",
-        description: product.description || "",
-        imageUrl: product.imageUrl || "",
-        isActive: product.isActive !== undefined ? product.isActive : true,
-        createdAt: product.created_at || "",
+        id: p.id,
+        productName: p.productName || p.product_name || p.name || "",
+        price: p.price !== undefined && p.price !== null ? p.price : "",
+        sku: p.sku || p.barcode || "",
+        unitId: p.unitId || p.unit?.id || p.unit_id || "",
+        categoryId: p.categoryId || p.category?.id || p.category_id || "",
+        supplierId: p.supplierId || p.supplier?.id || p.supplier_id || "",
+        description: p.description || "",
+        imageUrl: p.imageUrl || p.image_url || "",
+        imageFile: null,
+        isActive: p.isActive !== undefined ? p.isActive : true,
+        createdAt: p.created_at || p.createdAt || "",
       });
+      setErrors({});
     }
   }, [mode, product]);
+
+  // Khi ở mode edit, tải thông tin chi tiết đầy đủ từ backend để đảm bảo không thiếu field nào
+  useEffect(() => {
+    if (mode === "edit" && product?.id) {
+      request(`/products/${product.id}`)
+        .then((detail) => {
+          if (detail) {
+            setFormData((prev) => ({
+              ...prev,
+              id: detail.id,
+              productName: prev.productName || detail.productName || "",
+              price: prev.price !== "" && prev.price !== undefined ? prev.price : detail.price,
+              sku: prev.sku || detail.sku || detail.barcode || "",
+              unitId: prev.unitId || detail.unitId || detail.unit?.id || "",
+              categoryId: prev.categoryId || detail.categoryId || detail.category?.id || "",
+              supplierId: prev.supplierId || detail.supplierId || detail.supplier?.id || "",
+              description: prev.description !== undefined && prev.description !== "" ? prev.description : (detail.description || ""),
+              imageUrl: prev.imageUrl || detail.imageUrl || "",
+              isActive: prev.isActive !== undefined ? prev.isActive : detail.isActive,
+            }));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [mode, product?.id]);
 
   const modalTitle =
     title ||
@@ -58,64 +135,40 @@ const ProductModal = ({
   const validate = () => {
     const newErrors = {};
 
-    if (!formData.productName?.trim()) {
+    const name = (formData.productName || (mode === "edit" ? product?.productName : ""))?.trim();
+    if (!name) {
       newErrors.productName = "Tên sản phẩm không được để trống";
-    } else {
-      // try Unicode letter check; fallback to ascii letters if not supported
-      const name = formData.productName || "";
-
-      const hasLetter = (() => {
-        try {
-          return /\p{L}/u.test(name);
-        } catch {
-          return /[A-Za-zÀ-ỹ]/.test(name); // rough fallback
-        }
-      })();
-
-      if (!hasLetter) {
-        newErrors.productName = "Tên sản phẩm phải chứa ít nhất một chữ cái";
-      } else if (/^\d+$/.test(name)) {
-        newErrors.productName = "Tên sản phẩm không được chỉ gồm chữ số";
-      }
     }
 
-    if (
-      !formData.price ||
-      isNaN(formData.price) ||
-      Number(formData.price) <= 0
-    ) {
+    const priceVal = formData.price !== "" && formData.price !== undefined
+      ? formData.price
+      : (mode === "edit" ? product?.price : "");
+    if (!priceVal || isNaN(priceVal) || Number(priceVal) <= 0) {
       newErrors.price = "Giá phải là số lớn hơn 0";
     }
 
-    if (!formData.sku?.trim()) {
-      newErrors.sku = "SKU không được để trống";
-    } else if (formData.sku && !/^[a-zA-Z0-9_-]+$/.test(formData.sku)) {
-      newErrors.sku = "SKU chỉ được chứa chữ, số, gạch dưới hoặc gạch ngang";
-    }
+    if (mode === "create") {
+      const skuVal = formData.sku?.trim();
+      if (!skuVal) {
+        newErrors.sku = "SKU không được để trống";
+      } else if (!/^[a-zA-Z0-9_-]+$/.test(skuVal)) {
+        newErrors.sku = "SKU chỉ được chứa chữ, số, gạch dưới hoặc gạch ngang";
+      }
 
-    if (!formData.unitId || Number(formData.unitId) <= 0) {
-      newErrors.unitId = "Đơn vị không được để trống";
-    }
+      if (!formData.unitId || Number(formData.unitId) <= 0) {
+        newErrors.unitId = "Đơn vị không được để trống";
+      }
 
-    if (
-      formData.categoryId &&
-      (isNaN(formData.categoryId) || Number(formData.categoryId) <= 0)
-    ) {
-      newErrors.categoryId = "Danh mục ID phải là số hợp lệ";
-    }
-
-    if (
-      formData.supplierId &&
-      (isNaN(formData.supplierId) || Number(formData.supplierId) <= 0)
-    ) {
-      newErrors.supplierId = "Nhà cung cấp ID phải là số hợp lệ";
-    }
-
-    const hasSupplier = !!formData.supplierId && formData.supplierId !== "";
-    const hasCategory = !!formData.categoryId && formData.categoryId !== "";
-    if (!hasSupplier && !hasCategory) {
-      newErrors.supplierOrCategory =
-        "Phải chọn ít nhất Nhà cung cấp hoặc Danh mục";
+      const hasSupplier = !!formData.supplierId && formData.supplierId !== "";
+      const hasCategory = !!formData.categoryId && formData.categoryId !== "";
+      if (!hasSupplier && !hasCategory) {
+        newErrors.supplierOrCategory = "Phải chọn ít nhất Nhà cung cấp hoặc Danh mục";
+      }
+    } else {
+      // Ở chế độ sửa: chỉ kiểm tra SKU nếu người dùng chủ động sửa
+      if (formData.sku && !/^[a-zA-Z0-9_-]+$/.test(formData.sku.trim())) {
+        newErrors.sku = "SKU chỉ được chứa chữ, số, gạch dưới hoặc gạch ngang";
+      }
     }
 
     setErrors(newErrors);
@@ -126,12 +179,10 @@ const ProductModal = ({
     if (mode === "view") return;
     setFormData((prev) => ({ ...prev, [field]: value }));
 
-    // Xóa lỗi khi người dùng bắt đầu sửa
     if (errors[field]) {
       setErrors((prev) => ({ ...prev, [field]: null }));
     }
 
-    // Nếu người dùng nhập URL thì reset imageFile về null
     if (field === "imageUrl" && value) {
       setFormData((prev) => ({ ...prev, imageFile: null }));
     }
@@ -146,7 +197,6 @@ const ProductModal = ({
     // Nếu có file upload từ máy
     if (formData.imageFile) {
       try {
-        // Truyền productId nếu đang ở mode edit
         const productId = mode === "edit" && product?.id ? product.id : null;
         const uploadedUrl = await uploadImage(formData.imageFile, productId);
         finalImageUrl = uploadedUrl;
@@ -156,15 +206,27 @@ const ProductModal = ({
         return;
       }
     }
-    // Nếu không có file upload, giữ nguyên imageUrl (có thể là URL từ internet)
+
+    const resolvedName = formData.productName?.trim() || product?.productName || product?.name || "Sản phẩm";
+    const resolvedPrice = Number(formData.price) || Number(product?.price) || 0;
+    const resolvedSku = formData.sku?.trim() || product?.sku || product?.barcode || `SKU-${product?.id || Date.now()}`;
+    const resolvedUnitId = formData.unitId ? Number(formData.unitId) : (product?.unitId ? Number(product.unitId) : (unitList[0]?.id || 1));
+    const resolvedCategoryId = formData.categoryId ? Number(formData.categoryId) : (product?.categoryId ? Number(product.categoryId) : (product?.category?.id ? Number(product.category.id) : null));
+    const resolvedSupplierId = formData.supplierId ? Number(formData.supplierId) : (product?.supplierId ? Number(product.supplierId) : (product?.supplier?.id ? Number(product.supplier.id) : null));
 
     const saveData = {
+      ...(product || {}),
       ...formData,
-      price: Number(formData.price) || 0,
-      categoryId: formData.categoryId ? Number(formData.categoryId) : null,
-      supplierId: formData.supplierId ? Number(formData.supplierId) : null,
-      imageUrl: finalImageUrl,
-      ...(mode === "edit" && product?.id && { id: product.id }),
+      id: mode === "edit" ? (product?.id || formData.id) : undefined,
+      productName: resolvedName,
+      price: resolvedPrice,
+      sku: resolvedSku,
+      unitId: resolvedUnitId,
+      categoryId: resolvedCategoryId,
+      supplierId: resolvedSupplierId,
+      imageUrl: finalImageUrl || product?.imageUrl || "",
+      description: formData.description !== undefined ? formData.description : (product?.description || ""),
+      isActive: formData.isActive !== undefined ? formData.isActive : (product?.isActive !== undefined ? product.isActive : true),
     };
 
     onSave?.(saveData, mode);
@@ -471,19 +533,19 @@ const ProductModal = ({
                 {isView ? (
                   <div className="p-2 border rounded bg-gray-50">
                     {product?.unitName ||
-                      units.find((u) => u.id === formData.unitId)?.name ||
+                      unitList.find((u) => u.id === Number(formData.unitId))?.name ||
                       "—"}
                   </div>
                 ) : (
                   <>
                     <CustomSelect
-                      options={units.map((u) => ({
+                      options={unitList.map((u) => ({
                         value: u.id,
                         label: `${u.name} (${u.code})`,
                       }))}
                       value={
                         formData.unitId
-                          ? units
+                          ? unitList
                               .filter((u) => u.id === Number(formData.unitId))
                               .map((u) => ({
                                 value: u.id,
@@ -512,8 +574,8 @@ const ProductModal = ({
                 <label className="text-xs text-gray-600">Nhà cung cấp *</label>
                 {isView ? (
                   <div className="p-2 border rounded bg-gray-50">
-                    {suppliers.find((s) => s.id === formData.supplierId)
-                      ?.name || "—"}
+                    {supplierList.find((s) => s.id === Number(formData.supplierId))
+                      ?.name || product?.supplier?.name || "—"}
                   </div>
                 ) : (
                   <>
@@ -523,14 +585,14 @@ const ProductModal = ({
                           ? "border-red-500"
                           : ""
                       }`}
-                      value={formData.supplierId || ""}
+                      value={formData.supplierId !== undefined && formData.supplierId !== null ? String(formData.supplierId) : ""}
                       onChange={(e) =>
                         handleFieldChange("supplierId", e.target.value)
                       }
                     >
                       <option value="">-- Chọn nhà cung cấp --</option>
 
-                      {suppliers.map((supplier) => (
+                      {supplierList.map((supplier) => (
                         <option key={supplier.id} value={supplier.id}>
                           {supplier.name}
                         </option>
@@ -550,8 +612,8 @@ const ProductModal = ({
                 <label className="text-xs text-gray-600">Danh mục *</label>
                 {isView ? (
                   <div className="p-2 border rounded bg-gray-50">
-                    {categories.find((c) => c.id === formData.categoryId)
-                      ?.name || "—"}
+                    {categoryList.find((c) => c.id === Number(formData.categoryId))
+                      ?.name || product?.category?.name || "—"}
                   </div>
                 ) : (
                   <>
@@ -561,14 +623,14 @@ const ProductModal = ({
                           ? "border-red-500"
                           : ""
                       }`}
-                      value={formData.categoryId || ""}
+                      value={formData.categoryId !== undefined && formData.categoryId !== null ? String(formData.categoryId) : ""}
                       onChange={(e) =>
                         handleFieldChange("categoryId", e.target.value)
                       }
                     >
                       <option value="">-- Chọn danh mục --</option>
 
-                      {categories.map((category) => (
+                      {categoryList.map((category) => (
                         <option key={category.id} value={category.id}>
                           {category.name}
                         </option>
