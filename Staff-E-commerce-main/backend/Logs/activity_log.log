@@ -347,3 +347,40 @@
 [2026-10-05 14:40:16] [User:1] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"username":"admin","password":"[REDACTED]"}
 [2026-10-05 15:34:22] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#login] [IP:127.0.0.1] {"phone":"\u002B84389308305"}
 [2026-10-06 08:53:40] [User:2] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"username":"admin","password":"[REDACTED]"}
+[2026-10-07 08:46:27] [User:1] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"username":"admin","password":"[REDACTED]"}
+[2026-10-07 08:46:45] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 08:46:47] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 08:46:47] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 08:48:40] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 08:48:45] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 08:48:45] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 08:48:47] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 08:48:47] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 08:53:41] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#orders] [IP:127.0.0.1] {"fullName":"Nguy\u1EC5n V\u0103n T\u00E8o","phone":"0389308305","address":"123 \u0110\u01B0\u1EDDng D, ph\u01B0\u1EDDng E, TP. F","note":"","paymentMethod":"momo","pointsUsed":0,"items":[{"productId":65,"quantity":1}],"promotionCode":null}
+[2026-10-07 08:54:22] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 08:54:22] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 08:54:56] [User:1] [Action:CREATE_Orders] [Entity:Orders#31] [IP:127.0.0.1] {"reason":"\u0110\u01A1n ch\u01B0a thanh to\u00E1n"}
+[2026-10-07 09:06:30] [User:2] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"password":"[REDACTED]","username":"admin"}
+[2026-10-07 09:06:57] [User:2] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"password":"[REDACTED]","username":"admin"}
+[2026-10-07 09:07:06] [User:2] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"password":"[REDACTED]","username":"admin"}
+[2026-10-07 09:07:33] [User:2] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"password":"[REDACTED]","username":"admin"}
+[2026-10-07 09:10:03] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 09:10:13] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 09:10:13] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 09:37:13] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 09:37:13] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 09:37:13] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 09:37:44] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 09:37:48] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 09:37:48] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 09:38:11] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 09:38:11] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 09:38:24] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 09:38:24] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 09:38:37] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 09:38:37] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 09:38:41] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 09:38:41] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 09:38:44] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-07 09:39:58] [User:1] [Action:UPDATE_Inventory] [Entity:Inventory#adjust] [IP:127.0.0.1] {"inventoryId":1,"newQuantity":0,"reason":""}
+[2026-10-07 09:40:32] [User:1] [Action:UPDATE_Inventory] [Entity:Inventory#adjust] [IP:127.0.0.1] {"inventoryId":1,"newQuantity":25,"reason":""}
