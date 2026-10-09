@@ -6,11 +6,6 @@ using Microsoft.AspNetCore.Authorization;
 using backend.Data;
 using backend.Repository;
 using backend.Services;
-using backend.Services.AI;
-using backend.Services.AI.Chat;
-using backend.Services.AI.Embeddings;
-using backend.Services.AI.SemanticSearch;
-using backend.Services.AI.VectorStore;
 
 using backend.Middlewares;
 using backend.Hubs;
@@ -81,7 +76,6 @@ builder.Services.AddScoped<CategoryRepository>();
 builder.Services.AddScoped<SupplierRepository>();
 builder.Services.AddScoped<ReportsRepository>();
 builder.Services.AddScoped<UnitRepository>();
-builder.Services.AddScoped<AiRepository>();
 builder.Services.AddScoped<PurchaseOrderRepository>();
 
 builder.Services.AddHttpContextAccessor();
@@ -110,23 +104,6 @@ builder.Services.AddScoped<ReportsService>();
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<UnitService>();
 builder.Services.AddScoped<PurchaseOrderService>();
-
-// AI Service - Semantic Kernel + Chat
-builder.Services.AddSingleton<TokenizerService>();
-builder.Services.AddSingleton<RateLimitService>();
-builder.Services.AddScoped<ContextManager>();
-builder.Services.AddScoped<SemanticKernelService>();
-
-// AI Services - Embeddings, VectorStore, SemanticSearch
-builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
-builder.Services.AddSingleton<IVectorStoreService, QdrantVectorStoreService>();
-builder.Services.AddScoped<ISemanticSearchService, ProductSemanticSearchService>();
-
-// AI Indexing Services
-builder.Services.AddScoped<IProductIndexingService, ProductIndexingService>();
-
-// [AUTO-INDEX] Tự động index Products khi server khởi động 
-// builder.Services.AddHostedService<SemanticIndexingHostedService>();
 
 builder.Services.AddHttpClient();
 

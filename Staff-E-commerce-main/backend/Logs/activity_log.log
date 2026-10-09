@@ -386,3 +386,6 @@
 [2026-10-07 09:40:32] [User:1] [Action:UPDATE_Inventory] [Entity:Inventory#adjust] [IP:127.0.0.1] {"inventoryId":1,"newQuantity":25,"reason":""}
 [2026-10-09 16:18:00] [User:2] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"username":"admin","password":"[REDACTED]"}
 [2026-10-09 17:13:37] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#login] [IP:10.194.44.163] {"phone":"0945021928"}
+[2026-10-09 17:30:53] [User:1] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"username":"admin","password":"[REDACTED]"}
+[2026-10-09 17:31:37] [User:1] [Action:CREATE_Ai] [Entity:Ai#stream] [IP:127.0.0.1] {"message":"huy gay","conversationId":null,"history":[]}
+[2026-10-09 17:48:48] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}

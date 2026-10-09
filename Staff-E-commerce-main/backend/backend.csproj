@@ -31,18 +31,6 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
-  <!-- Semantic Kernel -->
-  <ItemGroup>
-    <PackageReference Include="Microsoft.SemanticKernel" Version="1.54.0" />
-    <PackageReference Include="Microsoft.ML.Tokenizers" Version="1.0.0" />
-    <PackageReference Include="Microsoft.ML.Tokenizers.Data.Cl100kBase" Version="1.0.0" />
-  </ItemGroup>
-
-  <!-- Qdrant Vector Database -->
-  <ItemGroup>
-    <PackageReference Include="Qdrant.Client" Version="1.13.0" />
-  </ItemGroup>
-
   <ItemGroup>
     <PackageReference Include="EPPlus" Version="7.0.0" />
     <PackageReference Include="CsvHelper" Version="30.0.1" />

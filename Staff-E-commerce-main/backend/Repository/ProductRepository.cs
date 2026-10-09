@@ -186,7 +186,6 @@ namespace backend.Repository
             return await q.AnyAsync();
         }
 
-        // Lấy nhiều products theo danh sách IDs (dùng cho semantic search)
         public async Task<List<Product>> GetByIdsAsync(IEnumerable<int> ids)
         {
             if (!ids.Any()) return new List<Product>();

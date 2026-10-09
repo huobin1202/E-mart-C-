@@ -26,8 +26,6 @@ namespace backend.Data
         public DbSet<EventPromotion> EventPromotions { get; set; }
         public DbSet<VoucherPromotion> VoucherPromotions { get; set; }
         public DbSet<ProductPromotion> ProductPromotions { get; set; }
-        public DbSet<AiConversation> AiConversations { get; set; }
-        public DbSet<AiMessage> AiMessages { get; set; }
 
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -228,19 +226,9 @@ namespace backend.Data
                 .HasForeignKey(l => l.UserId)
                 .OnDelete(DeleteBehavior.SetNull);
 
-            // AiConversation -> User
-            modelBuilder.Entity<AiConversation>()
-                .HasOne(c => c.User)
-                .WithMany()
-                .HasForeignKey(c => c.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
+       
 
-            // AiMessage -> AiConversation
-            modelBuilder.Entity<AiMessage>()
-                .HasOne(m => m.Conversation)
-                .WithMany(c => c.Messages)
-                .HasForeignKey(m => m.ConversationId)
-                .OnDelete(DeleteBehavior.Cascade);
+
         }
     }
 }
