@@ -307,7 +307,6 @@ const ProductModal = ({
     return "http://localhost:5099/assets/images/products/default.jpg";
   }
 
-  const isEditing = mode === "edit" || mode === "create";
   const isView = mode === "view";
 
   return (

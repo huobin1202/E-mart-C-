@@ -6,7 +6,6 @@ import {
   setCurrentPage,
   setSearchTerm,
   setStatusFilter,
-  toggleStatus,
   resetFilters,
 } from "../../features/customers/customerSlice";
 import Pagination from "../../components/ui/Pagination";
@@ -98,53 +97,6 @@ const CustomerList = () => {
 
   const handleStatusFilter = (status) => {
     dispatch(setStatusFilter(status));
-  };
-
-  const handleToggleStatus = async (customerId) => {
-    const customer = customers.find((c) => c.id === customerId);
-    if (customer) {
-      try {
-        console.log(
-          "Toggling status for customer:",
-          customerId,
-          "Current status:",
-          customer.isActive
-        );
-        const result = await dispatch(
-          toggleStatus({ customerId, isActive: !customer.isActive })
-        ).unwrap();
-        console.log("Toggle status result:", result);
-
-        // Small delay to ensure backend has processed the change
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        // Refetch customers after toggle status
-        console.log("Refetching customers...");
-        await dispatch(
-          fetchCustomers({
-            page: pagination.currentPage,
-            pageSize: pagination.pageSize,
-            search: filters.search,
-            status: filters.status,
-          })
-        ).unwrap();
-        console.log("Customers refetched successfully");
-
-        // Update stats
-        const [totalData, activeData, inactiveData] = await Promise.all([
-          getCustomers(1, 1, "", "all"),
-          getCustomers(1, 1, "", "active"),
-          getCustomers(1, 1, "", "inactive"),
-        ]);
-        setStats({
-          total: totalData.totalItems || 0,
-          active: activeData.totalItems || 0,
-          inactive: inactiveData.totalItems || 0,
-        });
-      } catch (error) {
-        console.error("Error toggling status:", error);
-      }
-    }
   };
 
   const handleView = (customerId) => {

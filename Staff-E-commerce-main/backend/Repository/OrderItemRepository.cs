@@ -14,6 +14,20 @@ namespace backend.Repository
             _context = context;
         }
 
+        public Task<bool> ContainsLockedPosOrderAsync(IEnumerable<int> orderIds)
+        {
+            var ids = orderIds.Distinct().ToList();
+            if (ids.Count == 0)
+                return Task.FromResult(false);
+
+            return _context.Orders.AnyAsync(o => ids.Contains(o.Id) && o.CheckoutKey != null);
+        }
+
+        public Task<bool> IsLockedPosOrderAsync(int orderId)
+        {
+            return _context.Orders.AnyAsync(o => o.Id == orderId && o.CheckoutKey != null);
+        }
+
         // Lưu nhiều OrderItem
         public async Task<List<OrderItem>> AddOrderItemsAsync(List<OrderItem> items)
         {

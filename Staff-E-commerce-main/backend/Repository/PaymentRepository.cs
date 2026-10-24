@@ -72,6 +72,28 @@ namespace backend.Repository
                 .FirstOrDefaultAsync(p => p.OrderId == orderId);
         }
 
+        public Task<bool> IsLockedPosOrderAsync(int orderId)
+        {
+            return _context.Orders.AnyAsync(o => o.Id == orderId && o.CheckoutKey != null);
+        }
+
+        public Task<Order?> GetOrderSnapshotAsync(int orderId)
+        {
+            return _context.Orders.AsNoTracking().SingleOrDefaultAsync(o => o.Id == orderId);
+        }
+
+        public Task<Payment?> GetByTransactionRefAsync(string? transactionRef)
+        {
+            return _context.Payments.FirstOrDefaultAsync(p => p.TransactionRef == transactionRef);
+        }
+
+        public async Task MarkPendingPaymentFailedAsync(int paymentId)
+        {
+            await _context.Payments
+                .Where(p => p.Id == paymentId && p.Status == "pending")
+                .ExecuteUpdateAsync(update => update.SetProperty(p => p.Status, "failed"));
+        }
+
     
     }
 }

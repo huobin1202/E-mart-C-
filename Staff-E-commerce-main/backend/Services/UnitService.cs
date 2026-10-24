@@ -1,52 +1,38 @@
-using backend.Data;
 using backend.Models;
 using backend.DTO;
 using backend.Repository;
-using Microsoft.EntityFrameworkCore;
 
 namespace backend.Services
 {
     public class UnitService
     {
         private readonly UnitRepository _unitRepo;
+        private readonly BusMemoryCache<UnitDTO> _cache;
+        private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
 
-        public UnitService(UnitRepository unitRepo)
+        public UnitService(UnitRepository unitRepo, BusMemoryCache<UnitDTO> cache)
         {
             _unitRepo = unitRepo;
+            _cache = cache;
         }
 
         public async Task<List<UnitDTO>> GetAllUnitsAsync(bool? isActive = null)
         {
-            var units = await _unitRepo.GetAllAsync(isActive);
-            var productCounts = await _unitRepo.GetProductCountByUnitAsync();
-
-            return units.Select(u => new UnitDTO
+            var (items, _) = await _cache.GetOrCreateAsync(async () =>
             {
-                Id = u.Id,
-                Code = u.Code,
-                Name = u.Name,
-                IsActive = u.IsActive,
-                CreatedAt = u.CreatedAt,
-                UpdatedAt = u.UpdatedAt,
-                ProductCount = productCounts.GetValueOrDefault(u.Id, 0)
-            }).ToList();
+                var units = await _unitRepo.GetAllAsync();
+                var productCounts = await _unitRepo.GetProductCountByUnitAsync();
+                return units.Select(u => Map(u, productCounts.GetValueOrDefault(u.Id, 0))).ToList();
+            }, CacheTtl);
+
+            return isActive.HasValue
+                ? items.Where(u => u.IsActive == isActive.Value).ToList()
+                : items.ToList();
         }
 
         public async Task<UnitDTO?> GetUnitByIdAsync(int id)
         {
-            var unit = await _unitRepo.GetByIdAsync(id);
-            if (unit == null) return null;
-
-            return new UnitDTO
-            {
-                Id = unit.Id,
-                Code = unit.Code,
-                Name = unit.Name,
-                IsActive = unit.IsActive,
-                CreatedAt = unit.CreatedAt,
-                UpdatedAt = unit.UpdatedAt,
-                ProductCount = unit.Products.Count
-            };
+            return (await GetAllUnitsAsync()).FirstOrDefault(u => u.Id == id);
         }
 
         public async Task<UnitDTO> CreateUnitAsync(UnitDTO dto)
@@ -72,16 +58,9 @@ namespace backend.Services
 
             var created = await _unitRepo.CreateAsync(unit);
 
-            return new UnitDTO
-            {
-                Id = created.Id,
-                Code = created.Code,
-                Name = created.Name,
-                IsActive = created.IsActive,
-                CreatedAt = created.CreatedAt,
-                UpdatedAt = created.UpdatedAt,
-                ProductCount = 0
-            };
+            var result = Map(created, 0);
+            _cache.AddOrUpdate(result, unit => unit.Id);
+            return result;
         }
 
         public async Task<UnitDTO?> UpdateUnitAsync(int id, UnitDTO dto)
@@ -107,41 +86,40 @@ namespace backend.Services
             var updated = await _unitRepo.UpdateAsync(id, unit);
             if (updated == null) return null;
 
-            return new UnitDTO
-            {
-                Id = updated.Id,
-                Code = updated.Code,
-                Name = updated.Name,
-                IsActive = updated.IsActive,
-                CreatedAt = updated.CreatedAt,
-                UpdatedAt = updated.UpdatedAt
-            };
+            var result = Map(updated, (await GetAllUnitsAsync()).FirstOrDefault(x => x.Id == id)?.ProductCount ?? 0);
+            _cache.AddOrUpdate(result, unit => unit.Id);
+            return result;
         }
 
         public async Task<bool> DeleteUnitAsync(int id)
         {
-            return await _unitRepo.DeleteAsync(id);
+            var deleted = await _unitRepo.DeleteAsync(id);
+            if (deleted) _cache.RemoveWhere(unit => unit.Id == id);
+            return deleted;
         }
 
         public async Task<UnitDTO?> ToggleActiveAsync(int id)
         {
             var unit = await _unitRepo.GetByIdAsync(id);
             if (unit == null) return null;
-
             unit.IsActive = !unit.IsActive;
             unit.UpdatedAt = DateTime.UtcNow;
-
             var updated = await _unitRepo.UpdateAsync(id, unit);
-
-            return new UnitDTO
-            {
-                Id = updated!.Id,
-                Code = updated.Code,
-                Name = updated.Name,
-                IsActive = updated.IsActive,
-                CreatedAt = updated.CreatedAt,
-                UpdatedAt = updated.UpdatedAt
-            };
+            if (updated == null) return null;
+            var result = Map(updated, (await GetAllUnitsAsync()).FirstOrDefault(x => x.Id == id)?.ProductCount ?? 0);
+            _cache.AddOrUpdate(result, item => item.Id);
+            return result;
         }
+
+        private static UnitDTO Map(Unit unit, int productCount) => new()
+        {
+            Id = unit.Id,
+            Code = unit.Code,
+            Name = unit.Name,
+            IsActive = unit.IsActive,
+            CreatedAt = unit.CreatedAt,
+            UpdatedAt = unit.UpdatedAt,
+            ProductCount = productCount
+        };
     }
 }

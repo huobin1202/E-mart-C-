@@ -14,47 +14,74 @@ namespace backend.Services
         }
 
         private readonly UserRepository _userRepository;
+        private readonly BusMemoryCache<UserDTO> _cache;
+        private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
 
-        public UserService(UserRepository userRepository)
+        public UserService(UserRepository userRepository, BusMemoryCache<UserDTO> cache)
         {
             _userRepository = userRepository;
+            _cache = cache;
         }
 
         public async Task<List<UserDTO>> GetAllUsersAsync()
         {
-            var users = await _userRepository.GetAllAsync();
-            return users.Select(MapToUserDto).ToList();
+            var (users, _) = await _cache.GetOrCreateAsync(async () =>
+            {
+                var loaded = await _userRepository.GetAllAsync();
+                return loaded.Select(MapToUserDto).ToList();
+            }, CacheTtl);
+            return users.ToList();
         }
 
         public async Task<PaginationResult<UserDTO>> GetPaginatedAsync(int page, int pageSize, string? role = null, bool? isActive = null, string? search = null)
         {
-            var result = await _userRepository.GetPaginatedAsync(page, pageSize, role, isActive, search);
+            var all = await GetAllUsersAsync();
+            IEnumerable<UserDTO> filtered = all;
+            if (!string.IsNullOrWhiteSpace(role))
+                filtered = filtered.Where(user => string.Equals(user.Role, role.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (isActive.HasValue)
+                filtered = filtered.Where(user => user.IsActive == isActive.Value && user.IsLocked != isActive.Value);
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var keyword = search.Trim();
+                filtered = filtered.Where(user => user.Username.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                    (user.FullName?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (user.Email?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+            var totalItems = filtered.Count();
+            var totalPages = Math.Max(1, (int)Math.Ceiling(totalItems / (double)pageSize));
+            page = Math.Min(Math.Max(page, 1), totalPages);
+            var items = filtered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
             return new PaginationResult<UserDTO>
             {
-                Items = result.Items.Select(MapToUserDto).ToList(),
-                TotalItems = result.TotalItems,
-                CurrentPage = result.CurrentPage,
-                PageSize = result.PageSize,
-                TotalPages = result.TotalPages,
-                HasPrevious = result.HasPrevious,
-                HasNext = result.HasNext
+                Items = items,
+                TotalItems = totalItems,
+                CurrentPage = page,
+                PageSize = pageSize,
+                TotalPages = totalPages,
+                HasPrevious = page > 1,
+                HasNext = page < totalPages
             };
         }
 
         public async Task<PaginationResult<UserDTO>> GetStaffPaginatedAsync(int page, int pageSize)
         {
-            var result = await _userRepository.GetStaffPaginatedAsync(page, pageSize);
+            var all = await GetAllUsersAsync();
+            var filtered = all.Where(user => !string.Equals(user.Role, "admin", StringComparison.OrdinalIgnoreCase)).ToList();
+            var totalItems = filtered.Count;
+            var totalPages = Math.Max(1, (int)Math.Ceiling(totalItems / (double)pageSize));
+            page = Math.Min(Math.Max(page, 1), totalPages);
 
             return new PaginationResult<UserDTO>
             {
-                Items = result.Items.Select(MapToUserDto).ToList(),
-                TotalItems = result.TotalItems,
-                CurrentPage = result.CurrentPage,
-                PageSize = result.PageSize,
-                TotalPages = result.TotalPages,
-                HasPrevious = result.HasPrevious,
-                HasNext = result.HasNext
+                Items = filtered.Skip((page - 1) * pageSize).Take(pageSize).ToList(),
+                TotalItems = totalItems,
+                CurrentPage = page,
+                PageSize = pageSize,
+                TotalPages = totalPages,
+                HasPrevious = page > 1,
+                HasNext = page < totalPages
             };
         }
 
@@ -63,6 +90,8 @@ namespace backend.Services
             var user = await _userRepository.GetByIdAsync(id);
             return user == null ? null : MapToUserDto(user);
         }
+
+        public Task<UserAccessDTO?> GetAccessAsync(int id) => _userRepository.GetAccessAsync(id);
 
         public async Task<UserDTO?> CreateUserAsync(UserDTO request)
         {
@@ -114,6 +143,7 @@ namespace backend.Services
             };
 
             var createdUser = await _userRepository.AddAsync(user);
+            _cache.Clear();
             return MapToUserDto(createdUser);
         }
 
@@ -162,6 +192,7 @@ namespace backend.Services
             }
 
             var updatedUser = await _userRepository.UpdateAsync(existingUser);
+            _cache.Clear();
             return MapToUserDto(updatedUser);
         }
 
@@ -189,6 +220,7 @@ namespace backend.Services
             existingUser.UpdatedAt = DateTime.UtcNow;
 
             var updatedUser = await _userRepository.UpdateAsync(existingUser);
+            _cache.Clear();
             return MapToUserDto(updatedUser);
         }
 
@@ -205,6 +237,7 @@ namespace backend.Services
             existingUser.UpdatedAt = DateTime.UtcNow;
 
             var updatedUser = await _userRepository.UpdateAsync(existingUser);
+            _cache.Clear();
             return MapToUserDto(updatedUser);
         }
 
@@ -221,13 +254,16 @@ namespace backend.Services
             existingUser.UpdatedAt = DateTime.UtcNow;
 
             await _userRepository.UpdateAsync(existingUser);
+            _cache.Clear();
             return ChangePasswordResult.Success;
         }
 
         public async Task<bool> DeleteUserAsync(int id)
         {
             // The repository rejects deletion once the account has activity.
-            return await _userRepository.DeleteAsync(id);
+            var deleted = await _userRepository.DeleteAsync(id);
+            if (deleted) _cache.Clear();
+            return deleted;
         }
 
         private async Task ValidateAccountAsync(UserDTO request, int? excludeId = null)

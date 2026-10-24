@@ -1,20 +1,16 @@
 using backend.DTO;
 using backend.Models;
 using backend.Repository;
-using backend.Data;
-using Microsoft.EntityFrameworkCore;
 
 namespace backend.Services
 {
     public class OrderItemService
     {
         private readonly OrderItemRepository _orderItemRepository;
-        private readonly AppDbContext _context;
 
-        public OrderItemService(OrderItemRepository orderItemRepository, AppDbContext context)
+        public OrderItemService(OrderItemRepository orderItemRepository)
         {
             _orderItemRepository = orderItemRepository;
-            _context = context;
         }
 
         // Lưu list OrderItem
@@ -23,7 +19,7 @@ namespace backend.Services
             if (items == null || !items.Any())
                 return false;
             var ids = items.Select(i => i.OrderId).ToList();
-            if (await _context.Orders.AnyAsync(o => ids.Contains(o.Id) && o.CheckoutKey != null))
+            if (await _orderItemRepository.ContainsLockedPosOrderAsync(ids))
                 throw new ArgumentException("Không sửa dòng hàng của đơn POS đã chốt giỏ.");
 
             // Do not rely on the caller to provide a value compatible with the
@@ -48,12 +44,12 @@ namespace backend.Services
         // Xóa theo OrderId
         public async Task DeleteByOrderIdAsync(int orderId)
         {
-            if (await _context.Orders.AnyAsync(o => o.Id == orderId && o.CheckoutKey != null))
+            if (await _orderItemRepository.IsLockedPosOrderAsync(orderId))
                 throw new ArgumentException("Không xóa dòng hàng của đơn POS đã chốt giỏ.");
             await _orderItemRepository.DeleteByOrderIdAsync(orderId);
         }
 
-            public async Task<List<OrderItemReponse>> GetItemsByOrderAsync(int orderId)
+        public async Task<List<OrderItemReponse>> GetItemsByOrderAsync(int orderId)
         {
             return await _orderItemRepository.GetByOrderIdAsyncVer2(orderId);
         }

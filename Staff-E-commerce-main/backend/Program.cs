@@ -84,6 +84,12 @@ builder.Services.AddScoped<SupplierRepository>();
 builder.Services.AddScoped<ReportsRepository>();
 builder.Services.AddScoped<UnitRepository>();
 builder.Services.AddScoped<PurchaseOrderRepository>();
+builder.Services.AddScoped<EmployeeRepository>();
+builder.Services.AddScoped<RoleRepository>();
+builder.Services.AddScoped<InvoiceRepository>();
+builder.Services.AddScoped<PosCheckoutRepository>();
+builder.Services.AddScoped<StorefrontRepository>();
+builder.Services.AddScoped<ImportRepository>();
 
 builder.Services.AddHttpContextAccessor();
 
@@ -97,22 +103,26 @@ builder.Services.AddScoped<ProductService>();
 builder.Services.AddScoped<OrderService>();
 builder.Services.AddScoped<InvoiceService>();
 builder.Services.AddScoped<PosCheckoutService>();
+builder.Services.AddScoped<StorefrontService>();
 builder.Services.AddScoped<ActivityLogService>();
 builder.Services.AddScoped<CustomerService>();
 builder.Services.AddScoped<CategoryService>();
+builder.Services.AddSingleton(typeof(BusMemoryCache<>));
 builder.Services.AddScoped<UserService>();
+builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<PromotionService>();
 builder.Services.AddScoped<StatisticsService>();
 builder.Services.AddScoped<OrderItemService>();
 builder.Services.AddScoped<InventoryService>();
 builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<ImportService>();
-builder.Services.AddScoped<CategoryService>();
 builder.Services.AddScoped<SupplierService>();
 builder.Services.AddScoped<ReportsService>();
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<UnitService>();
 builder.Services.AddScoped<PurchaseOrderService>();
+builder.Services.AddScoped<EmployeeService>();
+builder.Services.AddScoped<RoleService>();
 
 builder.Services.AddHttpClient();
 

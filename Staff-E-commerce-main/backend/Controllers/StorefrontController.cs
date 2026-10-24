@@ -1,6 +1,5 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.RegularExpressions;
-using backend.Data;
 using backend.DTO;
 using backend.Models;
 using backend.Services;
@@ -17,29 +16,29 @@ namespace backend.Controllers
     [Route("api/storefront")]
     public class StorefrontController : ControllerBase
     {
-        private readonly AppDbContext _db;
         private readonly JwtService _jwt;
         private readonly PromotionService _promotions;
         private readonly PaymentService _paymentService;
         private readonly IConfiguration _config;
         private readonly InvoiceService _invoiceService;
+        private readonly StorefrontService _storefrontService;
         private readonly IHubContext<OrderHub>? _orderHub;
 
         public StorefrontController(
-            AppDbContext db,
             JwtService jwt,
             PromotionService promotions,
             PaymentService paymentService,
             IConfiguration config,
             InvoiceService invoiceService,
+            StorefrontService storefrontService,
             IHubContext<OrderHub>? orderHub = null)
         {
-            _db = db;
             _jwt = jwt;
             _promotions = promotions;
             _paymentService = paymentService;
             _config = config;
             _invoiceService = invoiceService;
+            _storefrontService = storefrontService;
             _orderHub = orderHub;
         }
 
@@ -81,11 +80,10 @@ namespace backend.Controllers
 
             var internationalPhone = $"+84{phone[1..]}";
             var username = request.Username.Trim();
-            if (await _db.Users.AnyAsync(user => user.Username == username))
+            if (await _storefrontService.UsernameExistsAsync(username))
                 return Conflict(new { message = "Tên đăng nhập đã tồn tại." });
 
-            var customer = await _db.Customers.FirstOrDefaultAsync(item =>
-                item.Phone == phone || item.Phone == internationalPhone);
+            var customer = await _storefrontService.GetCustomerByPhoneAsync(phone, internationalPhone);
 
             if (customer == null)
             {
@@ -97,14 +95,13 @@ namespace backend.Controllers
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
-                _db.Customers.Add(customer);
             }
-            else if (await _db.Users.AnyAsync(user => user.CustomerId == customer.Id))
+            else if (await _storefrontService.CustomerHasAccountAsync(customer.Id))
                 return Conflict(new { message = "Số điện thoại này đã được đăng ký." });
 
             customer.FullName = request.FullName.Trim();
             customer.UpdatedAt = DateTime.UtcNow;
-            var role = await _db.Roles.FirstOrDefaultAsync(item => item.Name == "customer" && item.IsActive);
+            var role = await _storefrontService.GetActiveCustomerRoleAsync();
             if (role == null)
                 return StatusCode(500, new { message = "Vai trò khách hàng chưa được cấu hình." });
 
@@ -122,8 +119,7 @@ namespace backend.Controllers
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
-            _db.Users.Add(user);
-            await _db.SaveChangesAsync();
+            await _storefrontService.SaveRegistrationAsync(customer, user);
 
             var (token, expiresIn) = _jwt.GenerateToken(user);
             return Ok(new { token, tokenType = "Bearer", expiresIn, customer = ToCustomerProfile(customer) });
@@ -136,10 +132,7 @@ namespace backend.Controllers
             if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
                 return BadRequest(new { message = "Vui lòng nhập tên đăng nhập và mật khẩu." });
 
-            var user = await _db.Users
-                .Include(item => item.RoleEntity)
-                .Include(item => item.Customer)
-                .FirstOrDefaultAsync(item => item.Username == request.Username.Trim());
+            var user = await _storefrontService.GetCustomerLoginAsync(request.Username.Trim());
 
             if (user?.Customer == null || !string.Equals(user.RoleEntity?.Name, "customer", StringComparison.OrdinalIgnoreCase) ||
                 !user.IsActive || user.IsLocked || !user.RoleEntity.IsActive ||
@@ -150,7 +143,7 @@ namespace backend.Controllers
                 return Unauthorized(new { message = "Tài khoản khách hàng đã bị khóa." });
 
             user.LastLogin = DateTime.UtcNow;
-            await _db.SaveChangesAsync();
+            await _storefrontService.UpdateLastLoginAsync(user.Id, DateTime.UtcNow);
             var (token, expiresIn) = _jwt.GenerateToken(user);
             return Ok(new
             {
@@ -185,7 +178,7 @@ namespace backend.Controllers
 
             customer.Address = address;
             customer.UpdatedAt = DateTime.UtcNow;
-            await _db.SaveChangesAsync();
+            await _storefrontService.SaveCustomerAsync(customer);
             return Ok(ToCustomerProfile(customer));
         }
 
@@ -209,10 +202,10 @@ namespace backend.Controllers
             customer.Address = request.Address?.Trim();
             customer.DateOfBirth = request.DateOfBirth;
             if (!string.IsNullOrWhiteSpace(customer.Email) &&
-                await _db.Customers.AnyAsync(item => item.Id != customer.Id && item.Email == customer.Email))
+                await _storefrontService.EmailUsedByOtherAsync(customer.Id, customer.Email))
                 return Conflict(new { message = "Email này đã được sử dụng cho khách hàng khác." });
             customer.UpdatedAt = DateTime.UtcNow;
-            var account = await _db.Users.FirstOrDefaultAsync(user => user.CustomerId == customer.Id);
+            var account = await _storefrontService.GetUserByCustomerIdAsync(customer.Id);
             if (account != null)
             {
                 account.FullName = customer.FullName;
@@ -221,7 +214,7 @@ namespace backend.Controllers
             }
             try
             {
-                await _db.SaveChangesAsync();
+                await _storefrontService.SaveAccountAsync(customer, account);
             }
             catch (DbUpdateException)
             {
@@ -238,38 +231,7 @@ namespace backend.Controllers
             if (customer == null)
                 return Unauthorized(new { message = "Phiên đăng nhập không hợp lệ." });
 
-            var orders = await _db.Orders
-                .AsNoTracking()
-                .Where(order => order.CustomerId == customer.Id)
-                .OrderByDescending(order => order.CreatedAt)
-                .ThenByDescending(order => order.Id)
-                .Select(order => new
-                {
-                    order.Id,
-                    order.OrderNumber,
-                    orderType = order.OrderNumber.StartsWith("WEB-") ? "mobile" : order.OrderType,
-                    order.Status,
-                    order.PaymentStatus,
-                    order.PaymentMethod,
-                    order.Subtotal,
-                    order.Discount,
-                    order.TotalAmount,
-                    order.Note,
-                    order.RecipientName,
-                    order.RecipientPhone,
-                    order.ShippingAddress,
-                    order.CreatedAt,
-                    items = order.OrderItems.Select(line => new
-                    {
-                        productId = line.ProductId,
-                        productName = line.Product != null ? line.Product.ProductName : "Sản phẩm",
-                        imageUrl = line.Product != null ? line.Product.ImageUrl : null,
-                        quantity = line.Quantity,
-                        unitPrice = line.UnitPrice,
-                        totalPrice = line.TotalPrice
-                    }).ToList()
-                })
-                .ToListAsync();
+            var orders = await _storefrontService.GetCustomerOrdersAsync(customer.Id);
 
             return Ok(orders);
         }
@@ -282,11 +244,8 @@ namespace backend.Controllers
             if (customer == null)
                 return Unauthorized(new { message = "Phiên đăng nhập không hợp lệ." });
 
-            var order = await _db.Orders.AsNoTracking()
-                .Where(item => item.Id == id && item.CustomerId == customer.Id)
-                .Select(item => new { item.Status })
-                .FirstOrDefaultAsync();
-            if (order == null)
+            var order = await _storefrontService.GetCustomerOrderStatusAsync(id, customer.Id);
+            if (!order.Exists)
                 return NotFound(new { message = "Không tìm thấy đơn hàng." });
             if (order.Status != "completed")
                 return Conflict(new { message = "Chỉ xem được hóa đơn của đơn hàng đã thành công." });
@@ -301,7 +260,7 @@ namespace backend.Controllers
         {
             var idClaim = User.FindFirst("customer_id")?.Value;
             return int.TryParse(idClaim, out var customerId)
-                ? await _db.Customers.FirstOrDefaultAsync(customer => customer.Id == customerId && customer.IsActive)
+                ? await _storefrontService.GetActiveCustomerAsync(customerId)
                 : null;
         }
 
@@ -326,63 +285,9 @@ namespace backend.Controllers
 
         [HttpGet("products")]
         [AllowAnonymous]
-        public async Task<ActionResult<List<StorefrontProductResponse>>> GetProducts()
+        public async Task<ActionResult<List<StorefrontProductDTO>>> GetProducts()
         {
-            var products = await _db.Products
-                .AsNoTracking()
-                .Where(product => product.IsActive && product.Inventory != null && product.Inventory.Quantity > 0)
-                .OrderBy(product => product.ProductName)
-                .Select(product => new StorefrontProductResponse
-                {
-                    Id = product.Id,
-                    ProductName = product.ProductName,
-                    Description = product.Description,
-                    CategoryId = product.CategoryId,
-                    CategoryName = product.Category != null ? product.Category.Name : null,
-                    Price = product.Price,
-                    OriginalPrice = product.Price,
-                    UnitName = product.Unit != null ? product.Unit.Name : null,
-                    StockQuantity = product.Inventory != null ? product.Inventory.Quantity : 0,
-                    ImageUrl = product.ImageUrl
-                })
-                .ToListAsync();
-
-            var productIds = products.Select(product => product.Id).ToList();
-            var today = DateTimeHelper.VietnamToday;
-            var activePromotions = await (
-                from link in _db.ProductPromotions.AsNoTracking()
-                join promotion in _db.Promotions.AsNoTracking() on link.PromotionId equals promotion.Id
-                where productIds.Contains(link.ProductId)
-                      && !promotion.IsDeleted
-                      && promotion.Status == "active"
-                      && promotion.Type == "product"
-                      && (!promotion.StartDate.HasValue || promotion.StartDate.Value.Date <= today)
-                      && (!promotion.EndDate.HasValue || promotion.EndDate.Value.Date >= today)
-                      && (!promotion.UsageLimit.HasValue || promotion.UsedCount < promotion.UsageLimit)
-                select new { link.ProductId, promotion.Name, promotion.DiscountType, promotion.Value, promotion.MaxDiscount, promotion.EndDate }
-            ).ToListAsync();
-
-            foreach (var product in products)
-            {
-                var bestPromotion = activePromotions
-                    .Where(promotion => promotion.ProductId == product.Id)
-                    .Select(promotion => new
-                    {
-                        Promotion = promotion,
-                        Discount = CalculateProductDiscount(product.OriginalPrice, promotion.DiscountType, promotion.Value, promotion.MaxDiscount)
-                    })
-                    .OrderByDescending(item => item.Discount)
-                    .FirstOrDefault();
-
-                if (bestPromotion == null || bestPromotion.Discount <= 0) continue;
-
-                product.Price = Math.Max(0, product.OriginalPrice - bestPromotion.Discount);
-                product.PromotionName = bestPromotion.Promotion.Name;
-                product.DiscountAmount = bestPromotion.Discount;
-                product.DiscountPercent = product.OriginalPrice == 0 ? 0 : Math.Round(bestPromotion.Discount / product.OriginalPrice * 100, 0);
-                product.PromotionEndsAt = bestPromotion.Promotion.EndDate;
-            }
-
+            var products = await _storefrontService.GetAvailableProductsAsync();
             return Ok(products);
         }
 
@@ -397,16 +302,7 @@ namespace backend.Controllers
         [AllowAnonymous]
         public async Task<ActionResult<List<StorefrontCategoryResponse>>> GetCategories()
         {
-            var categories = await _db.Categories
-                .AsNoTracking()
-                .Where(category => category.IsActive)
-                .OrderBy(category => category.Name)
-                .Select(category => new StorefrontCategoryResponse
-                {
-                    Id = category.Id,
-                    Name = category.Name
-                })
-                .ToListAsync();
+            var categories = await _storefrontService.GetActiveCategoriesAsync();
 
             return Ok(categories);
         }
@@ -425,35 +321,21 @@ namespace backend.Controllers
             if (requestedLines.Any(line => line.Quantity > 1000))
                 return BadRequest(new { message = "Số lượng mỗi sản phẩm không được vượt quá 1.000." });
 
-            await using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
                 var productIds = requestedLines.Select(line => line.ProductId).ToList();
-                var products = await _db.Products
-                    .Where(product => productIds.Contains(product.Id) && product.IsActive)
-                    .ToDictionaryAsync(product => product.Id);
+                var products = await _storefrontService.GetActiveProductsByIdsAsync(productIds);
 
                 if (products.Count != productIds.Count)
                     return BadRequest(new { message = "Một hoặc nhiều sản phẩm không còn bán. Hãy tải lại giỏ hàng." });
 
-                var today = DateTimeHelper.VietnamToday;
-                var productPromotions = await (
-                    from link in _db.ProductPromotions.AsNoTracking()
-                    join promotion in _db.Promotions.AsNoTracking() on link.PromotionId equals promotion.Id
-                    where productIds.Contains(link.ProductId)
-                          && !promotion.IsDeleted
-                          && promotion.Status == "active"
-                          && promotion.Type == "product"
-                          && (!promotion.StartDate.HasValue || promotion.StartDate.Value.Date <= today)
-                          && (!promotion.EndDate.HasValue || promotion.EndDate.Value.Date >= today)
-                          && (!promotion.UsageLimit.HasValue || promotion.UsedCount < promotion.UsageLimit)
-                    select new { link.ProductId, promotion.DiscountType, promotion.Value, promotion.MaxDiscount }
-                ).ToListAsync();
+                var productPromotions = await _storefrontService.GetActiveProductPromotionsAsync(
+                    productIds, DateTimeHelper.VietnamToday);
 
                 // Order ownership/points belong to the signed-in customer, not the recipient's phone.
                 var authenticated = User.Identity?.IsAuthenticated == true;
                 var customer = authenticated ? await GetAuthenticatedCustomerAsync()
-                    : await _db.Customers.FirstOrDefaultAsync(item => item.Phone == request.Phone.Trim());
+                    : await _storefrontService.GetCustomerByPhoneAsync(request.Phone.Trim(), request.Phone.Trim());
                 if (authenticated && customer == null)
                     return Unauthorized(new { message = "Không xác định được tài khoản khách hàng đặt đơn." });
                 if (!authenticated && request.PointsUsed > 0)
@@ -472,8 +354,7 @@ namespace backend.Controllers
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow
                     };
-                    _db.Customers.Add(customer);
-                    await _db.SaveChangesAsync();
+                    await _storefrontService.AddCustomerAsync(customer);
                 }
 
                 var now = DateTime.UtcNow;
@@ -506,7 +387,7 @@ namespace backend.Controllers
                     if (!validation.IsValid || validation.Promotion == null)
                         return BadRequest(new { message = validation.Message });
                     discount = Math.Min(subtotal, validation.DiscountAmount);
-                    appliedPromotion = await _db.Promotions.FirstOrDefaultAsync(p => p.Id == validation.Promotion.Id);
+                    appliedPromotion = await _storefrontService.GetPromotionAsync(validation.Promotion.Id);
                 }
 
                 // Áp dụng điểm thưởng khách hàng (nếu có yêu cầu dùng điểm)
@@ -555,27 +436,11 @@ namespace backend.Controllers
                     OrderItems = items
                 };
 
-                _db.Orders.Add(order);
-                if (appliedPromotion != null) appliedPromotion.UsedCount++;
-                await _db.SaveChangesAsync();
-
-                foreach (var line in requestedLines)
-                {
-                    var updated = await _db.Inventory
-                        .Where(stock => stock.ProductId == line.ProductId && stock.Quantity >= line.Quantity)
-                        .ExecuteUpdateAsync(update => update
-                            .SetProperty(stock => stock.Quantity, stock => stock.Quantity - line.Quantity)
-                            .SetProperty(stock => stock.UpdatedAt, now));
-
-                    if (updated == 0)
-                    {
-                        var productName = products[line.ProductId].ProductName;
-                        await transaction.RollbackAsync();
-                        return Conflict(new { message = $"Sản phẩm {productName} vừa hết hàng hoặc không đủ số lượng." });
-                    }
-                }
-
-                await transaction.CommitAsync();
+                await _storefrontService.SaveOrderAndReduceInventoryAsync(
+                    order,
+                    appliedPromotion,
+                    requestedLines.Select(line => (line.ProductId, line.Quantity)).ToList(),
+                    products.ToDictionary(pair => pair.Key, pair => pair.Value.ProductName));
 
                 // Tạo liên kết thanh toán MoMo nếu khách chọn MoMo
                 string? momoPayUrl = null;
@@ -646,12 +511,14 @@ namespace backend.Controllers
             }
             catch (DbUpdateException)
             {
-                await transaction.RollbackAsync();
                 return Conflict(new { message = "Không thể lưu đơn hàng. Hãy thử lại sau." });
+            }
+            catch (InvalidOperationException ex) when (ex.Message.StartsWith("Sản phẩm", StringComparison.Ordinal))
+            {
+                return Conflict(new { message = ex.Message });
             }
             catch
             {
-                await transaction.RollbackAsync();
                 throw;
             }
         }
@@ -660,7 +527,7 @@ namespace backend.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> GetOrderPaymentStatus(int id)
         {
-            var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id);
+            var order = await _storefrontService.GetOrderForPaymentStatusAsync(id);
             if (order == null) return NotFound(new { message = "Không tìm thấy đơn hàng." });
 
             string? vietQrUrl = null;
@@ -685,7 +552,7 @@ namespace backend.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> RecreateMomoPayment(int id)
         {
-            var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id);
+            var order = await _storefrontService.GetOrderForPaymentStatusAsync(id);
             if (order == null) return NotFound(new { message = "Không tìm thấy đơn hàng." });
             if (order.PaymentStatus == "paid") return BadRequest(new { message = "Đơn hàng đã được thanh toán." });
 

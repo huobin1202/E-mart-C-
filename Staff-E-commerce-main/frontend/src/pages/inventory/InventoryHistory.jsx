@@ -1,7 +1,6 @@
 // src/pages/inventory/InventoryHistory.jsx
 import React, { useEffect, useState, useCallback } from "react";
 import { getInventoryAdjustmentHistory } from "../../api/inventoryApi";
-import { formatPrice } from "../../utils/formatPrice";
 
 function formatDate(dt) {
   if (!dt) return "—";

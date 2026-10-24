@@ -1,7 +1,9 @@
 using System.Linq;
 using backend.Data;
 using backend.Models;
+using backend.DTO;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 
 
 namespace backend.Repository
@@ -57,86 +59,70 @@ namespace backend.Repository
             await _context.SaveChangesAsync();
         }
 
-        // Lấy danh sách inventory với phân trang và tìm kiếm
-        public async Task<PaginationResult<Inventory>> GetPaginatedAsync(
-            int page = 1,
-            int pageSize = 10,
-            string? search = null,
-            string? sortBy = "",
-            string? stockStatus = null)
+        public async Task<bool> ReduceInventoryAsync(List<(int ProductId, int Quantity)> requestedQuantities)
         {
-            if (page < 1) page = 1;
-            if (pageSize <= 0) pageSize = 10;
+            await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+            var productIds = requestedQuantities.Select(item => item.ProductId).ToList();
+            var inventories = await _context.Inventory
+                .Where(inventory => productIds.Contains(inventory.ProductId))
+                .ToDictionaryAsync(inventory => inventory.ProductId);
 
-            IQueryable<Inventory> query = _context.Inventory
-                .AsQueryable()
+            foreach (var requested in requestedQuantities)
+            {
+                if (!inventories.TryGetValue(requested.ProductId, out var inventory))
+                    throw new ArgumentException($"Không tìm thấy tồn kho cho sản phẩm ID {requested.ProductId}.");
+
+                if (inventory.Quantity < requested.Quantity)
+                    throw new InvalidOperationException($"Sản phẩm ID {requested.ProductId} không đủ tồn kho.");
+
+                inventory.Quantity -= requested.Quantity;
+                inventory.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return true;
+        }
+
+        public async Task AddAdjustmentAsync(InventoryAdjustment adjustment)
+        {
+            _context.InventoryAdjustments.Add(adjustment);
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task<List<InventoryAdjustmentDTO>> GetAdjustmentHistoryAsync()
+        {
+            return await _context.InventoryAdjustments
+                .AsNoTracking()
+                .Include(a => a.Product)
+                .Include(a => a.User)
+                .OrderByDescending(a => a.CreatedAt)
+                .ThenByDescending(a => a.Id)
+                .Select(a => new InventoryAdjustmentDTO
+                {
+                    Id = a.Id,
+                    ProductId = a.ProductId,
+                    ProductName = a.Product != null ? a.Product.ProductName : "",
+                    Sku = a.Product != null ? a.Product.Sku : null,
+                    ChangeAmount = a.ChangeAmount,
+                    Reason = a.Reason,
+                    UserId = a.UserId,
+                    UserName = a.User != null ? a.User.FullName : null,
+                    CreatedAt = a.CreatedAt
+                })
+                .ToListAsync();
+        }
+
+        public async Task<List<Inventory>> GetAllForCacheAsync()
+        {
+            return await _context.Inventory
+                .AsNoTracking()
                 .Include(i => i.Product)
                     .ThenInclude(p => p!.Category)
                 .Include(i => i.Product)
-                    .ThenInclude(p => p!.Unit);
-
-            // Tìm kiếm theo tên sản phẩm, SKU
-            if (!string.IsNullOrWhiteSpace(search))
-            {
-                var s = search.Trim();
-                query = query.Where(i =>
-                    (i.Product != null && i.Product.ProductName.Contains(s)) ||
-                    (i.Product != null && i.Product.Sku != null && i.Product.Sku.Contains(s))
-                );
-            }
-
-            // Filter theo trạng thái tồn kho
-            if (!string.IsNullOrWhiteSpace(stockStatus))
-            {
-                switch (stockStatus.ToLower())
-                {
-                    case "out_of_stock":
-                        query = query.Where(i => i.Quantity == 0);
-                        break;
-                    case "low_stock":
-                        query = query.Where(i => i.Quantity > 0 && i.Quantity < 10);
-                        break;
-                    case "in_stock":
-                        query = query.Where(i => i.Quantity >= 10);
-                        break;
-                }
-            }
-
-            // Sắp xếp (sắp xếp toàn bộ dữ liệu trước khi phân trang)
-            query = (sortBy ?? "id").ToLower() switch
-            {
-                "quantity_asc" => query.OrderBy(i => i.Quantity),
-                "quantity_desc" => query.OrderByDescending(i => i.Quantity),
-                "product_name_asc" => query.OrderBy(i => i.Product != null ? i.Product.ProductName : ""),
-                "product_name_desc" => query.OrderByDescending(i => i.Product != null ? i.Product.ProductName : ""),
-                "price_asc" => query.OrderBy(i => i.Product != null ? i.Product.Price : 0),
-                "price_desc" => query.OrderByDescending(i => i.Product != null ? i.Product.Price : 0),
-                "updated_at_asc" => query.OrderBy(i => i.UpdatedAt),
-                "updated_at_desc" => query.OrderByDescending(i => i.UpdatedAt),
-                "id" => query.OrderBy(i => i.Id),
-                "id_desc" => query.OrderByDescending(i => i.Id),
-                _ => query.OrderBy(i => i.Id)
-            };
-
-            var totalItems = await query.CountAsync();
-            var totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
-
-            var items = await query
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .AsNoTracking()
+                    .ThenInclude(p => p!.Unit)
+                .OrderBy(i => i.Id)
                 .ToListAsync();
-
-            return new PaginationResult<Inventory>
-            {
-                Items = items,
-                TotalItems = totalItems,
-                CurrentPage = page,
-                PageSize = pageSize,
-                TotalPages = totalPages,
-                HasPrevious = page > 1,
-                HasNext = page < totalPages
-            };
         }
 
     }

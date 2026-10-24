@@ -37,7 +37,6 @@ function Modal({ title, onClose, children }) {
 }
 
 export default function ProfilePage() {
-  const [profile, setProfile] = useState(null);
   const [form, setForm] = useState(emptyProfile);
   const [passwordForm, setPasswordForm] = useState(emptyPassword);
   const [passwordAlert, setPasswordAlert] = useState(null);
@@ -46,7 +45,6 @@ export default function ProfilePage() {
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [alert, setAlert] = useState(null);
 
@@ -59,7 +57,6 @@ export default function ProfilePage() {
     setAlert(null);
     try {
       const data = await getMyProfile();
-      setProfile(data);
       setForm({
         username: data.username ?? "",
         email: data.email ?? "",
@@ -104,8 +101,7 @@ export default function ProfilePage() {
         email: trimmedEmail,
         fullName: form.fullName ? form.fullName.trim() : "",
       };
-      const updated = await updateMyProfile(payload);
-      setProfile(updated);
+      await updateMyProfile(payload);
       setAlert({
         type: "success",
         message: "Thông tin cá nhân đã được cập nhật.",
@@ -225,7 +221,6 @@ export default function ProfilePage() {
                   setPasswordForm(emptyPassword);
                   setShowCurrentPassword(false);
                   setShowNewPassword(false);
-                  setShowConfirmPassword(false);
                   setShowPasswordModal(true);
                 }}
               >
@@ -252,7 +247,6 @@ export default function ProfilePage() {
             setPasswordForm(emptyPassword);
             setShowCurrentPassword(false);
             setShowNewPassword(false);
-            setShowConfirmPassword(false);
           }}
         >
           <form className="space-y-4" onSubmit={handlePasswordSubmit}>

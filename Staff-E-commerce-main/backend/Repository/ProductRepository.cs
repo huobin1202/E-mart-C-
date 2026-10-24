@@ -19,6 +19,19 @@ namespace backend.Repository
             _context = context;
         }
 
+        public async Task<List<Product>> GetAllForCacheAsync()
+        {
+            return await _context.Products
+                .AsNoTracking()
+                .Include(p => p.Category)
+                .Include(p => p.Supplier)
+                .Include(p => p.Unit)
+                .Include(p => p.Inventory)
+                .Include(p => p.OrderItems)
+                .OrderBy(p => p.Id)
+                .ToListAsync();
+        }
+
 
 
         // Lấy theo id (include liên quan)
@@ -91,114 +104,6 @@ namespace backend.Repository
         }
 
 
-        // Filtered with pagination and sorting
-        public async Task<PaginationResult<Product>> GetFilteredAsync(
-            int page = 1,
-            int pageSize = 12,
-            int? supplierId = null,
-            int? categoryId = null,
-            decimal? minPrice = null,
-            decimal? maxPrice = null,
-            string? sortBy = "",
-            string? search = null,
-            int? status = null,
-            string? stockStatus = null)
-        {
-            if (page < 1) page = 1;
-            if (pageSize <= 0) pageSize = 10;
-
-            IQueryable<Product> query = _context.Products
-                .AsQueryable()
-                .Include(p => p.Category)
-                .Include(p => p.Supplier)
-                .Include(p => p.Unit)
-                .Include(p => p.Inventory);
-
-            // Filter supplier
-            if (supplierId.HasValue)
-                query = query.Where(p => p.SupplierId == supplierId.Value);
-
-            // Filter category
-            if (categoryId.HasValue)
-                query = query.Where(p => p.CategoryId == categoryId.Value);
-
-            // Price range
-            if (minPrice.HasValue)
-                query = query.Where(p => p.Price >= minPrice.Value);
-
-            if (maxPrice.HasValue)
-                query = query.Where(p => p.Price <= maxPrice.Value);
-
-            if (status.HasValue)
-                query = query.Where(p => p.IsActive == (status.Value == 1));
-
-            // Stock remains product data, while this endpoint owns the product-list UI.
-            if (!string.IsNullOrWhiteSpace(stockStatus))
-            {
-                query = stockStatus.ToLowerInvariant() switch
-                {
-                    "available" => query.Where(p => p.Inventory != null && p.Inventory.Quantity > 0),
-                    "out_of_stock" => query.Where(p => p.Inventory == null || p.Inventory.Quantity == 0),
-                    "low_stock" => query.Where(p => p.Inventory != null && p.Inventory.Quantity > 0 && p.Inventory.Quantity < 10),
-                    "in_stock" => query.Where(p => p.Inventory != null && p.Inventory.Quantity >= 10),
-                    _ => query
-                };
-            }
-
-            // Search by product name, sku, barcode, supplier name
-            if (!string.IsNullOrWhiteSpace(search))
-            {
-                var s = search.Trim();
-                query = query.Where(p =>
-                    p.ProductName.Contains(s) ||
-                    (p.Sku != null && p.Sku.Contains(s)) ||
-                    // (p.Barcode != null && p.Barcode.Contains(s)) ||
-                    (p.Supplier != null && p.Supplier.Name.Contains(s))
-                );
-            }
-
-            // Sort
-            query = (sortBy ?? "id").ToLower() switch
-            {
-                "price_asc" => query.OrderBy(p => p.Price),
-                "price_desc" => query.OrderByDescending(p => p.Price),
-                "name_asc" => query.OrderBy(p => p.ProductName),
-                "name_desc" => query.OrderByDescending(p => p.ProductName),
-                "featured" => query.OrderByDescending(p => p.OrderItems.Sum(oi => oi.Quantity)), // best sellers
-                "bestsellers" => query.OrderByDescending(p => p.OrderItems.Sum(oi => oi.Quantity)),
-                "budget" => query.OrderBy(p => p.Price), // cheapest first
-                "newest" => query.OrderByDescending(p => p.CreatedAt),
-                "oldest" => query.OrderBy(p => p.CreatedAt),
-                "quantity_asc" => query.OrderBy(p => p.Inventory == null ? 0 : p.Inventory.Quantity),
-                "quantity_desc" => query.OrderByDescending(p => p.Inventory == null ? 0 : p.Inventory.Quantity),
-                "updated_at_desc" => query.OrderByDescending(p => p.Inventory == null ? p.UpdatedAt : p.Inventory.UpdatedAt),
-                "updated_at_asc" => query.OrderBy(p => p.Inventory == null ? p.UpdatedAt : p.Inventory.UpdatedAt),
-                "id" => query.OrderBy(p => p.Id),
-                "id_desc" => query.OrderByDescending(p => p.Id),
-
-                _ => query.OrderBy(p => p.Id)
-            };
-
-            var totalItems = await query.CountAsync();
-            var totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
-
-            var items = await query
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .AsNoTracking()
-                .ToListAsync();
-
-            return new PaginationResult<Product>
-            {
-                Items = items,
-                TotalItems = totalItems,
-                CurrentPage = page,
-                PageSize = pageSize,
-                TotalPages = totalPages,
-                HasPrevious = page > 1,
-                HasNext = page < totalPages
-            };
-        }
         public async Task<bool> ExistsBySkuAsync(string sku, int? excludeId = null)
         {
             var q = _context.Products.AsQueryable().Where(p => p.Sku == sku);
@@ -295,40 +200,6 @@ namespace backend.Repository
         public async Task<int> GetTotalCountAsync()
         {
             return await _context.Products.CountAsync();
-        }
-
-        // LÀM ƠN ĐỪNG XÓA => LẤY DANH SÁCH SẢN PHẨM CÒN HÀNG TRONG CỬA HÀNG
-         public async Task<PaginationResult<Product>> GetAvailableProductsPaginatedAsync(int page, int pageSize)
-        {
-            if (page < 1) page = 1;
-            if (pageSize <= 0) pageSize = 20;
-
-            IQueryable<Product> query = _context.Products
-                .AsNoTracking()
-                .Include(p => p.Category)
-                .Include(p => p.Supplier)
-                .Include(p => p.Inventory)
-                .Where(p => p.Inventory != null && p.Inventory.Quantity > 0);
-
-            var totalItems = await query.CountAsync();
-            var totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
-
-            var items = await query
-                .OrderByDescending(p => p.CreatedAt)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
-
-            return new PaginationResult<Product>
-            {
-                Items = items,
-                TotalItems = totalItems,
-                CurrentPage = page,
-                PageSize = pageSize,
-                TotalPages = totalPages,
-                HasPrevious = page > 1,
-                HasNext = page < totalPages
-            };
         }
 
         public async Task<Product?> GetByBarcodeAsync(string barcode)

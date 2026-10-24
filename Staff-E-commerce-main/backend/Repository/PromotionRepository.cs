@@ -15,6 +15,11 @@ namespace backend.Repository
             _context = context;
         }
 
+        public Task<Order?> GetOrderByIdAsync(int orderId) => _context.Orders
+            .Include(o => o.OrderItems).ThenInclude(i => i.Product)
+            .Include(o => o.Customer)
+            .FirstOrDefaultAsync(o => o.Id == orderId);
+
         // Get all promotions
         public async Task<List<Promotion>> GetAllAsync()
         {
@@ -26,80 +31,6 @@ namespace backend.Repository
                 .ToListAsync();
 
             return PopulateDiscountFields(promotions);
-        }
-
-        // Get paginated promotions with search and filter
-        public async Task<PaginationResult<Promotion>> GetPaginatedAsync(
-            int page, 
-            int pageSize, 
-            string? search = null, 
-            string? status = null, 
-            string? type = null)
-        {
-            if (page < 1) page = 1;
-            if (pageSize <= 0) pageSize = 20;
-
-            IQueryable<Promotion> query = _context.Promotions
-                .AsNoTracking()
-                .Where(p => !p.IsDeleted)
-                .Include(p => p.EventDetails).Include(p => p.VoucherDetails).Include(p => p.ProductDetails);
-
-            // Search by code
-            if (!string.IsNullOrWhiteSpace(search))
-            {
-                query = query.Where(p => p.Name.ToLower().Contains(search.ToLower()) ||
-                    (p.VoucherDetails != null && p.VoucherDetails.VoucherCode.ToLower().Contains(search.ToLower())));
-            }
-
-            // Filter by type
-            if (!string.IsNullOrWhiteSpace(type) && type != "all")
-            {
-                query = type is "event" or "voucher" or "product"
-                    ? query.Where(p => p.Type == type)
-                    : query.Where(p => p.DiscountType == type);
-            }
-
-            // Filter by status - sử dụng DateTimeHelper để thống nhất timezone
-            var vnToday = DateTimeHelper.VietnamToday;
-            if (!string.IsNullOrWhiteSpace(status) && status != "all")
-            {
-                query = status switch
-                {
-                    "active" => query.Where(p => p.Status == "active" &&
-                        (!p.StartDate.HasValue || p.StartDate.Value.Date <= vnToday) &&
-                        (!p.EndDate.HasValue || p.EndDate.Value.Date >= vnToday) &&
-                        (!p.UsageLimit.HasValue || p.UsedCount < p.UsageLimit)),
-                    "inactive" => query.Where(p => p.Status != "active"),
-                    "expired" => query.Where(p => p.EndDate.HasValue && p.EndDate.Value.Date < vnToday),
-                    "scheduled" => query.Where(p => p.Status == "active" &&
-                        p.StartDate.HasValue && p.StartDate.Value.Date > vnToday &&
-                        (!p.EndDate.HasValue || p.EndDate.Value.Date >= vnToday) &&
-                        (!p.UsageLimit.HasValue || p.UsedCount < p.UsageLimit)),
-                    _ => query
-                };
-            }
-
-            var totalItems = await query.CountAsync();
-            var totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
-
-            var items = await query
-                .OrderByDescending(p => p.CreatedAt)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
-
-            PopulateDiscountFields(items);
-
-            return new PaginationResult<Promotion>
-            {
-                Items = items,
-                TotalItems = totalItems,
-                CurrentPage = page,
-                PageSize = pageSize,
-                TotalPages = totalPages,
-                HasPrevious = page > 1,
-                HasNext = page < totalPages
-            };
         }
 
         // Get promotion by ID

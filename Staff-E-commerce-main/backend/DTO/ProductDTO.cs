@@ -58,5 +58,8 @@ namespace backend.DTO
         // Aggregated rating info (optional)
         public double AverageRating { get; set; } = 0.0;
         public int ReviewCount { get; set; } = 0;
+
+        [JsonIgnore]
+        public int SalesCount { get; set; }
     }
 }

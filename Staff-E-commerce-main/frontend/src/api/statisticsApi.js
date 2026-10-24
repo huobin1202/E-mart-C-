@@ -1,4 +1,4 @@
-import { request, getAuthToken, BASE_URL } from './apiClient';
+import { request } from './apiClient';
 
 export async function getOverviewStats() {
   return request("/statistics/overview");

@@ -147,7 +147,7 @@ namespace backend.Controllers
             {
                 return NotFound(ex.Message);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 return StatusCode(500, "Lỗi server khi cập nhật sản phẩm");
             }

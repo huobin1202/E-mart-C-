@@ -13,15 +13,30 @@ namespace backend.Services
         private readonly ProductRepository _productRepository;
         private readonly CategoryRepository _categoryRepository;
         private readonly SupplierRepository _supplierRepository;
+        private readonly BusMemoryCache<ProductDTO> _cache;
+        private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
 
         public ProductService(
             ProductRepository productRepository,
             CategoryRepository categoryRepository,
-            SupplierRepository supplierRepository)
+            SupplierRepository supplierRepository,
+            BusMemoryCache<ProductDTO> cache)
         {
             _productRepository = productRepository;
             _categoryRepository = categoryRepository;
             _supplierRepository = supplierRepository;
+            _cache = cache;
+        }
+
+        private async Task<IReadOnlyList<ProductDTO>> GetCachedAsync()
+        {
+            var (items, _) = await _cache.GetOrCreateAsync(async () =>
+            {
+                var products = (await _productRepository.GetAllForCacheAsync()).Select(MapToProductDto).ToList();
+                await AddDiscountPricesAsync(products);
+                return products;
+            }, CacheTtl);
+            return items;
         }
 
 
@@ -38,20 +53,61 @@ namespace backend.Services
                    int? status = null,
                    string? stockStatus = null)
         {
-            var result = await _productRepository.GetFilteredAsync(page, pageSize, supplierId, categoryId, minPrice, maxPrice, sortBy, search, status, stockStatus);
-
-            var products = result.Items.Select(MapToProductDto).ToList();
-            await AddDiscountPricesAsync(products);
+            var products = (await GetCachedAsync()).AsEnumerable();
+            if (supplierId.HasValue) products = products.Where(product => product.SupplierId == supplierId.Value);
+            if (categoryId.HasValue) products = products.Where(product => product.CategoryId == categoryId.Value);
+            if (minPrice.HasValue) products = products.Where(product => product.Price >= minPrice.Value);
+            if (maxPrice.HasValue) products = products.Where(product => product.Price <= maxPrice.Value);
+            if (status.HasValue) products = products.Where(product => product.IsActive == (status.Value == 1));
+            if (!string.IsNullOrWhiteSpace(stockStatus))
+            {
+                products = stockStatus.ToLowerInvariant() switch
+                {
+                    "available" => products.Where(product => product.Inventory != null && product.Inventory.Quantity > 0),
+                    "out_of_stock" => products.Where(product => product.Inventory == null || product.Inventory.Quantity == 0),
+                    "low_stock" => products.Where(product => product.Inventory != null && product.Inventory.Quantity > 0 && product.Inventory.Quantity < 10),
+                    "in_stock" => products.Where(product => product.Inventory != null && product.Inventory.Quantity >= 10),
+                    _ => products
+                };
+            }
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var value = search.Trim();
+                products = products.Where(product => product.ProductName.Contains(value, StringComparison.OrdinalIgnoreCase) ||
+                    (product.Sku?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (product.Supplier?.Name?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+            products = (sortBy ?? "id").ToLowerInvariant() switch
+            {
+                "price_asc" or "budget" => products.OrderBy(product => product.Price),
+                "price_desc" => products.OrderByDescending(product => product.Price),
+                "name_asc" => products.OrderBy(product => product.ProductName),
+                "name_desc" => products.OrderByDescending(product => product.ProductName),
+                "featured" or "bestsellers" => products.OrderByDescending(product => product.SalesCount),
+                "newest" => products.OrderByDescending(product => product.CreatedAt),
+                "oldest" => products.OrderBy(product => product.CreatedAt),
+                "quantity_asc" => products.OrderBy(product => product.Inventory?.Quantity ?? 0),
+                "quantity_desc" => products.OrderByDescending(product => product.Inventory?.Quantity ?? 0),
+                "updated_at_desc" => products.OrderByDescending(product => product.Inventory?.UpdatedAt ?? product.UpdatedAt),
+                "updated_at_asc" => products.OrderBy(product => product.Inventory?.UpdatedAt ?? product.UpdatedAt),
+                "id_desc" => products.OrderByDescending(product => product.Id),
+                _ => products.OrderBy(product => product.Id)
+            };
+            var filtered = products.ToList();
+            var totalItems = filtered.Count;
+            var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
+            page = Math.Min(Math.Max(page, 1), Math.Max(totalPages, 1));
+            var items = filtered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
             return new PaginationResult<ProductDTO>
             {
-                Items = products,
-                TotalItems = result.TotalItems,
-                CurrentPage = result.CurrentPage,
-                PageSize = result.PageSize,
-                TotalPages = result.TotalPages,
-                HasPrevious = result.HasPrevious,
-                HasNext = result.HasNext
+                Items = items,
+                TotalItems = totalItems,
+                CurrentPage = page,
+                PageSize = pageSize,
+                TotalPages = totalPages,
+                HasPrevious = page > 1,
+                HasNext = page < totalPages
             };
         }
 
@@ -78,8 +134,9 @@ namespace backend.Services
             product.UpdatedAt = DateTime.UtcNow;
 
             var created = await _productRepository.CreateAsync(product);
-
-            return MapToProductDto(created);
+            var result = MapToProductDto(created);
+            _cache.AddOrUpdate(result, item => item.Id);
+            return result;
         }
 
         public async Task<ProductDTO> UpdateProductAsync(Product product, IFormFile? imageFile = null)
@@ -96,15 +153,16 @@ namespace backend.Services
             if (validator.HasErrors) throw validator;
 
             var updated = await _productRepository.UpdateAsync(product);
-
-            return MapToProductDto(updated);
+            var result = MapToProductDto(updated);
+            _cache.AddOrUpdate(result, item => item.Id);
+            return result;
         }
 
         public async Task<bool> DeleteProductAsync(int id)
         {
             if (id <= 0) throw new ArgumentException("Product ID must be greater than 0", nameof(id));
             var result = await _productRepository.DeleteAsync(id);
-
+            if (result) _cache.RemoveWhere(item => item.Id == id);
             return result;
         }
 
@@ -243,7 +301,8 @@ namespace backend.Services
 
                 // If you have rating/review tables, compute them here. For now default to 0.
                 AverageRating = 0.0,
-                ReviewCount = 0
+                ReviewCount = 0,
+                SalesCount = p.OrderItems?.Sum(item => item.Quantity) ?? 0
             };
 
 
@@ -264,31 +323,48 @@ namespace backend.Services
         }
 
 
-        // lÀM ƠN ĐỪUNG XÓA CỦA => LẤY DANH SÁCH SẢN PHẨM CÒN HÀNG TRONG CỬA HÀNG
-        public async Task<PaginationResult<Product>> GetAvailableProductsAsync(int page, int pageSize)
+        public async Task<PaginationResult<ProductDTO>> GetAvailableProductsAsync(int page, int pageSize)
         {
-            return await _productRepository.GetAvailableProductsPaginatedAsync(page, pageSize);
+            if (page < 1) page = 1;
+            if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+            var available = (await GetCachedAsync())
+                .Where(product => product.Inventory?.Quantity > 0)
+                .OrderByDescending(product => product.CreatedAt)
+                .ToList();
+            var totalItems = available.Count;
+            var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
+
+            return new PaginationResult<ProductDTO>
+            {
+                Items = available.Skip((page - 1) * pageSize).Take(pageSize).ToList(),
+                TotalItems = totalItems,
+                CurrentPage = page,
+                PageSize = pageSize,
+                TotalPages = totalPages,
+                HasPrevious = page > 1,
+                HasNext = page < totalPages
+            };
         }
 
-        // Search using repository filtered query for efficiency
+        // Search directly against the BUS cache; this path never issues a SELECT LIKE query.
         public async Task<List<ProductDTO>> SearchProductsAsync(string keyword, int maxResults = 50)
         {
             if (string.IsNullOrWhiteSpace(keyword)) return new List<ProductDTO>();
-
-            /*
-       
-
-            string? search = null,
-            int? status = null)
-            */
-            var filtered = await _productRepository.GetFilteredAsync(1, maxResults, null, null, null, null, null, keyword,null);
-            return filtered.Items.Select(MapToProductDto).ToList();
+            var value = keyword.Trim();
+            return (await GetCachedAsync())
+                .Where(p => p.ProductName.Contains(value, StringComparison.OrdinalIgnoreCase)
+                    || (p.Sku?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (p.Barcode?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (p.Supplier?.Name?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false))
+                .Take(Math.Clamp(maxResults, 1, 200))
+                .ToList();
         }
 
         public async Task<ProductDTO?> GetProductByBarcodeAsync(string barcode)
         {
-            var product = await _productRepository.GetByBarcodeAsync(barcode);
-            return product == null ? null : MapToProductDto(product);
+            return (await GetCachedAsync()).FirstOrDefault(p =>
+                string.Equals(p.Barcode, barcode, StringComparison.OrdinalIgnoreCase));
         }
     }
 }

@@ -1,32 +1,45 @@
-using System.Data;
 using System.Security.Claims;
-using backend.Data;
 using backend.DTO;
 using backend.Models;
 using backend.Repository;
-using Microsoft.EntityFrameworkCore;
 
 namespace backend.Services;
 
 public class PurchaseOrderService
 {
-    private readonly AppDbContext _context;
     private readonly PurchaseOrderRepository _repository;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly BusMemoryCache<PurchaseOrderListDTO> _cache;
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
 
-    public PurchaseOrderService(AppDbContext context, PurchaseOrderRepository repository, IHttpContextAccessor httpContextAccessor)
+    public PurchaseOrderService(PurchaseOrderRepository repository, IHttpContextAccessor httpContextAccessor, BusMemoryCache<PurchaseOrderListDTO> cache)
     {
-        _context = context;
         _repository = repository;
         _httpContextAccessor = httpContextAccessor;
+        _cache = cache;
     }
 
     public async Task<PaginationResult<PurchaseOrderListDTO>> GetPagedAsync(int page, int pageSize, string? search, string? status, int? supplierId)
     {
-        var (items, totalItems) = await _repository.GetPagedAsync(page, pageSize, search, status, supplierId);
+        var (cachedItems, _) = await _cache.GetOrCreateAsync(
+            () => _repository.GetAllForCacheAsync(), CacheTtl);
+        IEnumerable<PurchaseOrderListDTO> filtered = cachedItems;
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var keyword = search.Trim();
+            filtered = filtered.Where(item => item.PoCode.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                                              item.SupplierName.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+        }
+        if (!string.IsNullOrWhiteSpace(status))
+            filtered = filtered.Where(item => string.Equals(item.Status, status, StringComparison.OrdinalIgnoreCase));
+        if (supplierId.HasValue)
+            filtered = filtered.Where(item => item.SupplierId == supplierId.Value);
+
+        var totalItems = filtered.Count();
+        var items = filtered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
         return new PaginationResult<PurchaseOrderListDTO>
         {
-            Items = items.Select(MapList).ToList(), TotalItems = totalItems, CurrentPage = page, PageSize = pageSize,
+            Items = items, TotalItems = totalItems, CurrentPage = page, PageSize = pageSize,
             TotalPages = (int)Math.Ceiling(totalItems / (double)pageSize), HasPrevious = page > 1, HasNext = page * pageSize < totalItems
         };
     }
@@ -44,12 +57,12 @@ public class PurchaseOrderService
         if (request.Items.GroupBy(item => item.ProductId).Any(group => group.Count() > 1)) throw new ArgumentException("Một sản phẩm chỉ được xuất hiện một lần trong phiếu nhập.");
 
         var userId = GetCurrentUserId();
-        var supplier = await _context.Suppliers.SingleOrDefaultAsync(item => item.Id == request.SupplierId && item.IsActive);
+        var supplier = await _repository.GetActiveSupplierAsync(request.SupplierId);
         if (supplier == null) throw new ArgumentException("Nhà cung cấp không tồn tại hoặc đã ngừng hoạt động.");
 
         var productIds = request.Items.Select(item => item.ProductId).ToList();
-        var products = await _context.Products.Where(product => productIds.Contains(product.Id) && product.IsActive).ToListAsync();
-        if (products.Count != productIds.Count) throw new ArgumentException("Có sản phẩm không tồn tại hoặc đã ngừng kinh doanh.");
+        if (await _repository.CountActiveProductsAsync(productIds) != productIds.Count)
+            throw new ArgumentException("Có sản phẩm không tồn tại hoặc đã ngừng kinh doanh.");
 
         var now = DateTime.UtcNow;
         var purchaseOrder = new PurchaseOrder
@@ -59,53 +72,22 @@ public class PurchaseOrderService
             TotalAmount = request.Items.Sum(item => item.Quantity * item.ImportPrice), CreatedAt = now, UpdatedAt = now,
             Details = request.Items.Select(item => new PurchaseOrderDetail { ProductId = item.ProductId, Quantity = item.Quantity, ImportPrice = item.ImportPrice }).ToList()
         };
-        _context.PurchaseOrders.Add(purchaseOrder);
-        await _context.SaveChangesAsync();
+        await _repository.CreateAsync(purchaseOrder);
+        _cache.Clear();
         return (await GetByIdAsync(purchaseOrder.Id))!;
     }
 
     public async Task<PurchaseOrderDetailDTO> CompleteAsync(int id)
     {
-        var userId = GetCurrentUserId();
-        await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
-        var purchaseOrder = await _context.PurchaseOrders.Include(po => po.Details).FirstOrDefaultAsync(po => po.Id == id);
-        if (purchaseOrder == null) throw new KeyNotFoundException("Không tìm thấy phiếu nhập.");
-        if (!string.Equals(purchaseOrder.Status, "pending", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Chỉ có thể hoàn tất phiếu nhập đang chờ xử lý.");
-
-        var productIds = purchaseOrder.Details.Select(detail => detail.ProductId).ToList();
-        var inventories = await _context.Inventory.Where(item => productIds.Contains(item.ProductId)).ToDictionaryAsync(item => item.ProductId);
-        var now = DateTime.UtcNow;
-        foreach (var detail in purchaseOrder.Details)
-        {
-            if (!inventories.TryGetValue(detail.ProductId, out var inventory))
-            {
-                inventory = new Inventory { ProductId = detail.ProductId, Quantity = 0, UpdatedAt = now };
-                _context.Inventory.Add(inventory);
-                inventories[detail.ProductId] = inventory;
-            }
-            inventory.Quantity += detail.Quantity;
-            inventory.UpdatedAt = now;
-            inventory.LastCheckedAt = now;
-            _context.InventoryAdjustments.Add(new InventoryAdjustment { ProductId = detail.ProductId, ChangeAmount = detail.Quantity, Reason = $"Nhập hàng {purchaseOrder.PoCode}", UserId = userId, CreatedAt = now });
-        }
-        purchaseOrder.Status = "completed";
-        purchaseOrder.UpdatedAt = now;
-        _context.ActivityLogs.Add(new ActivityLog { UserId = userId, Action = "complete_purchase_order", EntityType = "purchase_orders", EntityId = purchaseOrder.Id.ToString(), Payload = purchaseOrder.PoCode, CreatedAt = now });
-        await _context.SaveChangesAsync();
-        await transaction.CommitAsync();
+        await _repository.CompleteAsync(id, GetCurrentUserId());
+        _cache.Clear();
         return (await GetByIdAsync(id))!;
     }
 
     public async Task<PurchaseOrderDetailDTO> CancelAsync(int id)
     {
-        var userId = GetCurrentUserId();
-        var purchaseOrder = await _context.PurchaseOrders.FindAsync(id);
-        if (purchaseOrder == null) throw new KeyNotFoundException("Không tìm thấy phiếu nhập.");
-        if (!string.Equals(purchaseOrder.Status, "pending", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Chỉ có thể hủy phiếu nhập đang chờ xử lý.");
-        purchaseOrder.Status = "cancelled";
-        purchaseOrder.UpdatedAt = DateTime.UtcNow;
-        _context.ActivityLogs.Add(new ActivityLog { UserId = userId, Action = "cancel_purchase_order", EntityType = "purchase_orders", EntityId = purchaseOrder.Id.ToString(), Payload = purchaseOrder.PoCode, CreatedAt = DateTime.UtcNow });
-        await _context.SaveChangesAsync();
+        await _repository.CancelAsync(id, GetCurrentUserId());
+        _cache.Clear();
         return (await GetByIdAsync(id))!;
     }
 

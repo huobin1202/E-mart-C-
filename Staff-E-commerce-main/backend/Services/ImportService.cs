@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text;
-using backend.Data;
 using backend.DTO;
 using backend.Models;
 using backend.Repository;
@@ -16,18 +15,18 @@ namespace backend.Services
         private readonly ProductRepository _productRepo;
         private readonly CustomerRepository _customerRepo;
         private readonly InventoryRepository _inventoryRepo;
-        private readonly AppDbContext _context;
+        private readonly ImportRepository _importRepository;
 
         public ImportService(
             ProductRepository productRepo,
             CustomerRepository customerRepo,
             InventoryRepository inventoryRepo,
-            AppDbContext context)
+            ImportRepository importRepository)
         {
             _productRepo = productRepo;
             _customerRepo = customerRepo;
             _inventoryRepo = inventoryRepo;
-            _context = context;
+            _importRepository = importRepository;
 
             // EPPlus license context (non-commercial use)
             ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
@@ -81,7 +80,7 @@ namespace backend.Services
             }
 
             // Process rows in transaction
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            await using var transaction = await _importRepository.BeginTransactionAsync();
             try
             {
                 for (int i = 0; i < rows.Count; i++)
@@ -195,7 +194,7 @@ namespace backend.Services
             }
 
             // Process rows in transaction
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            await using var transaction = await _importRepository.BeginTransactionAsync();
             try
             {
                 for (int i = 0; i < rows.Count; i++)

@@ -11,10 +11,13 @@ namespace backend.Services
     public class SupplierService
     {
         private readonly SupplierRepository _repo;
+        private readonly BusMemoryCache<SupplierDTO> _cache;
+        private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
 
-        public SupplierService(SupplierRepository repo)
+        public SupplierService(SupplierRepository repo, BusMemoryCache<SupplierDTO> cache)
         {
             _repo = repo;
+            _cache = cache;
         }
 
         private SupplierDTO MapToDto(Supplier s)
@@ -35,14 +38,14 @@ namespace backend.Services
 
         public async Task<List<SupplierDTO>> GetAllAsync()
         {
-            var items = await _repo.GetAllAsync();
-            return items.Select(MapToDto).ToList();
+            var (items, _) = await _cache.GetOrCreateAsync(
+                async () => (await _repo.GetAllAsync()).Select(MapToDto).ToList(), CacheTtl);
+            return items.ToList();
         }
 
         public async Task<SupplierDTO?> GetByIdAsync(int id)
         {
-            var s = await _repo.GetByIdAsync(id);
-            return s == null ? null : MapToDto(s);
+            return (await GetAllAsync()).FirstOrDefault(s => s.Id == id);
         }
 
         public async Task<PaginationResult<SupplierDTO>> GetPaginatedAsync(int page, int pageSize, string? search)
@@ -50,8 +53,14 @@ namespace backend.Services
             if (page < 1) page = 1;
             if (pageSize < 1) pageSize = 12;
 
-            var (items, total) = await _repo.GetPaginatedAsync(page, pageSize, search);
-            var dtoItems = items.Select(MapToDto).ToList();
+            var all = await GetAllAsync();
+            var filtered = string.IsNullOrWhiteSpace(search)
+                ? all
+                : all.Where(x => x.Name.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase)
+                    || (x.Email?.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (x.Phone?.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
+            var total = filtered.Count;
+            var dtoItems = filtered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
             var totalPages = (int)Math.Ceiling((double)total / pageSize);
 
@@ -80,7 +89,9 @@ namespace backend.Services
             supplier.UpdatedAt = DateTime.UtcNow;
 
             var created = await _repo.CreateAsync(supplier);
-            return MapToDto(created);
+            var result = MapToDto(created);
+            _cache.AddOrUpdate(result, item => item.Id);
+            return result;
         }
 
         public async Task<SupplierDTO> UpdateSupplierAsync(Supplier supplier)
@@ -105,12 +116,16 @@ namespace backend.Services
             existing.UpdatedAt = DateTime.UtcNow;
 
             var updated = await _repo.UpdateAsync(existing);
-            return MapToDto(updated);
+            var result = MapToDto(updated);
+            _cache.AddOrUpdate(result, item => item.Id);
+            return result;
         }
 
         public async Task<bool> DeleteSupplierAsync(int id)
         {
-            return await _repo.DeleteAsync(id);
+            var deleted = await _repo.DeleteAsync(id);
+            if (deleted) _cache.RemoveWhere(item => item.Id == id);
+            return deleted;
         }
     }
 }

@@ -7,10 +7,21 @@ namespace backend.Services
     public class CustomerService
     {
         private readonly CustomerRepository _repo;
+        private readonly BusMemoryCache<CustomerResponseDTO> _cache;
+        private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
 
-        public CustomerService(CustomerRepository repo)
+        public CustomerService(CustomerRepository repo, BusMemoryCache<CustomerResponseDTO> cache)
         {
             _repo = repo;
+            _cache = cache;
+        }
+
+        private async Task<IReadOnlyList<CustomerResponseDTO>> GetCachedAsync()
+        {
+            var (items, _) = await _cache.GetOrCreateAsync(
+                async () => (await _repo.GetAllAsync()).Select(MapToCustomerResponseDto).ToList(),
+                CacheTtl);
+            return items;
         }
 
         // Phân trang
@@ -19,12 +30,10 @@ namespace backend.Services
             if (page < 1) page = 1;
             if (pageSize < 1 || pageSize > 100) pageSize = 10;
 
-            var totalItems = await _repo.CountAsync();
+            var customers = await GetCachedAsync();
+            var totalItems = customers.Count;
             var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
-
-            var customers = await _repo.GetPaginatedAsync(page, pageSize);
-
-            var dtos = customers.Select(c => new CustomerDTO
+            var dtos = customers.Skip((page - 1) * pageSize).Take(pageSize).Select(c => new CustomerDTO
             {
                 Id = c.Id,
                 FullName = c.FullName,
@@ -41,17 +50,14 @@ namespace backend.Services
         // Tìm kiếm theo tên
         public async Task<List<CustomerDTO>> SearchByNameAsync(string keyword)
         {
-            var customers = await _repo.SearchByNameAsync(keyword);
-            return customers.Select(c => new CustomerDTO
-            {
-                Id = c.Id,
-                FullName = c.FullName,
-                Phone = c.Phone,
-                Email = c.Email,
-                Address = c.Address,
-                DateOfBirth = c.DateOfBirth,
-                RewardPoints = c.RewardPoints
-            }).ToList();
+            var value = keyword?.Trim() ?? string.Empty;
+            return (await GetCachedAsync())
+                .Where(c => c.FullName.Contains(value, StringComparison.OrdinalIgnoreCase))
+                .Select(c => new CustomerDTO
+                {
+                    Id = c.Id, FullName = c.FullName, Phone = c.Phone, Email = c.Email,
+                    Address = c.Address, DateOfBirth = c.DateOfBirth, RewardPoints = c.RewardPoints
+                }).ToList();
         }
 
         public async Task<ResultPaginatedDTO<CustomerResponseDTO>> GetFilteredAndPaginatedAsync(
@@ -63,10 +69,21 @@ namespace backend.Services
             if (page < 1) page = 1;
             if (pageSize < 1 || pageSize > 100) pageSize = 10;
             var skip = (page - 1) * pageSize;
-            var customers = await _repo.findCustomersByFilteredAndPaginatedAsync(skip, pageSize, keyword, status);
-            var totalItems = await _repo.CountFilteredAndPaginatedAsync(keyword, status);
+            var filtered = (await GetCachedAsync()).AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(keyword))
+            {
+                var value = keyword.Trim();
+                filtered = filtered.Where(c => c.FullName.Contains(value, StringComparison.OrdinalIgnoreCase)
+                    || (c.Phone?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (c.Email?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (c.Address?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+            if (string.Equals(status, "active", StringComparison.OrdinalIgnoreCase)) filtered = filtered.Where(c => c.IsActive);
+            if (string.Equals(status, "inactive", StringComparison.OrdinalIgnoreCase)) filtered = filtered.Where(c => !c.IsActive);
+            var filteredList = filtered.OrderByDescending(c => c.CreatedAt).ToList();
+            var totalItems = filteredList.Count;
             var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
-            var dtos = customers.Select(MapToCustomerResponseDto).ToList();
+            var dtos = filteredList.Skip(skip).Take(pageSize).ToList();
             return new ResultPaginatedDTO<CustomerResponseDTO>
             {
                 Items = dtos,
@@ -78,13 +95,13 @@ namespace backend.Services
 
         public async Task<ServiceResultDTO<CustomerResponseDTO>> GetCustomerByIdAsync(int id)
         {
-            var customer = await _repo.GetByIdAsync(id);
+            var customer = (await GetCachedAsync()).FirstOrDefault(c => c.Id == id);
             if (customer == null)
             {
                 return ServiceResultDTO<CustomerResponseDTO>.CreateFailureResult(404, "Customer not found.");
             }
 
-            return ServiceResultDTO<CustomerResponseDTO>.CreateSuccessResult(MapToCustomerResponseDto(customer), 200);
+            return ServiceResultDTO<CustomerResponseDTO>.CreateSuccessResult(customer, 200);
         }
 
         public async Task<ServiceResultDTO<CustomerResponseDTO>> CreateCustomerAsync(CustomerCreateDTO createDto)
@@ -100,20 +117,23 @@ namespace backend.Services
                 CreatedAt = DateTime.UtcNow
             };
 
-            var exists = await _repo.GetByPhoneAsync(customer.Phone);
-            if (exists != null)
+            var exists = (await GetCachedAsync()).Any(c => c.Phone == customer.Phone);
+            if (exists)
             {
                 return ServiceResultDTO<CustomerResponseDTO>.CreateFailureResult(409, "Customer already exists.");
 
             }
 
             var newCustomer = await _repo.AddAsync(customer);
-            return ServiceResultDTO<CustomerResponseDTO>.CreateSuccessResult(MapToCustomerResponseDto(newCustomer), 201);
+            var result = MapToCustomerResponseDto(newCustomer);
+            _cache.AddOrUpdate(result, item => item.Id);
+            return ServiceResultDTO<CustomerResponseDTO>.CreateSuccessResult(result, 201);
         }
 
         public async Task<ServiceResultDTO<CustomerResponseDTO>> UpdateCustomerAsync(int id, CustomerUpdateDTO updateDto)
         {
-            var customer = await _repo.GetByIdAsync(id);
+            var cached = (await GetCachedAsync()).FirstOrDefault(c => c.Id == id);
+            var customer = cached == null ? null : await _repo.GetByIdAsync(id);
             if (customer == null)
             {
                 return ServiceResultDTO<CustomerResponseDTO>.CreateFailureResult(404, "Customer not found.");
@@ -158,6 +178,7 @@ namespace backend.Services
             customer.UpdatedAt = DateTime.UtcNow;
 
             var updatedCustomer = await _repo.UpdateAsync(customer);
+            _cache.AddOrUpdate(MapToCustomerResponseDto(updatedCustomer), item => item.Id);
             return ServiceResultDTO<CustomerResponseDTO>.CreateSuccessResult(
                 MapToCustomerResponseDto(updatedCustomer),
                 200
@@ -167,30 +188,30 @@ namespace backend.Services
 
         public async Task<ServiceResultDTO<CustomerResponseDTO>> UpdateActiveCustomerAsync(int id, bool isActive)
         {
-            Console.WriteLine($"[SERVICE] UpdateActiveCustomerAsync called with id={id}, isActive={isActive}");
-            var exists = await _repo.GetByIdAsync(id);
-            Console.WriteLine($"[SERVICE] Retrieved customer: {exists}");
+            var exists = (await GetCachedAsync()).FirstOrDefault(c => c.Id == id);
             if (exists == null)
             {
                 return ServiceResultDTO<CustomerResponseDTO>.CreateFailureResult(404, "Customer not found.");
             }
 
-            Console.WriteLine($"[SERVICE] Found customer with Id={exists.Id}, Current IsActive={exists.IsActive}");
             if (exists.IsActive == isActive)
             {
-                Console.WriteLine($"[SERVICE] No changes detected for customer with Id={exists.Id}");
-                Console.WriteLine($"[SERVICE] {exists.IsActive} == {isActive} ? {exists.IsActive == isActive}");
                 return ServiceResultDTO<CustomerResponseDTO>.CreateFailureResult(400, "No changes detected.");
             }
 
-            exists.IsActive = isActive;
-            var updatedCustomer = await _repo.UpdateAsync(exists);
-            Console.WriteLine($"[SERVICE] Customer with updatedCustomer={updatedCustomer.Id} updated successfully to IsActive={isActive}");
-
+            var entity = await _repo.GetByIdAsync(id);
+            entity!.IsActive = isActive;
+            var updatedCustomer = await _repo.UpdateAsync(entity);
+            _cache.AddOrUpdate(MapToCustomerResponseDto(updatedCustomer), item => item.Id);
             return ServiceResultDTO<CustomerResponseDTO>.CreateSuccessResult(MapToCustomerResponseDto(updatedCustomer), 200);
         }
 
-        public async Task<bool> DeleteCustomerAsync(int id) => await _repo.DeleteAsync(id);
+        public async Task<bool> DeleteCustomerAsync(int id)
+        {
+            var deleted = await _repo.DeleteAsync(id);
+            if (deleted) _cache.RemoveWhere(item => item.Id == id);
+            return deleted;
+        }
 
         public CustomerResponseDTO MapToCustomerResponseDto(Customer customer)
         {

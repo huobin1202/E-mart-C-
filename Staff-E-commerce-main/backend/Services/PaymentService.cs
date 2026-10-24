@@ -4,8 +4,6 @@ using backend.Repository;
 using Newtonsoft.Json;
 using System.Security.Cryptography;
 using System.Text;
-using backend.Data;
-using Microsoft.EntityFrameworkCore;
 
 namespace backend.Services
 {
@@ -16,14 +14,13 @@ namespace backend.Services
         private readonly ActivityLogService _logService;
         private readonly IConfiguration _config;
         private readonly InvoiceService _invoiceService;
-        private readonly AppDbContext _context;
         private readonly PosCheckoutService _checkout;
 
         // Hàm lưu một payment nếu là thanh toán trực tiếp 
         // Lưu Payment (Cash, Card, ECard,...)
         public async Task<Payment> CreatePaymentAsync(Payment payment)
         {
-            if (await _context.Orders.AnyAsync(o => o.Id == payment.OrderId && o.CheckoutKey != null))
+            if (await _paymentRepo.IsLockedPosOrderAsync(payment.OrderId))
                 throw new ArgumentException("Đơn POS phải thanh toán qua nghiệp vụ chốt đơn.");
             // The POS request does not send CreatedAt. Avoid DateTime.MinValue,
             // which SQL Server's datetime column cannot store.
@@ -33,14 +30,13 @@ namespace backend.Services
             return await _paymentRepo.AddPaymentAsync(payment);
         }
 
-        public PaymentService(PaymentRepository paymentRepo, OrderRepository orderRepo, ActivityLogService logService, IConfiguration config, InvoiceService invoiceService, AppDbContext context, PosCheckoutService checkout)
+        public PaymentService(PaymentRepository paymentRepo, OrderRepository orderRepo, ActivityLogService logService, IConfiguration config, InvoiceService invoiceService, PosCheckoutService checkout)
         {
             _paymentRepo = paymentRepo;
             _orderRepo = orderRepo;
             _logService = logService;
             _config = config;
             _invoiceService = invoiceService;
-            _context = context;
             _checkout = checkout;
         }
 
@@ -52,7 +48,7 @@ namespace backend.Services
 
         public async Task<MomoPaymentResponseDTO> CreatePaymentAsync(MomoPaymentRequestDTO req)
         {
-            var order = await _context.Orders.AsNoTracking().SingleOrDefaultAsync(o => o.Id == req.OrderId)
+            var order = await _paymentRepo.GetOrderSnapshotAsync(req.OrderId)
                 ?? throw new ArgumentException("Không tìm thấy đơn hàng.");
             if (order.PaymentStatus != "pending" || order.Status is "cancelled" or "refunded" || order.PaymentMethod != "e_wallet")
                 throw new ArgumentException("Đơn không còn chờ thanh toán MoMo.");
@@ -119,8 +115,8 @@ namespace backend.Services
 
             // Lưu payment vào DB
             // A callback may already have completed this attempt; never overwrite its status.
-            if (!success) await _context.Payments.Where(p => p.Id == payment.Id && p.Status == "pending")
-                .ExecuteUpdateAsync(update => update.SetProperty(p => p.Status, "failed"));
+            if (!success)
+                await _paymentRepo.MarkPendingPaymentFailedAsync(payment.Id);
 
             
 
@@ -164,10 +160,11 @@ namespace backend.Services
             if (callback.ResultCode == 0)
             {
                 // Cập nhật payment + order
-                var payment = await _context.Payments.FirstOrDefaultAsync(p => p.TransactionRef == callback.OrderId);
+                var payment = await _paymentRepo.GetByTransactionRefAsync(callback.OrderId);
                 if (payment != null)
                 {
-                    var pendingOrder = await _context.Orders.AsNoTracking().SingleAsync(o => o.Id == payment.OrderId);
+                    var pendingOrder = await _paymentRepo.GetOrderSnapshotAsync(payment.OrderId)
+                        ?? throw new InvalidOperationException("Không tìm thấy đơn hàng thanh toán.");
                     if (!decimal.TryParse(callback.Amount.ToString(), out var received) || received != payment.Amount || received != pendingOrder.TotalAmount)
                         return false;
                     if (pendingOrder.OrderType == "pos")
@@ -188,8 +185,13 @@ namespace backend.Services
                         await _invoiceService.SyncOrderLifecycleAsync(order.Id);
                     }
 
-                    _context.ActivityLogs.Add(new ActivityLog { UserId = pendingOrder.UserId, Action = "PAYMENT_SUCCESS", EntityType = "Payment", EntityId = payment.Id.ToString(), CreatedAt = DateTime.UtcNow });
-                    await _context.SaveChangesAsync();
+                    await _logService.LogAsync(
+                        pendingOrder.UserId ?? 0,
+                        "PAYMENT_SUCCESS",
+                        "Payment",
+                        payment.Id.ToString(),
+                        null,
+                        "system");
                 }
                 else return false;
             }

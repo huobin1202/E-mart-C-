@@ -2,24 +2,27 @@ using System;
 using System.Linq;
 using backend.Models;
 using backend.DTO;
-using backend.Data;
 using backend.Repository;
-using Microsoft.EntityFrameworkCore;
-using System.Data;
 
 namespace backend.Services
 {
     public class InventoryService
     {
         private readonly InventoryRepository _inventoryRepo;
-        private readonly AppDbContext _context;
         private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly BusMemoryCache<Inventory> _inventoryCache;
+        private readonly BusMemoryCache<InventoryAdjustmentDTO> _adjustmentCache;
 
-        public InventoryService(InventoryRepository inventoryRepo, AppDbContext context, IHttpContextAccessor httpContextAccessor)
+        public InventoryService(
+            InventoryRepository inventoryRepo,
+            IHttpContextAccessor httpContextAccessor,
+            BusMemoryCache<Inventory> inventoryCache,
+            BusMemoryCache<InventoryAdjustmentDTO> adjustmentCache)
         {
             _inventoryRepo = inventoryRepo;
-            _context = context;
             _httpContextAccessor = httpContextAccessor;
+            _inventoryCache = inventoryCache;
+            _adjustmentCache = adjustmentCache;
         }
 
         private int? TryGetCurrentUserId()
@@ -53,26 +56,19 @@ namespace backend.Services
             if (requestedQuantities.Any(item => item.ProductId <= 0 || item.Quantity <= 0))
                 throw new ArgumentException("Sản phẩm và số lượng phải hợp lệ.");
 
-            await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
-            var productIds = requestedQuantities.Select(item => item.ProductId).ToList();
-            var inventories = await _context.Inventory
-                .Where(inventory => productIds.Contains(inventory.ProductId))
-                .ToDictionaryAsync(inventory => inventory.ProductId);
-
+            await _inventoryRepo.ReduceInventoryAsync(
+                requestedQuantities.Select(item => (item.ProductId, item.Quantity)).ToList());
             foreach (var requested in requestedQuantities)
             {
-                if (!inventories.TryGetValue(requested.ProductId, out var inventory))
-                    throw new ArgumentException($"Không tìm thấy tồn kho cho sản phẩm ID {requested.ProductId}.");
-
-                if (inventory.Quantity < requested.Quantity)
-                    throw new InvalidOperationException($"Sản phẩm ID {requested.ProductId} không đủ tồn kho.");
-
-                inventory.Quantity -= requested.Quantity;
-                inventory.UpdatedAt = DateTime.UtcNow;
+                _inventoryCache.UpdateWhere(
+                    inventory => inventory.ProductId == requested.ProductId,
+                    inventory =>
+                    {
+                        inventory.Quantity -= requested.Quantity;
+                        inventory.UpdatedAt = DateTime.UtcNow;
+                        return inventory;
+                    });
             }
-
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
             return true;
         }
 
@@ -83,7 +79,58 @@ namespace backend.Services
             string? sortBy = "",
             string? stockStatus = null)
         {
-            var result = await _inventoryRepo.GetPaginatedAsync(page, pageSize, search, sortBy, stockStatus);
+            var cached = await _inventoryCache.GetOrCreateAsync(
+                () => _inventoryRepo.GetAllForCacheAsync(),
+                TimeSpan.FromMinutes(15));
+            IEnumerable<Inventory> filtered = cached.Items;
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var keyword = search.Trim();
+                filtered = filtered.Where(i =>
+                    (i.Product?.ProductName?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (i.Product?.Sku?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+
+            filtered = (sortBy ?? "id").ToLowerInvariant() switch
+            {
+                "quantity_asc" => filtered.OrderBy(i => i.Quantity),
+                "quantity_desc" => filtered.OrderByDescending(i => i.Quantity),
+                "product_name_asc" => filtered.OrderBy(i => i.Product?.ProductName ?? ""),
+                "product_name_desc" => filtered.OrderByDescending(i => i.Product?.ProductName ?? ""),
+                "price_asc" => filtered.OrderBy(i => i.Product?.Price ?? 0),
+                "price_desc" => filtered.OrderByDescending(i => i.Product?.Price ?? 0),
+                "updated_at_asc" => filtered.OrderBy(i => i.UpdatedAt),
+                "updated_at_desc" => filtered.OrderByDescending(i => i.UpdatedAt),
+                "id_desc" => filtered.OrderByDescending(i => i.Id),
+                _ => filtered.OrderBy(i => i.Id)
+            };
+
+            if (!string.IsNullOrWhiteSpace(stockStatus))
+            {
+                filtered = (stockStatus ?? "").ToLowerInvariant() switch
+                {
+                    "out_of_stock" => filtered.Where(i => i.Quantity == 0),
+                    "low_stock" => filtered.Where(i => i.Quantity > 0 && i.Quantity < 10),
+                    "in_stock" => filtered.Where(i => i.Quantity >= 10),
+                    _ => filtered
+                };
+            }
+
+            var allItems = filtered.ToList();
+            var totalItems = allItems.Count;
+            var totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
+            var items = allItems.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+            var result = new PaginationResult<Inventory>
+            {
+                Items = items,
+                TotalItems = totalItems,
+                CurrentPage = page,
+                PageSize = pageSize,
+                TotalPages = totalPages,
+                HasPrevious = page > 1,
+                HasNext = page < totalPages
+            };
 
             var dtoItems = result.Items.Select(i => new InventoryListDTO
             {
@@ -126,6 +173,7 @@ namespace backend.Services
             inventory.LastCheckedAt = DateTime.UtcNow;
 
             await _inventoryRepo.UpdateAsync(inventory);
+            _inventoryCache.AddOrUpdate(inventory, item => item.Id);
 
             // Ghi lịch sử điều chỉnh
             var adjustment = new InventoryAdjustment
@@ -136,8 +184,8 @@ namespace backend.Services
                 UserId = TryGetCurrentUserId(),
                 CreatedAt = DateTime.UtcNow
             };
-            _context.InventoryAdjustments.Add(adjustment);
-            await _context.SaveChangesAsync();
+            await _inventoryRepo.AddAdjustmentAsync(adjustment);
+            _adjustmentCache.Clear();
 
             return new InventoryListDTO
             {
@@ -164,10 +212,10 @@ namespace backend.Services
             if (page < 1) page = 1;
             if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-            var query = _context.InventoryAdjustments
-                .Include(a => a.Product)
-                .Include(a => a.User)
-                .AsQueryable();
+            var cached = await _adjustmentCache.GetOrCreateAsync(
+                () => _inventoryRepo.GetAdjustmentHistoryAsync(),
+                TimeSpan.FromMinutes(15));
+            IEnumerable<InventoryAdjustmentDTO> query = cached.Items;
 
             if (productId.HasValue)
                 query = query.Where(a => a.ProductId == productId.Value);
@@ -176,34 +224,20 @@ namespace backend.Services
             {
                 var s = search.Trim();
                 query = query.Where(a =>
-                    (a.Product != null && a.Product.ProductName.Contains(s)) ||
-                    (a.Product != null && a.Product.Sku != null && a.Product.Sku.Contains(s)) ||
-                    (a.Reason != null && a.Reason.Contains(s)) ||
-                    (a.User != null && a.User.FullName.Contains(s))
-                );
+                    a.ProductName.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                    (a.Sku != null && a.Sku.Contains(s, StringComparison.OrdinalIgnoreCase)) ||
+                    (a.Reason != null && a.Reason.Contains(s, StringComparison.OrdinalIgnoreCase)) ||
+                    (a.UserName != null && a.UserName.Contains(s, StringComparison.OrdinalIgnoreCase)));
             }
 
-            var totalItems = await query.CountAsync();
+            var ordered = query.OrderByDescending(a => a.CreatedAt).ThenByDescending(a => a.Id).ToList();
+            var totalItems = ordered.Count;
             var totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
 
-            var items = await query
-                .OrderByDescending(a => a.CreatedAt)
-                .ThenByDescending(a => a.Id)
+            var items = ordered
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .Select(a => new InventoryAdjustmentDTO
-                {
-                    Id = a.Id,
-                    ProductId = a.ProductId,
-                    ProductName = a.Product != null ? a.Product.ProductName : "",
-                    Sku = a.Product != null ? a.Product.Sku : null,
-                    ChangeAmount = a.ChangeAmount,
-                    Reason = a.Reason,
-                    UserId = a.UserId,
-                    UserName = a.User != null ? a.User.FullName : null,
-                    CreatedAt = a.CreatedAt
-                })
-                .ToListAsync();
+                .ToList();
 
             return new PaginationResult<InventoryAdjustmentDTO>
             {
@@ -219,17 +253,16 @@ namespace backend.Services
 
         public async Task<InventoryStatsDTO> GetInventoryStatsAsync()
         {
-            var allCount = await _inventoryRepo.GetPaginatedAsync(1, 1, null, "", null);
-            var outOfStockCount = await _inventoryRepo.GetPaginatedAsync(1, 1, null, "", "out_of_stock");
-            var lowStockCount = await _inventoryRepo.GetPaginatedAsync(1, 1, null, "", "low_stock");
-            var inStockCount = await _inventoryRepo.GetPaginatedAsync(1, 1, null, "", "in_stock");
+            var items = (await _inventoryCache.GetOrCreateAsync(
+                () => _inventoryRepo.GetAllForCacheAsync(),
+                TimeSpan.FromMinutes(15))).Items;
 
             return new InventoryStatsDTO
             {
-                Total = allCount.TotalItems,
-                OutOfStock = outOfStockCount.TotalItems,
-                LowStock = lowStockCount.TotalItems,
-                InStock = inStockCount.TotalItems
+                Total = items.Count,
+                OutOfStock = items.Count(item => item.Quantity == 0),
+                LowStock = items.Count(item => item.Quantity > 0 && item.Quantity < 10),
+                InStock = items.Count(item => item.Quantity >= 10)
             };
         }
     }

@@ -1,4 +1,5 @@
 using backend.Data;
+using backend.DTO;
 using backend.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -25,82 +26,6 @@ namespace backend.Repository
                 .ToListAsync();
         }
 
-        public async Task<PaginationResult<User>> GetPaginatedAsync(int page, int pageSize, string? role = null, bool? isActive = null, string? search = null)
-        {
-            if (page < 1) page = 1;
-            if (pageSize <= 0) pageSize = 20;
-
-            var query = _context.Users.AsNoTracking().Include(u => u.RoleEntity).Include(u => u.Employee).Include(u => u.Customer).AsQueryable();
-            if (!string.IsNullOrWhiteSpace(role))
-            {
-                var roleName = role.Trim().ToLowerInvariant();
-                query = query.Where(u => u.RoleEntity.Name == roleName);
-            }
-            if (isActive.HasValue)
-                query = isActive.Value ? query.Where(u => u.IsActive && !u.IsLocked) : query.Where(u => !u.IsActive || u.IsLocked);
-            if (!string.IsNullOrWhiteSpace(search))
-            {
-                var keyword = search.Trim();
-                query = query.Where(u => u.Username.Contains(keyword) ||
-                    (u.Employee != null ? u.Employee.FullName : u.Customer != null ? u.Customer.FullName : u.FullName).Contains(keyword) ||
-                    (u.Employee != null ? u.Employee.Email : u.Customer != null ? u.Customer.Email : u.Email)!.Contains(keyword));
-            }
-            var totalItems = await query.CountAsync();
-            var totalPages = Math.Max(1, (int)Math.Ceiling(totalItems / (double)pageSize));
-            page = Math.Min(page, totalPages);
-            var items = await query
-                .OrderByDescending(u => u.CreatedAt)
-                .ThenByDescending(u => u.Id)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
-
-            return new PaginationResult<User>
-            {
-                Items = items,
-                TotalItems = totalItems,
-                CurrentPage = page,
-                PageSize = pageSize,
-                TotalPages = totalPages,
-                HasPrevious = page > 1,
-                HasNext = page < totalPages
-            };
-        }
-
-        public async Task<PaginationResult<User>> GetStaffPaginatedAsync(int page, int pageSize)
-        {
-            if (page < 1) page = 1;
-            if (pageSize <= 0) pageSize = 20;
-
-            var query = _context.Users
-                .AsNoTracking()
-                .Include(u => u.RoleEntity)
-                .Include(u => u.Employee)
-                .Include(u => u.Customer)
-                .Where(u => u.RoleEntity.Name != "admin");
-
-            var totalItems = await query.CountAsync();
-            var items = await query
-                .OrderByDescending(u => u.CreatedAt)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
-
-            var calculatedTotalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
-            var totalPages = Math.Max(1, calculatedTotalPages);
-
-            return new PaginationResult<User>
-            {
-                Items = items,
-                TotalItems = totalItems,
-                CurrentPage = page,
-                PageSize = pageSize,
-                TotalPages = totalPages,
-                HasPrevious = page > 1,
-                HasNext = page < totalPages
-            };
-        }
-
         // Lấy user theo Id
         public async Task<User?> GetByIdAsync(int id)
         {
@@ -118,6 +43,23 @@ namespace backend.Repository
                 .AsNoTracking()
                 .FirstOrDefaultAsync(u => u.Username == username);
         }
+
+        public Task<User?> GetForLoginAsync(string username) => _context.Users
+            .Include(u => u.RoleEntity)
+            .Include(u => u.Employee)
+            .FirstOrDefaultAsync(u => u.Username == username);
+
+        public Task<UserAccessDTO?> GetAccessAsync(int id) => _context.Users
+            .AsNoTracking()
+            .Where(u => u.Id == id)
+            .Select(u => new UserAccessDTO
+            {
+                Role = u.RoleEntity.Name,
+                Permissions = u.RoleEntity.RolePermissions
+                    .Select(rp => rp.Permission.Code)
+                    .ToList()
+            })
+            .FirstOrDefaultAsync();
 
         // Lấy user theo email
         public async Task<User?> GetByEmailAsync(string email)

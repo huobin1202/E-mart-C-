@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Authorization;
 using backend.Models;
 using backend.Services;
 using backend.DTO;
-using backend.Repository;
 using backend.Helpers;
 
 namespace backend.Controllers
@@ -14,12 +13,10 @@ namespace backend.Controllers
     public class PromotionsController : ControllerBase
     {
         private readonly PromotionService _promotionService;
-        private readonly OrderRepository _orderRepository;
 
-        public PromotionsController(PromotionService promotionService, OrderRepository orderRepository)
+        public PromotionsController(PromotionService promotionService)
         {
             _promotionService = promotionService;
-            _orderRepository = orderRepository;
         }
 
         // GET api/promotions
@@ -362,11 +359,8 @@ namespace backend.Controllers
         {
             try
             {
-                var order = await _orderRepository.GetByIdAsync(orderId);
-                if (order == null)
+                if (!await _promotionService.ApplyPromotionToOrderAsync(orderId))
                     return NotFound(new { message = "Order không tồn tại" });
-
-                await _promotionService.ApplyPromotionAsync(order);
                 return Ok(new { message = "Áp dụng khuyến mãi thành công" });
             }
             catch (Exception ex)

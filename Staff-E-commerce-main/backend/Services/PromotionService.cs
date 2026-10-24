@@ -8,17 +8,24 @@ namespace backend.Services
     public class PromotionService
     {
         private readonly PromotionRepository _promotionRepository;
+        private readonly BusMemoryCache<PromotionDTO> _cache;
+        private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
 
-        public PromotionService(PromotionRepository promotionRepository)
+        public PromotionService(PromotionRepository promotionRepository, BusMemoryCache<PromotionDTO> cache)
         {
             _promotionRepository = promotionRepository;
+            _cache = cache;
         }
 
         // Get all promotions
         public async Task<List<PromotionDTO>> GetAllPromotionsAsync()
         {
-            var promotions = await _promotionRepository.GetAllAsync();
-            return promotions.Select(MapToDTO).ToList();
+            var (promotions, _) = await _cache.GetOrCreateAsync(async () =>
+            {
+                var loaded = await _promotionRepository.GetAllAsync();
+                return loaded.Select(MapToDTO).ToList();
+            }, CacheTtl);
+            return promotions.ToList();
         }
 
         // Get paginated promotions with search and filter
@@ -29,16 +36,41 @@ namespace backend.Services
             string? status = null, 
             string? type = null)
         {
-            var result = await _promotionRepository.GetPaginatedAsync(page, pageSize, search, status, type);
+            var all = await GetAllPromotionsAsync();
+            IEnumerable<PromotionDTO> filtered = all;
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var keyword = search.Trim();
+                filtered = filtered.Where(item => item.Name.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                    (item.VoucherCode?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+            if (!string.IsNullOrWhiteSpace(type) && type != "all")
+                filtered = type is "event" or "voucher" or "product"
+                    ? filtered.Where(item => item.Type == type)
+                    : filtered.Where(item => item.DiscountType == type);
+            if (!string.IsNullOrWhiteSpace(status) && status != "all")
+            {
+                var today = DateTimeHelper.VietnamToday;
+                filtered = status switch
+                {
+                    "active" => filtered.Where(item => item.Status == "active" &&
+                        (!item.StartDate.HasValue || item.StartDate.Value.Date <= today) &&
+                        (!item.EndDate.HasValue || item.EndDate.Value.Date >= today) &&
+                        (!item.UsageLimit.HasValue || item.UsedCount < item.UsageLimit)),
+                    "inactive" => filtered.Where(item => item.Status != "active"),
+                    "expired" => filtered.Where(item => item.EndDate.HasValue && item.EndDate.Value.Date < today),
+                    "scheduled" => filtered.Where(item => item.Status == "active" && item.StartDate.HasValue && item.StartDate.Value.Date > today),
+                    _ => filtered
+                };
+            }
+            var totalItems = filtered.Count();
+            var totalPages = Math.Max(1, (int)Math.Ceiling(totalItems / (double)pageSize));
+            page = Math.Min(Math.Max(page, 1), totalPages);
+            var items = filtered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
             return new PaginationResult<PromotionDTO>
             {
-                Items = result.Items.Select(MapToDTO).ToList(),
-                TotalItems = result.TotalItems,
-                CurrentPage = result.CurrentPage,
-                PageSize = result.PageSize,
-                TotalPages = result.TotalPages,
-                HasPrevious = result.HasPrevious,
-                HasNext = result.HasNext
+                Items = items, TotalItems = totalItems, CurrentPage = page, PageSize = pageSize,
+                TotalPages = totalPages, HasPrevious = page > 1, HasNext = page < totalPages
             };
         }
 
@@ -100,6 +132,7 @@ namespace backend.Services
             }
 
             var created = await _promotionRepository.CreateAsync(promotion);
+            _cache.Clear();
             return MapToDTO(created);
         }
 
@@ -151,6 +184,7 @@ namespace backend.Services
                 ? promotion.Status
                 : promotion.Active ? "active" : "disabled";
             var updated = await _promotionRepository.UpdateAsync(promotion);
+            _cache.Clear();
             return MapToDTO(updated);
         }
 
@@ -158,7 +192,9 @@ namespace backend.Services
         public async Task<bool> DeletePromotionAsync(int id)
         {
             if (id <= 0) throw new ArgumentException("ID must be greater than 0", nameof(id));
-            return await _promotionRepository.DeleteAsync(id);
+            var deleted = await _promotionRepository.DeleteAsync(id);
+            if (deleted) _cache.Clear();
+            return deleted;
         }
 
         // Toggle active status
@@ -169,6 +205,7 @@ namespace backend.Services
 
             promotion.Status = promotion.Status == "disabled" ? "active" : "disabled";
             await _promotionRepository.UpdateAsync(promotion);
+            _cache.Clear();
             return true;
         }
 
@@ -453,6 +490,14 @@ namespace backend.Services
                 // có thể log lỗi nếu muốn
                 throw new Exception($"Áp dụng khuyến mãi thất bại: {ex.Message}");
             }
+        }
+
+        public async Task<bool> ApplyPromotionToOrderAsync(int orderId)
+        {
+            var order = await _promotionRepository.GetOrderByIdAsync(orderId);
+            if (order is null) return false;
+            await ApplyPromotionAsync(order);
+            return true;
         }
     }
 }

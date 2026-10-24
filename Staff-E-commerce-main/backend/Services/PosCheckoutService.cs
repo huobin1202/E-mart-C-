@@ -2,26 +2,19 @@ using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using backend.Data;
 using backend.DTO;
 using backend.Helpers;
 using backend.Models;
-using Microsoft.EntityFrameworkCore;
+using backend.Repository;
 
 namespace backend.Services;
 
-public sealed class PosCheckoutService(AppDbContext db, IHttpContextAccessor accessor, InvoiceService invoices)
+public sealed class PosCheckoutService(IHttpContextAccessor accessor, InvoiceService invoices, PosCheckoutRepository repository)
 {
     private int UserId => int.TryParse(accessor.HttpContext?.User.FindFirst("uid")?.Value, out var id)
         ? id : throw new UnauthorizedAccessException("Không xác định được nhân viên.");
 
     // Serializes POS lifecycle changes across processes; inventory debits also have a conditional SQL check.
-    private async Task LockAsync() => await db.Database.ExecuteSqlRawAsync("""
-        DECLARE @result INT;
-        EXEC @result = sys.sp_getapplock @Resource = 'pos-checkout', @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 10000;
-        IF @result < 0 THROW 51000, 'POS is busy. Please retry.', 1;
-        """);
-
     private static decimal Discount(Promotion p, decimal amount)
     {
         var value = p.DiscountType == "percent" ? decimal.Floor(amount * p.Value / 100m) : p.Value;
@@ -44,10 +37,10 @@ public sealed class PosCheckoutService(AppDbContext db, IHttpContextAccessor acc
         { "cash" => "cash", "other" or "momo" or "e_wallet" => "e_wallet", _ => throw new ArgumentException("Chỉ hỗ trợ thanh toán tiền mặt hoặc MoMo.") };
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
         { request.CustomerId, request.PointsUsed, request.PromotionId, method, request.CashReceived, request.ExpectedTotal, request.Note, lines }))));
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
-        await LockAsync();
+        await using var transaction = await repository.BeginSerializableTransactionAsync();
+        await repository.LockAsync();
         var key = requestKey.ToString();
-        var existing = await db.Orders.FirstOrDefaultAsync(o => o.CheckoutKey == key);
+        var existing = await repository.GetByCheckoutKeyAsync(key);
         if (existing != null)
         {
             if (existing.UserId != userId || existing.CheckoutHash != hash) throw new InvalidOperationException("Mã yêu cầu đã được dùng cho một giỏ hàng khác.");
@@ -58,13 +51,13 @@ public sealed class PosCheckoutService(AppDbContext db, IHttpContextAccessor acc
 
         Customer? customer = null;
         if (request.CustomerId.HasValue)
-            customer = await db.Customers.SingleOrDefaultAsync(c => c.Id == request.CustomerId && c.IsActive)
+            customer = await repository.GetActiveCustomerAsync(request.CustomerId.Value)
                 ?? throw new ArgumentException("Khách hàng không tồn tại hoặc đã ngừng hoạt động.");
         if (request.PointsUsed > 0 && customer == null) throw new ArgumentException("Chọn khách hàng để sử dụng điểm.");
         var productIds = lines.Select(i => i.ProductId).ToList();
-        var products = await db.Products.Where(p => productIds.Contains(p.Id) && p.IsActive).ToDictionaryAsync(p => p.Id);
+        var products = await repository.GetActiveProductsByIdsAsync(productIds);
         if (products.Count != productIds.Count) throw new ArgumentException("Có sản phẩm không tồn tại hoặc đã ngừng bán.");
-        var productPromotions = await db.ProductPromotions.Include(p => p.Promotion).Where(p => productIds.Contains(p.ProductId)).ToListAsync();
+        var productPromotions = await repository.GetProductPromotionsAsync(productIds);
         var usedPromotions = new Dictionary<int, Promotion>();
         var now = DateTime.UtcNow;
         var items = new List<OrderItem>();
@@ -82,7 +75,7 @@ public sealed class PosCheckoutService(AppDbContext db, IHttpContextAccessor acc
         decimal discount = 0;
         if (request.PromotionId.HasValue)
         {
-            var promotion = await db.Promotions.Include(p => p.EventDetails).SingleOrDefaultAsync(p => p.Id == request.PromotionId);
+            var promotion = await repository.GetPromotionForCheckoutAsync(request.PromotionId.Value);
             if (promotion == null || !Active(promotion) || promotion.Type is not ("voucher" or "event"))
                 throw new ArgumentException("Khuyến mãi không còn hợp lệ.");
             if (subtotal < (promotion.EventDetails?.MinOrderAmount ?? 0)) throw new ArgumentException("Đơn hàng chưa đạt mức tối thiểu của khuyến mãi.");
@@ -107,24 +100,23 @@ public sealed class PosCheckoutService(AppDbContext db, IHttpContextAccessor acc
             PointsUsed = request.PointsUsed, CashReceived = method == "cash" ? request.CashReceived : null,
             Note = request.Note?.Trim(), CreatedAt = now, UpdatedAt = now, OrderItems = items
         };
-        db.Orders.Add(order);
-        await db.SaveChangesAsync();
+        repository.AddOrder(order);
+        await repository.SaveChangesAsync();
         foreach (var line in lines)
         {
-            var updated = await db.Inventory.Where(i => i.ProductId == line.ProductId && i.Quantity >= line.Quantity)
-                .ExecuteUpdateAsync(update => update.SetProperty(i => i.Quantity, i => i.Quantity - line.Quantity).SetProperty(i => i.UpdatedAt, now));
-            if (updated != 1) throw new InvalidOperationException($"Sản phẩm {products[line.ProductId].ProductName} không đủ tồn kho.");
-            db.InventoryAdjustments.Add(new InventoryAdjustment { ProductId = line.ProductId, ChangeAmount = -line.Quantity, Reason = $"Xuất bán {order.OrderNumber}", UserId = userId, CreatedAt = now });
+            if (!await repository.TryReduceInventoryAsync(line.ProductId, line.Quantity, now))
+                throw new InvalidOperationException($"Sản phẩm {products[line.ProductId].ProductName} không đủ tồn kho.");
+            repository.AddInventoryAdjustment(new InventoryAdjustment { ProductId = line.ProductId, ChangeAmount = -line.Quantity, Reason = $"Xuất bán {order.OrderNumber}", UserId = userId, CreatedAt = now });
         }
         if (customer != null) { customer.RewardPoints -= request.PointsUsed; customer.UpdatedAt = now; }
         foreach (var promotion in usedPromotions.Values)
         {
             promotion.UsedCount++;
-            db.PromotionRedemptions.Add(new PromotionRedemption { PromotionId = promotion.Id, OrderId = order.Id, CustomerId = customer?.Id, RedeemedAt = now });
+            repository.AddPromotionRedemption(new PromotionRedemption { PromotionId = promotion.Id, OrderId = order.Id, CustomerId = customer?.Id, RedeemedAt = now });
         }
         if (method == "cash" || total == 0) Complete(order, method, $"POS-{key}");
-        db.ActivityLogs.Add(new ActivityLog { UserId = userId, Action = "pos_checkout", EntityType = "orders", EntityId = order.Id.ToString(), CreatedAt = now });
-        await db.SaveChangesAsync();
+        repository.AddActivityLog(new ActivityLog { UserId = userId, Action = "pos_checkout", EntityType = "orders", EntityId = order.Id.ToString(), CreatedAt = now });
+        await repository.SaveChangesAsync();
         if (order.PaymentStatus == "paid") await invoices.SyncOrderLifecycleAsync(order.Id);
         var response = await GetAsync(order.Id);
         await transaction.CommitAsync();
@@ -149,9 +141,9 @@ public sealed class PosCheckoutService(AppDbContext db, IHttpContextAccessor acc
     {
         if (string.IsNullOrWhiteSpace(reference) || reference.Length > 200) throw new ArgumentException("Nhập mã giao dịch xác nhận thu tiền.");
         reference = reference.Trim();
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
-        await LockAsync();
-        var order = await db.Orders.Include(o => o.Customer).Include(o => o.Payments).SingleOrDefaultAsync(o => o.Id == orderId && o.OrderType == "pos")
+        await using var transaction = await repository.BeginSerializableTransactionAsync();
+        await repository.LockAsync();
+        var order = await repository.GetOrderForConfirmationAsync(orderId)
             ?? throw new ArgumentException("Không tìm thấy đơn POS.");
         if (amount != order.TotalAmount || order.PaymentMethod != (momo ? "e_wallet" : "card"))
             throw new ArgumentException("Số tiền hoặc phương thức không khớp đơn hàng.");
@@ -163,11 +155,11 @@ public sealed class PosCheckoutService(AppDbContext db, IHttpContextAccessor acc
         else
         {
             if (order.Status != "pending" || order.PaymentStatus != "pending") throw new InvalidOperationException("Đơn không còn chờ thanh toán.");
-            if (await db.Payments.AnyAsync(p => p.Status == "completed" && p.TransactionRef == reference && p.OrderId != orderId))
+            if (await repository.HasCompletedTransactionAsync(reference, orderId))
                 throw new InvalidOperationException("Mã giao dịch đã được ghi nhận cho đơn khác.");
             Complete(order, order.PaymentMethod!, reference.Trim());
-            db.ActivityLogs.Add(new ActivityLog { UserId = momo ? order.UserId : UserId, Action = "pos_payment_confirmed", EntityType = "orders", EntityId = order.Id.ToString(), CreatedAt = DateTime.UtcNow });
-            await db.SaveChangesAsync();
+            repository.AddActivityLog(new ActivityLog { UserId = momo ? order.UserId : UserId, Action = "pos_payment_confirmed", EntityType = "orders", EntityId = order.Id.ToString(), CreatedAt = DateTime.UtcNow });
+            await repository.SaveChangesAsync();
             await invoices.SyncOrderLifecycleAsync(order.Id);
         }
         var result = await GetAsync(orderId);
@@ -180,10 +172,9 @@ public sealed class PosCheckoutService(AppDbContext db, IHttpContextAccessor acc
     public async Task<PosCheckoutResponse> ConfirmCashAsync(int orderId, decimal cashReceived)
     {
         var userId = UserId;
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
-        await LockAsync();
-        var order = await db.Orders.Include(o => o.Customer).Include(o => o.OrderItems).Include(o => o.Payments)
-            .SingleOrDefaultAsync(o => o.Id == orderId && o.OrderType == "pos")
+        await using var transaction = await repository.BeginSerializableTransactionAsync();
+        await repository.LockAsync();
+        var order = await repository.GetLegacyCashOrderAsync(orderId)
             ?? throw new ArgumentException("Không tìm thấy đơn tại quầy.");
         if (order.PaymentMethod != "cash" || cashReceived < order.TotalAmount || cashReceived > 9999999999m || cashReceived < 0)
             throw new ArgumentException("Phải thu đủ tiền mặt theo số tiền của đơn hàng.");
@@ -205,8 +196,8 @@ public sealed class PosCheckoutService(AppDbContext db, IHttpContextAccessor acc
             order.CashReceived = cashReceived;
             order.UserId ??= userId;
             Complete(order, "cash", reference);
-            db.ActivityLogs.Add(new ActivityLog { UserId = userId, Action = "pos_cash_confirmed", EntityType = "orders", EntityId = orderId.ToString(), CreatedAt = DateTime.UtcNow });
-            await db.SaveChangesAsync();
+            repository.AddActivityLog(new ActivityLog { UserId = userId, Action = "pos_cash_confirmed", EntityType = "orders", EntityId = orderId.ToString(), CreatedAt = DateTime.UtcNow });
+            await repository.SaveChangesAsync();
             await invoices.SyncOrderLifecycleAsync(orderId);
         }
         var response = await GetAsync(orderId);
@@ -217,27 +208,26 @@ public sealed class PosCheckoutService(AppDbContext db, IHttpContextAccessor acc
     public async Task<bool> CancelAsync(int orderId)
     {
         var userId = UserId;
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
-        await LockAsync();
-        var order = await db.Orders.Include(o => o.OrderItems).Include(o => o.Customer).SingleAsync(o => o.Id == orderId);
+        await using var transaction = await repository.BeginSerializableTransactionAsync();
+        await repository.LockAsync();
+        var order = await repository.GetOrderForCancelAsync(orderId);
         if (order.Status == "cancelled") return true;
         if (order.Status != "pending" || order.PaymentStatus != "pending") throw new InvalidOperationException("Chỉ hủy được đơn POS chưa thanh toán.");
         var now = DateTime.UtcNow;
         foreach (var item in order.OrderItems)
         {
-            if (await db.Inventory.Where(i => i.ProductId == item.ProductId).ExecuteUpdateAsync(u => u
-                .SetProperty(i => i.Quantity, i => i.Quantity + item.Quantity).SetProperty(i => i.UpdatedAt, now)) != 1)
+            if (!await repository.RestoreInventoryAsync(item.ProductId, item.Quantity, now))
                 throw new InvalidOperationException("Không thể hoàn tồn kho.");
-            db.InventoryAdjustments.Add(new InventoryAdjustment { ProductId = item.ProductId, ChangeAmount = item.Quantity, Reason = $"Hủy {order.OrderNumber}", UserId = userId, CreatedAt = now });
+            repository.AddInventoryAdjustment(new InventoryAdjustment { ProductId = item.ProductId, ChangeAmount = item.Quantity, Reason = $"Hủy {order.OrderNumber}", UserId = userId, CreatedAt = now });
         }
         if (order.Customer != null) { order.Customer.RewardPoints += order.PointsUsed; order.Customer.UpdatedAt = now; }
-        var redemptions = await db.PromotionRedemptions.Where(p => p.OrderId == orderId).ToListAsync();
+        var redemptions = await repository.GetRedemptionsAsync(orderId);
         var promotionIds = redemptions.Select(p => p.PromotionId).Distinct().ToList();
-        foreach (var promotion in await db.Promotions.Where(p => promotionIds.Contains(p.Id)).ToListAsync()) promotion.UsedCount = Math.Max(0, promotion.UsedCount - 1);
-        db.PromotionRedemptions.RemoveRange(redemptions);
+        foreach (var promotion in await repository.GetPromotionsAsync(promotionIds)) promotion.UsedCount = Math.Max(0, promotion.UsedCount - 1);
+        repository.RemoveRedemptions(redemptions);
         order.Status = "cancelled"; order.UpdatedAt = now;
-        db.ActivityLogs.Add(new ActivityLog { UserId = userId, Action = "pos_cancelled", EntityType = "orders", EntityId = orderId.ToString(), CreatedAt = now });
-        await db.SaveChangesAsync();
+        repository.AddActivityLog(new ActivityLog { UserId = userId, Action = "pos_cancelled", EntityType = "orders", EntityId = orderId.ToString(), CreatedAt = now });
+        await repository.SaveChangesAsync();
         await invoices.SyncOrderLifecycleAsync(orderId);
         await transaction.CommitAsync();
         return true;
@@ -245,8 +235,7 @@ public sealed class PosCheckoutService(AppDbContext db, IHttpContextAccessor acc
 
     public async Task<PosCheckoutResponse> GetAsync(int id)
     {
-        var order = await db.Orders.AsNoTracking().Include(o => o.User).Include(o => o.Customer).Include(o => o.OrderItems).ThenInclude(i => i.Product)
-            .SingleOrDefaultAsync(o => o.Id == id && o.OrderType == "pos") ?? throw new ArgumentException("Không tìm thấy đơn POS.");
+        var order = await repository.GetPosOrderForDisplayAsync(id) ?? throw new ArgumentException("Không tìm thấy đơn POS.");
         var delivery = OrderDeliveryDetails.FromOrder(order);
         return new PosCheckoutResponse { IsLegacy = order.CheckoutKey == null, Id = order.Id, OrderNumber = order.OrderNumber, Status = order.Status, PaymentStatus = order.PaymentStatus,
             PaymentMethod = order.PaymentMethod, Subtotal = order.Subtotal, Discount = order.Discount, TotalAmount = order.TotalAmount,
@@ -261,8 +250,7 @@ public sealed class PosCheckoutService(AppDbContext db, IHttpContextAccessor acc
     {
         var userId = UserId;
         var key = requestId.ToString();
-        var id = await db.Orders.AsNoTracking().Where(o => o.CheckoutKey == key && o.UserId == userId)
-            .Select(o => (int?)o.Id).SingleOrDefaultAsync();
+        var id = await repository.GetOrderIdByCheckoutKeyAsync(key, userId);
         return id.HasValue ? await GetAsync(id.Value) : null;
     }
 }

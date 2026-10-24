@@ -28,31 +28,6 @@ namespace backend.Repository
             return await _context.Suppliers.FindAsync(id);
         }
 
-        public async Task<(List<Supplier> Items, int TotalItems)> GetPaginatedAsync(int page, int pageSize, string? search)
-        {
-            var query = _context.Suppliers.AsQueryable();
-
-            if (!string.IsNullOrWhiteSpace(search))
-            {
-                var s = search.Trim().ToLower();
-                query = query.Where(x =>
-                    x.Name.ToLower().Contains(s) ||
-                    (x.Email != null && x.Email.ToLower().Contains(s)) ||
-                    (x.Phone != null && x.Phone.Contains(s))
-                );
-            }
-
-            var total = await query.CountAsync();
-
-            var items = await query
-                .OrderBy(x => x.Id)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
-
-            return (items, total);
-        }
-
         public async Task<Supplier> CreateAsync(Supplier supplier)
         {
             _context.Suppliers.Add(supplier);

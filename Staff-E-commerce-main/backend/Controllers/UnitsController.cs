@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
-using backend.Repository;
 using backend.Models;
 using backend.DTO;
+using backend.Services;
 
 namespace backend.Controllers
 {
@@ -11,54 +11,28 @@ namespace backend.Controllers
     [Authorize]
     public class UnitsController : ControllerBase
     {
-        private readonly UnitRepository _unitRepo;
+        private readonly UnitService _unitService;
 
-        public UnitsController(UnitRepository unitRepo)
+        public UnitsController(UnitService unitService)
         {
-            _unitRepo = unitRepo;
+            _unitService = unitService;
         }
 
         // GET api/units
         [HttpGet]
         public async Task<ActionResult<List<UnitDTO>>> GetAll([FromQuery] bool? isActive = null)
         {
-            var units = await _unitRepo.GetAllAsync(isActive);
-            var productCounts = await _unitRepo.GetProductCountByUnitAsync();
-
-            var result = units.Select(u => new UnitDTO
-            {
-                Id = u.Id,
-                Code = u.Code,
-                Name = u.Name,
-                IsActive = u.IsActive,
-                CreatedAt = u.CreatedAt,
-                UpdatedAt = u.UpdatedAt,
-                ProductCount = productCounts.GetValueOrDefault(u.Id, 0)
-            }).ToList();
-
-            return Ok(result);
+            return Ok(await _unitService.GetAllUnitsAsync(isActive));
         }
 
         // GET api/units/{id}
         [HttpGet("{id}")]
         public async Task<ActionResult<UnitDTO>> GetById(int id)
         {
-            var unit = await _unitRepo.GetByIdAsync(id);
+            var unit = await _unitService.GetUnitByIdAsync(id);
             if (unit == null)
                 return NotFound(new { message = "Unit not found" });
-
-            var dto = new UnitDTO
-            {
-                Id = unit.Id,
-                Code = unit.Code,
-                Name = unit.Name,
-                IsActive = unit.IsActive,
-                CreatedAt = unit.CreatedAt,
-                UpdatedAt = unit.UpdatedAt,
-                ProductCount = unit.Products.Count
-            };
-
-            return Ok(dto);
+            return Ok(unit);
         }
 
         // POST api/units
@@ -66,39 +40,13 @@ namespace backend.Controllers
         [Authorize]
         public async Task<ActionResult<UnitDTO>> Create([FromBody] UnitDTO dto)
         {
-            // Validate
-            if (string.IsNullOrWhiteSpace(dto.Code))
-                return BadRequest(new { message = "Code is required" });
-
-            if (string.IsNullOrWhiteSpace(dto.Name))
-                return BadRequest(new { message = "Name is required" });
-
-            // Kiểm tra trùng code
-            var existing = await _unitRepo.GetByCodeAsync(dto.Code);
-            if (existing != null)
-                return BadRequest(new { message = "Unit code already exists" });
-
-            var unit = new Unit
+            try
             {
-                Code = dto.Code,
-                Name = dto.Name,
-                IsActive = dto.IsActive
-            };
-
-            var created = await _unitRepo.CreateAsync(unit);
-
-            var resultDto = new UnitDTO
-            {
-                Id = created.Id,
-                Code = created.Code,
-                Name = created.Name,
-                IsActive = created.IsActive,
-                CreatedAt = created.CreatedAt,
-                UpdatedAt = created.UpdatedAt,
-                ProductCount = 0
-            };
-
-            return CreatedAtAction(nameof(GetById), new { id = created.Id }, resultDto);
+                var result = await _unitService.CreateUnitAsync(dto);
+                return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
+            }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         // PUT api/units/{id}
@@ -106,40 +54,13 @@ namespace backend.Controllers
         [Authorize]
         public async Task<ActionResult<UnitDTO>> Update(int id, [FromBody] UnitDTO dto)
         {
-            // Validate
-            if (string.IsNullOrWhiteSpace(dto.Code))
-                return BadRequest(new { message = "Code is required" });
-
-            if (string.IsNullOrWhiteSpace(dto.Name))
-                return BadRequest(new { message = "Name is required" });
-
-            // Kiểm tra trùng code (trừ chính nó)
-            var existingByCode = await _unitRepo.GetByCodeAsync(dto.Code);
-            if (existingByCode != null && existingByCode.Id != id)
-                return BadRequest(new { message = "Unit code already exists" });
-
-            var unit = new Unit
+            try
             {
-                Code = dto.Code,
-                Name = dto.Name,
-                IsActive = dto.IsActive
-            };
-
-            var updated = await _unitRepo.UpdateAsync(id, unit);
-            if (updated == null)
-                return NotFound(new { message = "Unit not found" });
-
-            var resultDto = new UnitDTO
-            {
-                Id = updated.Id,
-                Code = updated.Code,
-                Name = updated.Name,
-                IsActive = updated.IsActive,
-                CreatedAt = updated.CreatedAt,
-                UpdatedAt = updated.UpdatedAt
-            };
-
-            return Ok(resultDto);
+                var result = await _unitService.UpdateUnitAsync(id, dto);
+                return result == null ? NotFound(new { message = "Unit not found" }) : Ok(result);
+            }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         // DELETE api/units/{id}
@@ -149,7 +70,7 @@ namespace backend.Controllers
         {
             try
             {
-                var deleted = await _unitRepo.DeleteAsync(id);
+                var deleted = await _unitService.DeleteUnitAsync(id);
                 if (!deleted)
                     return NotFound(new { message = "Unit not found" });
 
@@ -166,26 +87,8 @@ namespace backend.Controllers
         [Authorize]
         public async Task<ActionResult<UnitDTO>> ToggleActive(int id)
         {
-            var unit = await _unitRepo.GetByIdAsync(id);
-            if (unit == null)
-                return NotFound(new { message = "Unit not found" });
-
-            unit.IsActive = !unit.IsActive;
-            unit.UpdatedAt = DateTime.UtcNow;
-
-            var updated = await _unitRepo.UpdateAsync(id, unit);
-
-            var dto = new UnitDTO
-            {
-                Id = updated!.Id,
-                Code = updated.Code,
-                Name = updated.Name,
-                IsActive = updated.IsActive,
-                CreatedAt = updated.CreatedAt,
-                UpdatedAt = updated.UpdatedAt
-            };
-
-            return Ok(dto);
+            var result = await _unitService.ToggleActiveAsync(id);
+            return result == null ? NotFound(new { message = "Unit not found" }) : Ok(result);
         }
     }
 }

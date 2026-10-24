@@ -1,118 +1,209 @@
-using backend.Data;
 using backend.DTO;
-using backend.Models;
 using backend.Helpers;
+using backend.Models;
+using backend.Repository;
 using Microsoft.EntityFrameworkCore;
 
 namespace backend.Services;
 
-public class InvoiceService
+public sealed class InvoiceService
 {
-    private readonly AppDbContext _db;
-    public InvoiceService(AppDbContext db) => _db = db;
+    private readonly InvoiceRepository _repository;
+    private readonly BusMemoryCache<InvoiceDTO> _cache;
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
 
-    // Idempotent: one immutable monetary/customer/item snapshot per order.
+    public InvoiceService(InvoiceRepository repository, BusMemoryCache<InvoiceDTO> cache)
+    {
+        _repository = repository;
+        _cache = cache;
+    }
+
     public async Task<Invoice?> EnsureInvoiceForOrderAsync(int orderId)
     {
-        var existing = await _db.Invoices.Include(i => i.Items).FirstOrDefaultAsync(i => i.OrderId == orderId);
-        if (existing != null) return existing;
-        var order = await _db.Orders.Include(o => o.Customer).Include(o => o.OrderItems).ThenInclude(i => i.Product)
-            .FirstOrDefaultAsync(o => o.Id == orderId);
-        if (order == null || order.Status == "cancelled" || !(order.Status is "processing" or "completed" || order.PaymentStatus == "paid")) return null;
+        var existing = await _repository.GetByOrderIdWithItemsAsync(orderId);
+        if (existing is not null) return existing;
+
+        var order = await _repository.GetOrderForInvoiceAsync(orderId);
+        if (order is null || order.Status == "cancelled" ||
+            !(order.Status is "processing" or "completed" || order.PaymentStatus == "paid"))
+            return null;
 
         var now = DateTime.UtcNow;
-        var invoice = new Invoice { OrderId = order.Id, InvoiceNumber = "HD-" + order.OrderNumber,
-            InvoiceStatus = "issued", PaymentStatus = order.PaymentStatus, PaymentMethod = order.PaymentMethod,
-            CustomerName = order.Customer?.FullName ?? "Khách lẻ", CustomerPhone = order.Customer?.Phone,
-            CustomerEmail = order.Customer?.Email, CustomerAddress = order.Customer?.Address,
-            Subtotal = order.Subtotal, DiscountAmount = order.Discount, TotalAmount = order.TotalAmount,
-            IssuedAt = now, UpdatedAt = now,
-            Items = order.OrderItems.Select(i => new InvoiceItem { ProductId = i.ProductId,
-                ProductName = i.Product?.ProductName ?? "Sản phẩm", Sku = i.Product?.Sku,
-                Quantity = i.Quantity, UnitPrice = i.UnitPrice, TotalPrice = i.TotalPrice }).ToList() };
-        _db.Invoices.Add(invoice);
-        try { await _db.SaveChangesAsync(); return invoice; }
+        var invoice = new Invoice
+        {
+            OrderId = order.Id,
+            InvoiceNumber = "HD-" + order.OrderNumber,
+            InvoiceStatus = "issued",
+            PaymentStatus = order.PaymentStatus,
+            PaymentMethod = order.PaymentMethod,
+            CustomerName = order.Customer?.FullName ?? "Khách lẻ",
+            CustomerPhone = order.Customer?.Phone,
+            CustomerEmail = order.Customer?.Email,
+            CustomerAddress = order.Customer?.Address,
+            Subtotal = order.Subtotal,
+            DiscountAmount = order.Discount,
+            TotalAmount = order.TotalAmount,
+            IssuedAt = now,
+            UpdatedAt = now,
+            Items = order.OrderItems.Select(i => new InvoiceItem
+            {
+                ProductId = i.ProductId,
+                ProductName = i.Product?.ProductName ?? "Sản phẩm",
+                Sku = i.Product?.Sku,
+                Quantity = i.Quantity,
+                UnitPrice = i.UnitPrice,
+                TotalPrice = i.TotalPrice
+            }).ToList()
+        };
+
+        try
+        {
+            var created = await _repository.AddAsync(invoice);
+            _cache.AddOrUpdate(MapSummary(created, order), item => item.InvoiceId);
+            return created;
+        }
         catch (DbUpdateException)
         {
-            // Concurrent order/payment transitions may both try to create the same invoice.
-            _db.Entry(invoice).State = EntityState.Detached;
-            var concurrentInvoice = await _db.Invoices.Include(i => i.Items).FirstOrDefaultAsync(i => i.OrderId == orderId);
-            if (concurrentInvoice != null) return concurrentInvoice;
+            var concurrentInvoice = await _repository.GetByOrderIdWithItemsAsync(orderId);
+            if (concurrentInvoice is not null) return concurrentInvoice;
             throw;
         }
     }
 
     public async Task SyncOrderLifecycleAsync(int orderId)
     {
-        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
-        if (order == null) return;
-        var invoice = await _db.Invoices.FirstOrDefaultAsync(i => i.OrderId == orderId);
+        var order = await _repository.GetOrderStatusAsync(orderId);
+        if (order is null) return;
+        var invoice = await _repository.GetByOrderIdAsync(orderId);
+
         if (order.Status == "cancelled")
         {
-            if (invoice != null && invoice.InvoiceStatus != "refunded") { invoice.InvoiceStatus = "voided"; invoice.UpdatedAt = DateTime.UtcNow; await _db.SaveChangesAsync(); }
+            if (invoice is not null && invoice.InvoiceStatus != "refunded")
+            {
+                invoice.InvoiceStatus = "voided";
+                invoice.UpdatedAt = DateTime.UtcNow;
+                await _repository.SaveChangesAsync();
+            }
             return;
         }
+
         if (order.PaymentStatus == "refunded" || order.Status == "refunded")
         {
-            if (invoice != null) { invoice.InvoiceStatus = "refunded"; invoice.PaymentStatus = "refunded"; invoice.UpdatedAt = DateTime.UtcNow; await _db.SaveChangesAsync(); }
+            if (invoice is not null)
+            {
+                invoice.InvoiceStatus = "refunded";
+                invoice.PaymentStatus = "refunded";
+                invoice.UpdatedAt = DateTime.UtcNow;
+                await _repository.SaveChangesAsync();
+            }
             return;
         }
+
         if (order.Status is "processing" or "completed" || order.PaymentStatus == "paid")
             invoice = await EnsureInvoiceForOrderAsync(orderId);
-        if (invoice != null)
-        {
-            invoice.PaymentStatus = order.PaymentStatus;
-            invoice.PaymentMethod = order.PaymentMethod;
-            if (order.PaymentStatus == "paid") invoice.InvoiceStatus = "paid";
-            else if (invoice.InvoiceStatus == "paid") invoice.InvoiceStatus = "issued";
-            invoice.UpdatedAt = DateTime.UtcNow;
-            await _db.SaveChangesAsync();
-        }
+        if (invoice is null) return;
+
+        invoice.PaymentStatus = order.PaymentStatus;
+        invoice.PaymentMethod = order.PaymentMethod;
+        if (order.PaymentStatus == "paid") invoice.InvoiceStatus = "paid";
+        else if (invoice.InvoiceStatus == "paid") invoice.InvoiceStatus = "issued";
+        invoice.UpdatedAt = DateTime.UtcNow;
+        await _repository.SaveChangesAsync();
+        _cache.AddOrUpdate(MapSummary(invoice, order), item => item.InvoiceId);
     }
 
-    public async Task<PagedResult<InvoiceDTO>> GetInvoicesAsync(int page, int pageSize, DateTime? from, DateTime? to, string? paymentStatus, string? customerSearch = null)
+    public async Task<PagedResult<InvoiceDTO>> GetInvoicesAsync(
+        int page, int pageSize, DateTime? from, DateTime? to,
+        string? paymentStatus, string? customerSearch = null)
     {
-        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 100);
-        // The management list contains invoices for fulfilled orders only.
-        // Keep other invoice records available for historical detail/reconciliation.
-        var query = _db.Invoices.AsNoTracking().Where(i => i.Order != null && i.Order.Status == "completed");
-        if (from.HasValue) query = query.Where(i => i.IssuedAt >= from.Value);
-        if (to.HasValue) query = query.Where(i => i.IssuedAt < to.Value.Date.AddDays(1));
-        if (!string.IsNullOrWhiteSpace(paymentStatus)) query = query.Where(i => i.PaymentStatus == paymentStatus);
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var (items, _) = await _cache.GetOrCreateAsync(
+            () => _repository.GetCompletedInvoiceDtosAsync(), CacheTtl);
+
+        IEnumerable<InvoiceDTO> filtered = items;
+        if (from.HasValue) filtered = filtered.Where(i => i.IssuedAt >= from.Value);
+        if (to.HasValue) filtered = filtered.Where(i => i.IssuedAt < to.Value.Date.AddDays(1));
+        if (!string.IsNullOrWhiteSpace(paymentStatus))
+            filtered = filtered.Where(i => string.Equals(i.PaymentStatus, paymentStatus, StringComparison.OrdinalIgnoreCase));
         if (!string.IsNullOrWhiteSpace(customerSearch))
         {
             var keyword = customerSearch.Trim();
-            query = query.Where(i =>
-                (i.CustomerName != null && i.CustomerName.Contains(keyword)) ||
-                (i.CustomerPhone != null && i.CustomerPhone.Contains(keyword)) ||
-                (i.CustomerEmail != null && i.CustomerEmail.Contains(keyword)));
+            filtered = filtered.Where(i =>
+                (i.CustomerName?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (i.CustomerPhone?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (i.CustomerEmail?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false));
         }
-        var total = await query.CountAsync();
-        var items = await query.OrderByDescending(i => i.IssuedAt).Skip((page - 1) * pageSize).Take(pageSize)
-            .Select(i => new InvoiceDTO { InvoiceId = i.Id, OrderId = i.OrderId, InvoiceNumber = i.InvoiceNumber,
-                OrderNumber = i.Order != null ? i.Order.OrderNumber : "", OrderStatus = i.Order != null ? i.Order.Status : "", InvoiceStatus = i.InvoiceStatus,
-                IssuedAt = i.IssuedAt, PaymentStatus = i.PaymentStatus, PaymentMethod = i.PaymentMethod,
-                Subtotal = i.Subtotal, Discount = i.DiscountAmount, TaxAmount = i.TaxAmount, FeeAmount = i.ShippingFee,
-                TotalAmount = i.TotalAmount, CustomerName = i.CustomerName, CustomerPhone = i.CustomerPhone })
-            .ToListAsync();
-        return new PagedResult<InvoiceDTO> { Items = items, TotalItems = total, PageNumber = page, PageSize = pageSize, TotalPages = (int)Math.Ceiling(total / (double)pageSize) };
+
+        var ordered = filtered.OrderByDescending(i => i.IssuedAt).ToList();
+        var total = ordered.Count;
+        return new PagedResult<InvoiceDTO>
+        {
+            Items = ordered.Skip((page - 1) * pageSize).Take(pageSize).ToList(),
+            TotalItems = total,
+            PageNumber = page,
+            PageSize = pageSize,
+            TotalPages = (int)Math.Ceiling(total / (double)pageSize)
+        };
     }
 
     public async Task<InvoiceDTO?> GetInvoiceAsync(int orderId)
     {
-        var i = await _db.Invoices.AsNoTracking().Include(x => x.Items).Include(x => x.Order)
-            .FirstOrDefaultAsync(x => x.OrderId == orderId);
-        if (i == null) return null;
-        var delivery = i.Order == null ? null : OrderDeliveryDetails.FromOrder(i.Order);
-        return new InvoiceDTO { InvoiceId = i.Id, OrderId = i.OrderId,
-            InvoiceNumber = i.InvoiceNumber, OrderNumber = i.Order?.OrderNumber ?? "", OrderStatus = i.Order?.Status ?? "", InvoiceStatus = i.InvoiceStatus,
-            IssuedAt = i.IssuedAt, PaymentStatus = i.PaymentStatus, PaymentMethod = i.PaymentMethod,
-            Subtotal = i.Subtotal, Discount = i.DiscountAmount, TaxAmount = i.TaxAmount, FeeAmount = i.ShippingFee,
-            TotalAmount = i.TotalAmount, CustomerName = i.CustomerName, CustomerPhone = i.CustomerPhone,
-            CustomerEmail = i.CustomerEmail, CustomerAddress = i.CustomerAddress,
-            RecipientName = delivery?.Name, RecipientPhone = delivery?.Phone, ShippingAddress = delivery?.Address,
-            Items = i.Items.Select(x => new InvoiceItemDTO { ProductName = x.ProductName, Sku = x.Sku,
-                Quantity = x.Quantity, UnitPrice = x.UnitPrice, TotalPrice = x.TotalPrice }).ToList() };
+        var invoice = await _repository.GetDetailByOrderIdAsync(orderId);
+        if (invoice is null) return null;
+        var delivery = invoice.Order is null ? null : OrderDeliveryDetails.FromOrder(invoice.Order);
+        return new InvoiceDTO
+        {
+            InvoiceId = invoice.Id,
+            OrderId = invoice.OrderId,
+            InvoiceNumber = invoice.InvoiceNumber,
+            OrderNumber = invoice.Order?.OrderNumber ?? "",
+            OrderStatus = invoice.Order?.Status ?? "",
+            InvoiceStatus = invoice.InvoiceStatus,
+            IssuedAt = invoice.IssuedAt,
+            PaymentStatus = invoice.PaymentStatus,
+            PaymentMethod = invoice.PaymentMethod,
+            Subtotal = invoice.Subtotal,
+            Discount = invoice.DiscountAmount,
+            TaxAmount = invoice.TaxAmount,
+            FeeAmount = invoice.ShippingFee,
+            TotalAmount = invoice.TotalAmount,
+            CustomerName = invoice.CustomerName,
+            CustomerPhone = invoice.CustomerPhone,
+            CustomerEmail = invoice.CustomerEmail,
+            CustomerAddress = invoice.CustomerAddress,
+            RecipientName = delivery?.Name,
+            RecipientPhone = delivery?.Phone,
+            ShippingAddress = delivery?.Address,
+            Items = invoice.Items.Select(x => new InvoiceItemDTO
+            {
+                ProductName = x.ProductName,
+                Sku = x.Sku,
+                Quantity = x.Quantity,
+                UnitPrice = x.UnitPrice,
+                TotalPrice = x.TotalPrice
+            }).ToList()
+        };
     }
 
+    private static InvoiceDTO MapSummary(Invoice invoice, Order order) => new()
+    {
+        InvoiceId = invoice.Id,
+        OrderId = invoice.OrderId,
+        InvoiceNumber = invoice.InvoiceNumber,
+        OrderNumber = order.OrderNumber,
+        OrderStatus = order.Status,
+        InvoiceStatus = invoice.InvoiceStatus,
+        IssuedAt = invoice.IssuedAt,
+        PaymentStatus = invoice.PaymentStatus,
+        PaymentMethod = invoice.PaymentMethod,
+        Subtotal = invoice.Subtotal,
+        Discount = invoice.DiscountAmount,
+        TaxAmount = invoice.TaxAmount,
+        FeeAmount = invoice.ShippingFee,
+        TotalAmount = invoice.TotalAmount,
+        CustomerName = invoice.CustomerName,
+        CustomerPhone = invoice.CustomerPhone,
+        CustomerEmail = invoice.CustomerEmail
+    };
 }
