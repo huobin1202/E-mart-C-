@@ -24,7 +24,7 @@ public sealed class InvoiceService
         if (existing is not null) return existing;
 
         var order = await _repository.GetOrderForInvoiceAsync(orderId);
-        if (order is null || order.Status == "cancelled" ||
+        if (order is null || (order.Status == "cancelled" && order.PaymentStatus != "paid") ||
             !(order.Status is "processing" or "completed" || order.PaymentStatus == "paid"))
             return null;
 
@@ -58,9 +58,9 @@ public sealed class InvoiceService
 
         try
         {
-            var created = await _repository.AddAsync(invoice);
-            _cache.AddOrUpdate(MapSummary(created, order), item => item.InvoiceId);
-            return created;
+            // Publish read models in ReadCacheRefreshFilter after the surrounding
+            // sales transaction commits, never from an uncommitted invoice.
+            return await _repository.AddAsync(invoice);
         }
         catch (DbUpdateException)
         {
@@ -76,7 +76,7 @@ public sealed class InvoiceService
         if (order is null) return;
         var invoice = await _repository.GetByOrderIdAsync(orderId);
 
-        if (order.Status == "cancelled")
+        if (order.Status == "cancelled" && order.PaymentStatus is not ("paid" or "refunded"))
         {
             if (invoice is not null && invoice.InvoiceStatus != "refunded")
             {
@@ -109,7 +109,6 @@ public sealed class InvoiceService
         else if (invoice.InvoiceStatus == "paid") invoice.InvoiceStatus = "issued";
         invoice.UpdatedAt = DateTime.UtcNow;
         await _repository.SaveChangesAsync();
-        _cache.AddOrUpdate(MapSummary(invoice, order), item => item.InvoiceId);
     }
 
     public async Task<PagedResult<InvoiceDTO>> GetInvoicesAsync(
@@ -121,7 +120,7 @@ public sealed class InvoiceService
         var (items, _) = await _cache.GetOrCreateAsync(
             () => _repository.GetCompletedInvoiceDtosAsync(), CacheTtl);
 
-        IEnumerable<InvoiceDTO> filtered = items;
+        IEnumerable<InvoiceDTO> filtered = items.Where(i => i.OrderStatus == "completed");
         if (from.HasValue) filtered = filtered.Where(i => i.IssuedAt >= from.Value);
         if (to.HasValue) filtered = filtered.Where(i => i.IssuedAt < to.Value.Date.AddDays(1));
         if (!string.IsNullOrWhiteSpace(paymentStatus))
@@ -186,24 +185,4 @@ public sealed class InvoiceService
         };
     }
 
-    private static InvoiceDTO MapSummary(Invoice invoice, Order order) => new()
-    {
-        InvoiceId = invoice.Id,
-        OrderId = invoice.OrderId,
-        InvoiceNumber = invoice.InvoiceNumber,
-        OrderNumber = order.OrderNumber,
-        OrderStatus = order.Status,
-        InvoiceStatus = invoice.InvoiceStatus,
-        IssuedAt = invoice.IssuedAt,
-        PaymentStatus = invoice.PaymentStatus,
-        PaymentMethod = invoice.PaymentMethod,
-        Subtotal = invoice.Subtotal,
-        Discount = invoice.DiscountAmount,
-        TaxAmount = invoice.TaxAmount,
-        FeeAmount = invoice.ShippingFee,
-        TotalAmount = invoice.TotalAmount,
-        CustomerName = invoice.CustomerName,
-        CustomerPhone = invoice.CustomerPhone,
-        CustomerEmail = invoice.CustomerEmail
-    };
 }

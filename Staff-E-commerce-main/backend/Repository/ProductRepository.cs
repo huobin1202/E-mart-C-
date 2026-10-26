@@ -165,9 +165,7 @@ namespace backend.Repository
 
         private static decimal CalculateDiscount(decimal price, string discountType, decimal value, decimal? maxDiscount)
         {
-            var discount = discountType == "percent" ? decimal.Floor(price * value / 100m) : value;
-            if (maxDiscount.HasValue) discount = Math.Min(discount, maxDiscount.Value);
-            return Math.Clamp(discount, 0, price);
+            return SalePricing.Discount(discountType, value, maxDiscount, price);
         }
 
         public async Task<List<Product>> GetByIdsAsync(IEnumerable<int> ids)

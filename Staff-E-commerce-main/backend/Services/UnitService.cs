@@ -111,7 +111,7 @@ namespace backend.Services
             return result;
         }
 
-        private static UnitDTO Map(Unit unit, int productCount) => new()
+        internal static UnitDTO Map(Unit unit, int productCount) => new()
         {
             Id = unit.Id,
             Code = unit.Code,

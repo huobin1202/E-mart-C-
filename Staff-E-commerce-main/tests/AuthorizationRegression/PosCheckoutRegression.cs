@@ -250,7 +250,7 @@ public static class PosCheckoutRegression
             order.PaymentMethod = "card";
             return order;
         }
-        async Task Db(Func<AppDbContext, Task> action) { await using var scope = services.CreateAsyncScope(); await action(scope.ServiceProvider.GetRequiredService<AppDbContext>()); }
+        async Task Db(Func<AppDbContext, Task> action) { await using var scope = services.CreateAsyncScope(); await action(scope.ServiceProvider.GetRequiredService<AppDbContext>()); await scope.ServiceProvider.GetRequiredService<ReadCacheRefreshService>().RefreshAsync(); }
         async Task<JsonElement> Get(string path)
         {
             using var message = new HttpRequestMessage(HttpMethod.Get, path);

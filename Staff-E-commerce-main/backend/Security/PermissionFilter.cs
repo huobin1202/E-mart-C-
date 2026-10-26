@@ -15,7 +15,13 @@ public sealed class PermissionFilter(AppDbContext db) : IAsyncAuthorizationFilte
         if (context.ActionDescriptor.EndpointMetadata.OfType<IAllowAnonymous>().Any()) return;
         if (context.ActionDescriptor is not ControllerActionDescriptor action) return;
         var permission = PermissionCatalog.ForRequest(action.ControllerName, action.ActionName, context.HttpContext.Request.Method);
-        if (permission == null) return;
+        if (permission == null)
+        {
+            // These controllers enforce self-service or explicit role policies themselves.
+            if (action.ControllerName is "Me" or "Storefront" or "Secret") return;
+            context.Result = new ForbidResult();
+            return;
+        }
         var user = context.HttpContext.User;
         if (user.Identity?.IsAuthenticated != true)
         {

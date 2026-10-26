@@ -108,7 +108,8 @@ namespace backend.Repository
         // Cập nhật user
         public async Task<User> UpdateAsync(User user)
         {
-            _context.Users.Update(user);
+            // Keep EF's property-level tracking; Update() marks the whole profile
+            // graph modified and can overwrite reward points or role changes.
             await _context.SaveChangesAsync();
             return user;
         }

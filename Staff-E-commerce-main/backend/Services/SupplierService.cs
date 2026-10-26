@@ -20,7 +20,7 @@ namespace backend.Services
             _cache = cache;
         }
 
-        private SupplierDTO MapToDto(Supplier s)
+        internal static SupplierDTO MapToDto(Supplier s)
         {
             return new SupplierDTO
             {

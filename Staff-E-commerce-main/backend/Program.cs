@@ -31,11 +31,11 @@ builder.Services.AddDataProtection()
 // -------------------------
 // Configure Services
 // -------------------------
-builder.Services.AddScoped<PermissionFilter>();
-builder.Services.AddScoped<AccountMutationFilter>();
+builder.Services.AddStoreServices();
 builder.Services.AddControllers(options =>
     {
         options.Filters.AddService<PermissionFilter>();
+        options.Filters.AddService<ReadCacheRefreshFilter>(-1000);
         options.Filters.AddService<AccountMutationFilter>();
     })
     .AddJsonOptions(options =>
@@ -51,7 +51,7 @@ builder.Services.AddControllers(options =>
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddSignalR();
+
 builder.Services.AddAuthorization(options =>
 {
     // Yêu cầu đăng nhập cho tất cả endpoint trừ khi đánh dấu [AllowAnonymous]
@@ -66,66 +66,6 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(connectionString)
 // .EnableSensitiveDataLogging() // Dev only
 );
-// -------------------------
-// Register Repositories
-// -------------------------
-builder.Services.AddScoped<ProductRepository>();
-builder.Services.AddScoped<OrderRepository>();
-builder.Services.AddScoped<UserRepository>();
-builder.Services.AddScoped<CustomerRepository>();
-builder.Services.AddScoped<ActivityLogRepository>();
-builder.Services.AddScoped<PromotionRepository>();
-builder.Services.AddScoped<StatisticsRepository>();
-builder.Services.AddScoped<OrderItemRepository>();
-builder.Services.AddScoped<InventoryRepository>();
-builder.Services.AddScoped<PaymentRepository>();
-builder.Services.AddScoped<CategoryRepository>();
-builder.Services.AddScoped<SupplierRepository>();
-builder.Services.AddScoped<ReportsRepository>();
-builder.Services.AddScoped<UnitRepository>();
-builder.Services.AddScoped<PurchaseOrderRepository>();
-builder.Services.AddScoped<EmployeeRepository>();
-builder.Services.AddScoped<RoleRepository>();
-builder.Services.AddScoped<InvoiceRepository>();
-builder.Services.AddScoped<PosCheckoutRepository>();
-builder.Services.AddScoped<StorefrontRepository>();
-builder.Services.AddScoped<ImportRepository>();
-
-builder.Services.AddHttpContextAccessor();
-
-
-
-
-// -------------------------
-// Register Services
-// -------------------------
-builder.Services.AddScoped<ProductService>();
-builder.Services.AddScoped<OrderService>();
-builder.Services.AddScoped<InvoiceService>();
-builder.Services.AddScoped<PosCheckoutService>();
-builder.Services.AddScoped<StorefrontService>();
-builder.Services.AddScoped<ActivityLogService>();
-builder.Services.AddScoped<CustomerService>();
-builder.Services.AddScoped<CategoryService>();
-builder.Services.AddSingleton(typeof(BusMemoryCache<>));
-builder.Services.AddScoped<UserService>();
-builder.Services.AddScoped<AuthService>();
-builder.Services.AddScoped<PromotionService>();
-builder.Services.AddScoped<StatisticsService>();
-builder.Services.AddScoped<OrderItemService>();
-builder.Services.AddScoped<InventoryService>();
-builder.Services.AddScoped<PaymentService>();
-builder.Services.AddScoped<ImportService>();
-builder.Services.AddScoped<SupplierService>();
-builder.Services.AddScoped<ReportsService>();
-builder.Services.AddScoped<JwtService>();
-builder.Services.AddScoped<UnitService>();
-builder.Services.AddScoped<PurchaseOrderService>();
-builder.Services.AddScoped<EmployeeService>();
-builder.Services.AddScoped<RoleService>();
-
-builder.Services.AddHttpClient();
-
 // Configure file upload size limit
 builder.Services.Configure<FormOptions>(options =>
 {
@@ -143,7 +83,14 @@ builder.Services.AddAuthentication(options =>
 {
     options.RequireHttpsMetadata = false; // true in production
     options.SaveToken = true;
-    options.Events = new JwtBearerEvents { OnTokenValidated = SessionValidator.ValidateAsync };
+    options.Events = new JwtBearerEvents {
+        OnTokenValidated = SessionValidator.ValidateAsync,
+        OnMessageReceived = context => {
+            if (context.HttpContext.Request.Path.StartsWithSegments("/hub/orders") &&
+                context.Request.Query.TryGetValue("access_token", out var token)) context.Token = token;
+            return Task.CompletedTask;
+        }
+    };
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = true,
@@ -211,7 +158,7 @@ app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseHttpsRedirection();
 
 app.MapControllers();
-app.MapHub<OrderHub>("/hub/orders").AllowAnonymous();
+app.MapHub<OrderHub>("/hub/orders", options => options.CloseOnAuthenticationExpiration = true).RequireAuthorization("orders.realtime");
 
 // -------------------------
 // Serve frontend SPA (Vite)

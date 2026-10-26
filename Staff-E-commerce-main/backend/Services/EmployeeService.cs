@@ -92,7 +92,7 @@ public sealed class EmployeeService
         return deleted;
     }
 
-    private static EmployeeDTO Map(Employee employee) => new()
+    internal static EmployeeDTO Map(Employee employee) => new()
     {
         Id = employee.Id,
         FullName = employee.FullName,

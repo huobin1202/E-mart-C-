@@ -17,7 +17,7 @@ public static class PermissionCatalog
 
     public static string? ForRequest(string controller, string action, string method)
     {
-        if (controller == "Orders" && action is "ConfirmPayment" or "ConfirmCash" or "CreatePosPaymentLink") return "payments.write";
+        if (controller == "Orders" && action is "ConfirmPayment" or "ConfirmCash" or "ConfirmOnlinePayment" or "MarkOrderRefunded" or "CreatePosPaymentLink") return "payments.write";
         var resource = controller switch
         {
             "Users" => "users", "Roles" => "roles", "Employees" => "employees",
@@ -25,7 +25,7 @@ public static class PermissionCatalog
             "Units" => "units", "Suppliers" => "suppliers", "Inventory" => "inventory",
             "PurchaseOrders" => "purchaseorders", "Orders" or "OrderItem" => "orders",
             "Payment" => "payments", "Invoice" => "invoices", "Promotions" => "promotions",
-            "Reports" or "Statistics" => "reports", "ActivityLogs" => "audit",
+            "Reports" or "Statistics" => "reports", "ActivityLog" or "ActivityLogs" => "audit",
             "Import" => action.Contains("Customer", StringComparison.OrdinalIgnoreCase) ? "customers" : "products",
             "Auth" when action == "Register" => "users",
             _ => null

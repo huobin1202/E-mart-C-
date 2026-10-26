@@ -27,6 +27,8 @@ namespace backend.Models
         [Column("transaction_ref")]
         [StringLength(255)]
         public string? TransactionRef { get; set; }
+        [Column("pay_url"), StringLength(2048)] public string? PayUrl { get; set; }
+        [Column("provider_request_id"), StringLength(100)] public string? ProviderRequestId { get; set; }
 
         [Column("status")]
         [StringLength(50)]

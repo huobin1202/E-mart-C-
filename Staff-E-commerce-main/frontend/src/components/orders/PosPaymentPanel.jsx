@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { confirmPosCash, confirmPosPayment, createPosPaymentLink, getPosCheckout } from "../../api/posCheckoutApi";
 import { request } from "../../api/apiClient";
 import { useAuth } from "../../hook/useAuth";
+import OnlinePaymentPanel from "./OnlinePaymentPanel";
 
 export default function PosPaymentPanel({ order, onChange }) {
   const [reference, setReference] = useState("");
@@ -38,6 +39,7 @@ export default function PosPaymentPanel({ order, onChange }) {
 
   if (order.paymentStatus === "paid" && order.status === "completed") return <p className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">Đã thanh toán · Hoàn thành</p>;
   if (order.paymentStatus === "paid" && order.status === "pending" && order.isLegacy) return <div className="space-y-2 rounded-lg bg-emerald-50 p-3 text-sm"><p>Đơn cũ đã ghi nhận thanh toán.</p><button disabled={busy || !permissions.includes("orders.write")} onClick={() => run(async () => { await request(`/orders/${order.id}/complete`, { method: "POST" }); await refresh(); })} className="rounded border bg-white px-3 py-2 disabled:opacity-50">Hoàn tất đơn đã thu tiền</button>{error && <p role="alert" className="text-red-700">{error}</p>}</div>;
+  if (order.status === "cancelled" && order.paymentStatus === "paid") return <OnlinePaymentPanel order={order} onChange={refresh} />;
   if (order.status === "cancelled") return <p className="rounded-lg bg-gray-100 p-3 text-sm text-gray-600">Đơn đã hủy. Tồn kho và điểm đã dùng đã được hoàn lại.</p>;
   if (order.status !== "pending" || order.paymentStatus !== "pending") return <p className="rounded bg-gray-50 p-3 text-sm">Đơn không còn chờ thanh toán.</p>;
   return <section className="my-3 space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">

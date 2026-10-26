@@ -44,75 +44,89 @@ namespace backend.Repository
                 .ToListAsync();
         }
 
+
+        public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginSalesTransactionAsync() => SalesTransaction.BeginAsync(_context);
+        public Task<bool> HasPermissionAsync(int userId, string code) => _context.Users.AnyAsync(u => u.Id == userId &&
+            u.RoleEntity.RolePermissions.Any(p => p.Permission.Code == code));
+        public Task<Order?> GetForSettlementAsync(int orderId) => _context.Orders.Include(o => o.Customer).Include(o => o.Payments)
+            .FirstOrDefaultAsync(o => o.Id == orderId);
+        public Task SaveChangesAsync() => _context.SaveChangesAsync();
+        public Task<bool> TransactionExistsAsync(string reference, int? exceptPaymentId = null) => _context.Payments
+            .AnyAsync(p => p.TransactionRef == reference && p.Status == "completed" && p.Id != exceptPaymentId);
+
         public async Task<bool> ConfirmOnlineOrderAsync(int orderId, int userId)
         {
-            var updated = await _context.Orders
-                .Where(o => o.Id == orderId && o.Status == "pending" && o.OrderType == "mobile" && o.CheckoutKey == null)
-                .ExecuteUpdateAsync(u => u
-                    .SetProperty(o => o.Status, "processing")
-                    .SetProperty(o => o.UserId, (int?)userId)
-                    .SetProperty(o => o.UpdatedAt, DateTime.UtcNow));
-            return updated == 1;
+            var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == orderId && o.OrderType == "mobile");
+            if (order == null || order.Status is not ("pending" or "processing")) return false;
+            if (order.Status == "processing") return true;
+            order.Status = "processing"; order.UserId = userId; order.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync(); return true;
         }
 
-        public async Task<bool> RejectOnlineOrderAsync(int orderId, string? reason)
+        // Caller holds the shared sales transaction through invoice synchronization.
+        public async Task<bool> RejectOnlineOrderAsync(int orderId, string? reason, int? userId = null)
         {
-            var order = await _context.Orders.Include(o => o.OrderItems)
-                .FirstOrDefaultAsync(o => o.Id == orderId);
-            if (order == null || order.OrderType != "mobile" || order.CheckoutKey != null ||
-                (order.Status != "pending" && order.Status != "processing")) return false;
-
-            await using var transaction = await _context.Database.BeginTransactionAsync();
-            try
+            var order = await _context.Orders.Include(o => o.OrderItems).Include(o => o.Customer)
+                .FirstOrDefaultAsync(o => o.Id == orderId && o.OrderType == "mobile");
+            if (order == null) return false;
+            if (order.Status == "cancelled") return true;
+            if (order.Status is not ("pending" or "processing")) return false;
+            var now = DateTime.UtcNow;
+            foreach (var item in order.OrderItems)
             {
-                var now = DateTime.UtcNow;
-                order.Status = "cancelled";
-                order.Note = string.IsNullOrWhiteSpace(reason) ? order.Note :
-                    (string.IsNullOrWhiteSpace(order.Note) ? $"Từ chối: {reason}" : $"{order.Note} | Từ chối: {reason}");
-                order.UpdatedAt = now;
-                var productIds = order.OrderItems.Select(i => i.ProductId).Distinct().ToList();
-                var inventories = await _context.Inventory.Where(i => productIds.Contains(i.ProductId)).ToListAsync();
-                foreach (var item in order.OrderItems)
-                {
-                    var inventory = inventories.FirstOrDefault(i => i.ProductId == item.ProductId);
-                    if (inventory != null) { inventory.Quantity += item.Quantity; inventory.UpdatedAt = now; }
-                }
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
-                return true;
+                var count = await _context.Inventory.Where(i => i.ProductId == item.ProductId).ExecuteUpdateAsync(u => u
+                    .SetProperty(i => i.Quantity, i => i.Quantity + item.Quantity).SetProperty(i => i.UpdatedAt, now));
+                if (count != 1) throw new InvalidOperationException("Không thể hoàn tồn kho của đơn hàng.");
+                _context.InventoryAdjustments.Add(new InventoryAdjustment { ProductId = item.ProductId, ChangeAmount = item.Quantity,
+                    Reason = $"Hủy {order.OrderNumber}", UserId = userId, CreatedAt = now });
             }
-            catch { await transaction.RollbackAsync(); throw; }
+            if (order.Customer != null) { order.Customer.RewardPoints += order.PointsUsed; order.Customer.UpdatedAt = now; }
+            var redemptions = await _context.PromotionRedemptions.Include(r => r.Promotion).Where(r => r.OrderId == orderId).ToListAsync();
+            foreach (var group in redemptions.GroupBy(r => r.PromotionId))
+                if (group.First().Promotion is { } promotion) promotion.UsedCount = Math.Max(0, promotion.UsedCount - 1);
+            _context.PromotionRedemptions.RemoveRange(redemptions);
+            order.Status = "cancelled"; order.UpdatedAt = now;
+            if (!string.IsNullOrWhiteSpace(reason)) order.Note = string.IsNullOrWhiteSpace(order.Note) ? $"Từ chối: {reason}" : $"{order.Note} | Từ chối: {reason}";
+            // A paid cancellation stays paid until an actual refund is confirmed.
+            await _context.SaveChangesAsync(); return true;
         }
 
         public async Task<bool> DeliverOnlineOrderAsync(int orderId, int userId)
         {
-            var order = await _context.Orders.Include(o => o.Customer)
-                .FirstOrDefaultAsync(o => o.Id == orderId && o.Status == "processing" && o.OrderType == "mobile" && o.CheckoutKey == null);
+            var order = await _context.Orders.Include(o => o.Customer).Include(o => o.Payments)
+                .FirstOrDefaultAsync(o => o.Id == orderId && o.OrderType == "mobile");
             if (order == null) return false;
+            if (order.Status == "completed" && order.PaymentStatus == "paid") return true;
+            if (order.Status != "processing") return false;
             if (order.PaymentMethod != "cash" && order.PaymentStatus != "paid")
                 throw new InvalidOperationException("Chờ xác nhận thanh toán trước khi hoàn tất giao hàng.");
             var now = DateTime.UtcNow;
+            if (order.PaymentMethod == "cash" && order.PaymentStatus != "paid")
+                order.Payments.Add(new Payment { Amount = order.TotalAmount, Method = "cash", Status = "completed", TransactionRef = $"COD-{order.Id}", CreatedAt = now });
             order.Status = "completed"; order.PaymentStatus = "paid"; order.UserId = userId; order.UpdatedAt = now;
-            if (order.CustomerId.HasValue)
-            {
-                var customer = await _context.Customers.FindAsync(order.CustomerId.Value);
-                if (customer != null)
-                {
-                    var points = (int)(order.TotalAmount / 10000m);
-                    customer.RewardPoints += points; customer.UpdatedAt = now;
-                }
-            }
-            await _context.SaveChangesAsync();
-            return true;
+            order.PointsEarned = order.CustomerId.HasValue ? (int)decimal.Floor(order.TotalAmount / 10000m) : 0;
+            if (order.Customer != null) { order.Customer.RewardPoints += order.PointsEarned; order.Customer.UpdatedAt = now; }
+            await _context.SaveChangesAsync(); return true;
         }
 
-        public async Task<bool> MarkOrderRefundedAsync(int orderId)
+        public async Task<bool> MarkOrderRefundedAsync(int orderId, decimal amount, string reference)
         {
-            var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
-            if (order == null || order.PaymentStatus != "paid" || order.Status == "cancelled") return false;
-            order.Status = "refunded"; order.PaymentStatus = "refunded"; order.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-            return true;
+            if (string.IsNullOrWhiteSpace(reference) || reference.Trim().Length > 200) throw new ArgumentException("Nhập mã giao dịch hoàn tiền.");
+            reference = "REFUND-" + reference.Trim();
+            var order = await _context.Orders.Include(o => o.Customer).Include(o => o.Payments).FirstOrDefaultAsync(o => o.Id == orderId);
+            if (order == null) return false;
+            if (amount != order.TotalAmount) throw new ArgumentException("Số tiền hoàn phải khớp đơn hàng.");
+            if (order.PaymentStatus == "refunded") return order.Payments.Any(p => p.Status == "refunded" && p.TransactionRef == reference);
+            if (order.PaymentStatus != "paid") return false;
+            if (await _context.Payments.AnyAsync(p => p.TransactionRef == reference)) throw new InvalidOperationException("Mã hoàn tiền đã được sử dụng.");
+            if (order.Status is "pending" or "processing") throw new InvalidOperationException("Hủy đơn chưa giao trước khi xác nhận hoàn tiền.");
+            if (order.Customer != null && order.Status != "cancelled")
+            { order.Customer.RewardPoints += order.PointsUsed - order.PointsEarned; order.Customer.UpdatedAt = DateTime.UtcNow; }
+            if (order.Status != "cancelled") order.Status = "refunded";
+            order.PaymentStatus = "refunded"; order.UpdatedAt = DateTime.UtcNow;
+            order.Payments.Add(new Payment { Amount = amount, Method = order.PaymentMethod == "e_wallet" ? "other" : order.PaymentMethod ?? "cash",
+                Status = "refunded", TransactionRef = reference, CreatedAt = DateTime.UtcNow });
+            await _context.SaveChangesAsync(); return true;
         }
 
         public async Task<List<OnlineOrderItemDTO>> GetOrderItemsAsync(int orderId)
@@ -176,7 +190,7 @@ namespace backend.Repository
                 .Select(o => new OrderDTO
                 {
                     Id = o.Id, OrderNumber = o.OrderNumber, CustomerId = o.CustomerId, UserId = o.UserId,
-                    Status = o.Status, OrderType = o.OrderType, IsPosCheckout = o.CheckoutKey != null,
+                    Status = o.Status, OrderType = o.OrderType, IsPosCheckout = o.OrderType == "pos" && o.CheckoutKey != null,
                     PaymentStatus = o.PaymentStatus, PaymentMethod = o.PaymentMethod, Subtotal = o.Subtotal,
                     Discount = o.Discount, TotalAmount = o.TotalAmount, PromotionId = o.PromotionId,
                     Note = o.Note, RecipientName = o.RecipientName, RecipientPhone = o.RecipientPhone,

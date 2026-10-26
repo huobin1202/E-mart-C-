@@ -160,6 +160,10 @@ namespace backend.Data
                     CREATE UNIQUE INDEX ux_orders_checkout_key ON orders(checkout_key) WHERE checkout_key IS NOT NULL;
                 """);
             await OrderDeliverySchemaMigration.MigrateAsync(db);
+            await db.Database.ExecuteSqlRawAsync("""
+                IF COL_LENGTH('payments', 'pay_url') IS NULL ALTER TABLE payments ADD pay_url NVARCHAR(2048) NULL;
+                IF COL_LENGTH('payments', 'provider_request_id') IS NULL ALTER TABLE payments ADD provider_request_id VARCHAR(100) NULL;
+                """);
             await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             if (!await db.Database.SqlQuery<int>($"SELECT COUNT(*) AS Value FROM authorization_migrations WITH (UPDLOCK, HOLDLOCK) WHERE name = 'permissions-v1'").AnyAsync(value => value > 0))
             {

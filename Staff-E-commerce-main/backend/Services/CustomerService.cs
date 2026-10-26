@@ -213,7 +213,7 @@ namespace backend.Services
             return deleted;
         }
 
-        public CustomerResponseDTO MapToCustomerResponseDto(Customer customer)
+        internal static CustomerResponseDTO MapToCustomerResponseDto(Customer customer)
         {
             return new CustomerResponseDTO
             {

@@ -18,6 +18,7 @@ import { getCustomers } from "../../api/customerApi";
 import { formatPrice } from "../../utils/formatPrice";
 import { checkoutPos, getCheckoutRequestId, getPosCheckout, findPosCheckoutByRequest } from "../../api/posCheckoutApi";
 import PosPaymentPanel from "../../components/orders/PosPaymentPanel";
+import OnlinePaymentPanel from "../../components/orders/OnlinePaymentPanel";
 import { useAuth } from "../../hook/useAuth";
 import { paymentStatusLabels } from "../../utils/orderStatus";
 import { mergeLatestCart, hasUnavailableItems } from "../../utils/posCart";
@@ -231,6 +232,7 @@ export default function POS() {
       const hubUrl = "http://localhost:5099/hub/orders";
       connection = new signalR.HubConnectionBuilder()
         .withUrl(hubUrl, {
+          accessTokenFactory: () => localStorage.getItem("auth_token") || "",
           skipNegotiation: false,
           transport: signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.LongPolling,
         })
@@ -1247,6 +1249,10 @@ export default function POS() {
                 }} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{detailOrder.paymentMethod === "cash" ? "Đã giao và thu đủ tiền COD" : "Hoàn tất giao hàng"}</button>}
                 {["pending", "processing"].includes(detailOrder.status) && <button disabled={actionLoading || !canWriteOrders} onClick={() => openReject(detailOrder.id)} className="rounded-lg border border-red-300 px-4 py-2 text-sm text-red-700 disabled:opacity-50">Hủy đơn</button>}
               </div>
+              <OnlinePaymentPanel key={detailOrder.id} order={detailOrder} onChange={async () => {
+                setDetailOrder(await request(`/orders/online/${detailOrder.id}`));
+                await fetchOrders(page);
+              }} />
               {detailOrder.status === "processing" && detailOrder.paymentMethod !== "cash" && detailOrder.paymentStatus !== "paid" && <p className="text-sm text-amber-700">Chờ xác nhận thanh toán trước khi hoàn tất giao hàng.</p>}
             </div>
           </div>

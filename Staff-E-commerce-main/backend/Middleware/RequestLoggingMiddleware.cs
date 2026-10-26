@@ -66,7 +66,11 @@ namespace backend.Middlewares
                     string userName = context.User?.Identity?.Name ?? "anonymous";
 
                     // Serialize và lọc payload
-                    string payload = PreparePayload(bodyText);
+                    var sensitiveEndpoint = path.StartsWith("/api/auth/", StringComparison.OrdinalIgnoreCase) ||
+                        path.Equals("/api/me/change-password", StringComparison.OrdinalIgnoreCase) ||
+                        path.Equals("/api/storefront/login", StringComparison.OrdinalIgnoreCase) ||
+                        path.Equals("/api/storefront/register", StringComparison.OrdinalIgnoreCase);
+                    string payload = sensitiveEndpoint ? "[Authentication payload omitted]" : PreparePayload(bodyText);
 
                     Console.WriteLine($"[RequestLoggingMiddleware] Logging {action} for {entityName}#{entityId}");
 
@@ -76,7 +80,7 @@ namespace backend.Middlewares
                         using var scope = _serviceProvider.CreateScope();
                         var logService = scope.ServiceProvider.GetRequiredService<ActivityLogService>();
                         await logService.LogAsync(
-                            userId ?? 2, 
+                            userId,
                             action ?? "UnknownAction",
                             entityName ?? "UnknownEntity",
                             entityId ?? "0",
@@ -172,27 +176,17 @@ namespace backend.Middlewares
                 if (uidClaim != null && int.TryParse(uidClaim.Value, out int jwtUserId))
                     return jwtUserId;
 
-                // 2. Fallback (trong TH bạn muốn dùng X-User-Id)
-                if (context.Request.Headers.TryGetValue("X-User-Id", out var headerUserId))
-                {
-                    if (int.TryParse(headerUserId.ToString(), out int headerId))
-                        return headerId;
-                }
             }
             catch {}
 
-            return null; // middleware sẽ dùng default 2
+            return null;
         }
 
 
 
         private string PreparePayload(string text)
         {
-            object parsed = TryParseJson(text);
-            string json = System.Text.Json.JsonSerializer.Serialize(parsed);
-
-            // Lọc các field nhạy cảm
-            json = FilterSensitiveFields(json);
+            string json = FilterSensitiveFields(text);
 
             // Giới hạn độ dài
             if (json.Length > MaxPayloadLength)
@@ -216,20 +210,30 @@ namespace backend.Middlewares
         private string FilterSensitiveFields(string json)
         {
             if (string.IsNullOrEmpty(json)) return json;
-
-            // Replace common sensitive fields
-            var sensitiveKeys = new[] { "password", "token", "creditCard" };
-            foreach (var key in sensitiveKeys)
+            try
             {
-                json = System.Text.RegularExpressions.Regex.Replace(
-                    json,
-                    $"\"{key}\"\\s*:\\s*\".*?\"",
-                    $"\"{key}\":\"[REDACTED]\"",
-                    RegexOptions.IgnoreCase
-                );
+                var node = System.Text.Json.Nodes.JsonNode.Parse(json);
+                Redact(node);
+                return node?.ToJsonString() ?? "null";
             }
+            catch (JsonException) { return "[Payload omitted: not JSON]"; }
+        }
 
-            return json;
+        private static void Redact(System.Text.Json.Nodes.JsonNode? node)
+        {
+            if (node is System.Text.Json.Nodes.JsonObject obj)
+            {
+                foreach (var key in obj.Select(pair => pair.Key).ToArray())
+                {
+                    var normalized = key.Replace("_", "").Replace("-", "").ToLowerInvariant();
+                    if (normalized.Contains("password") || normalized.Contains("token") || normalized.Contains("secret") ||
+                        normalized.Contains("creditcard") || normalized is "authorization" or "apikey")
+                        obj[key] = "[REDACTED]";
+                    else Redact(obj[key]);
+                }
+            }
+            else if (node is System.Text.Json.Nodes.JsonArray array)
+                foreach (var child in array) Redact(child);
         }
 
         #endregion

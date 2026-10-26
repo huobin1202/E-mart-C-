@@ -25,7 +25,7 @@ namespace backend.Services
             _logger = logger;
         }
 
-        private CategoryDTO MapToDto(Category c)
+        internal static CategoryDTO MapToDto(Category c)
         {
             return new CategoryDTO
             {

@@ -12,18 +12,20 @@ namespace backend.Controllers
     public class OrdersController : ControllerBase
     {
         private readonly OrderService _orderService;
-        private readonly IHubContext<OrderHub>? _orderHub;
+        private readonly OrderNotifications? _notifications;
         private readonly PosCheckoutService _checkout;
         private readonly PaymentService _payments;
         private readonly IConfiguration _config;
+        private readonly OnlinePaymentService _onlinePayments;
 
-        public OrdersController(OrderService orderService, PosCheckoutService checkout, PaymentService payments, IConfiguration config, IHubContext<OrderHub>? orderHub = null)
+        public OrdersController(OrderService orderService, PosCheckoutService checkout, PaymentService payments, IConfiguration config, OnlinePaymentService onlinePayments, OrderNotifications? notifications = null)
         {
             _orderService = orderService;
-            _orderHub = orderHub;
+            _notifications = notifications;
             _checkout = checkout;
             _payments = payments;
             _config = config;
+            _onlinePayments = onlinePayments;
         }
 
         //1. Khởi tạo một đối tượng đơn hàng tạm thời để truyền xuống frontend
@@ -115,6 +117,18 @@ namespace backend.Controllers
         public async Task<IActionResult> ConfirmCash(int orderId, PosCashConfirmation request)
         {
             try { return Ok(await _checkout.ConfirmCashAsync(orderId, request.CashReceived)); }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
+        }
+
+        [HttpPost("{orderId:int}/confirm-online-payment")]
+        public async Task<IActionResult> ConfirmOnlinePayment(int orderId, PosPaymentConfirmation request)
+        {
+            try {
+                var order = await _onlinePayments.ConfirmAsync(orderId, request.Amount, request.Reference);
+                if (_notifications != null) await _notifications.PublishAsync("OrderStatusChanged", new { orderId, status = order.Status });
+                return Ok(new { order.Id, order.PaymentStatus, order.Status });
+            }
             catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
             catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
         }
@@ -233,9 +247,9 @@ namespace backend.Controllers
                 if (!result)
                     return Conflict(new { message = "Đơn hàng không thể xác nhận (không tồn tại hoặc không ở trạng thái pending)." });
 
-                if (_orderHub != null)
+                if (_notifications != null)
                 {
-                    _ = _orderHub.Clients.All.SendAsync("OrderStatusChanged", new { orderId, status = "processing" });
+                    await _notifications.PublishAsync("OrderStatusChanged", new { orderId, status = "processing" });
                 }
 
                 return Ok(new { success = true, message = "Đã xác nhận đơn hàng." });
@@ -258,9 +272,9 @@ namespace backend.Controllers
                 if (!result)
                     return Conflict(new { message = "Đơn hàng không thể từ chối (không tồn tại hoặc không ở trạng thái pending/processing)." });
 
-                if (_orderHub != null)
+                if (_notifications != null)
                 {
-                    _ = _orderHub.Clients.All.SendAsync("OrderStatusChanged", new { orderId, status = "cancelled" });
+                    await _notifications.PublishAsync("OrderStatusChanged", new { orderId, status = "cancelled" });
                 }
 
                 return Ok(new { success = true, message = "Đã từ chối đơn hàng." });
@@ -283,13 +297,14 @@ namespace backend.Controllers
                 if (!result)
                     return Conflict(new { message = "Đơn hàng không thể chuyển sang trạng thái giao hàng." });
 
-                if (_orderHub != null)
+                if (_notifications != null)
                 {
-                    _ = _orderHub.Clients.All.SendAsync("OrderStatusChanged", new { orderId, status = "completed" });
+                    await _notifications.PublishAsync("OrderStatusChanged", new { orderId, status = "completed" });
                 }
 
                 return Ok(new { success = true, message = "Đã hoàn thành giao hàng." });
             }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
             catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
             catch (Exception ex)
             {
@@ -298,11 +313,15 @@ namespace backend.Controllers
         }
 
         [HttpPost("{orderId}/refund")]
-        public async Task<IActionResult> MarkOrderRefunded(int orderId)
+        public async Task<IActionResult> MarkOrderRefunded(int orderId, PosPaymentConfirmation request)
         {
-            var result = await _orderService.MarkOrderRefundedAsync(orderId);
+            try {
+            var result = await _orderService.MarkOrderRefundedAsync(orderId, request.Amount, request.Reference);
             return result ? Ok(new { success = true, message = "Đơn hàng và hóa đơn đã được đánh dấu hoàn tiền." })
                 : Conflict(new { message = "Chỉ đơn đã thanh toán mới có thể đánh dấu hoàn tiền." });
+            }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
         }
 
         [HttpGet("{orderId}/items")]

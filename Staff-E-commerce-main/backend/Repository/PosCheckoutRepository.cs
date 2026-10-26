@@ -25,11 +25,7 @@ public sealed class PosCheckoutRepository
     public Task<IDbContextTransaction> BeginSerializableTransactionAsync() =>
         _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
 
-    public Task LockAsync() => _context.Database.ExecuteSqlRawAsync("""
-        DECLARE @result INT;
-        EXEC @result = sys.sp_getapplock @Resource = 'pos-checkout', @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 10000;
-        IF @result < 0 THROW 51000, 'POS is busy. Please retry.', 1;
-        """);
+    public Task LockAsync() => SalesTransaction.LockAsync(_context);
 
     public Task<Order?> GetByCheckoutKeyAsync(string key) => _context.Orders.FirstOrDefaultAsync(o => o.CheckoutKey == key);
 
@@ -71,7 +67,7 @@ public sealed class PosCheckoutRepository
         .Include(o => o.Customer).Include(o => o.OrderItems).Include(o => o.Payments)
         .SingleOrDefaultAsync(o => o.Id == orderId && o.OrderType == "pos");
 
-    public Task<Order?> GetOrderForCancelAsync(int orderId) => _context.Orders
+    public Task<Order> GetOrderForCancelAsync(int orderId) => _context.Orders
         .Include(o => o.OrderItems).Include(o => o.Customer).SingleAsync(o => o.Id == orderId);
 
     public Task<List<PromotionRedemption>> GetRedemptionsAsync(int orderId) =>

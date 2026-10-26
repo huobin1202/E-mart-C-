@@ -58,7 +58,8 @@ namespace backend.Repository
         // Cập nhật khách hàng
         public async Task<Customer> UpdateAsync(Customer customer)
         {
-            _context.Customers.Update(customer);
+            // Callers load a tracked entity. Save only changed profile fields so a
+            // concurrent checkout's reward balance cannot be overwritten.
             await _context.SaveChangesAsync();
             return customer;
         }

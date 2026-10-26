@@ -1,5 +1,6 @@
 using System.Data;
 using backend.Data;
+using backend.DTO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -27,6 +28,22 @@ public sealed class AccountMutationFilter(AppDbContext db) : IAsyncActionFilter
         {
             // A database lock works across API processes, unlike an in-memory lock.
             await db.Database.ExecuteSqlRawAsync("SELECT id FROM roles WITH (UPDLOCK, HOLDLOCK) WHERE name = 'admin'");
+        if (!context.HttpContext.User.IsInRole("admin"))
+        {
+            var request = context.ActionArguments.Values.OfType<UserDTO>().FirstOrDefault();
+            var targetId = context.ActionArguments.TryGetValue("id", out var value) && value is int id ? id : 0;
+            var protectedUser = action.ControllerName == "Users" && targetId > 0 &&
+                await db.Users.AnyAsync(u => u.Id == targetId && u.RoleEntity.Name == "admin");
+            var protectedEmployee = action.ControllerName == "Employees" && targetId > 0 &&
+                await db.Users.AnyAsync(u => u.EmployeeId == targetId && u.RoleEntity.Name == "admin");
+            if (action.ControllerName == "Roles" || protectedUser || protectedEmployee ||
+                string.Equals(request?.Role?.Trim(), "admin", StringComparison.OrdinalIgnoreCase))
+            {
+                context.Result = new ObjectResult(new { message = "Chỉ quản trị viên được quản lý vai trò và tài khoản quản trị." }) { StatusCode = 403 };
+                return;
+            }
+        }
+
             var hadAdmin = await HasActiveAdminAsync();
             var result = await next();
             if (result.Exception != null && !result.ExceptionHandled)

@@ -11,6 +11,10 @@ public sealed class BusMemoryCache<T>
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private List<T>? _items;
     private DateTimeOffset _lastFetchTime;
+    private long _generation;
+    private bool _loading;
+    private bool _wasLoaded;
+    public bool HasSnapshot { get { lock (_sync) return _wasLoaded || _loading; } }
     private readonly ILogger<BusMemoryCache<T>> _logger;
 
     public BusMemoryCache(ILogger<BusMemoryCache<T>> logger)
@@ -39,13 +43,21 @@ public sealed class BusMemoryCache<T>
                 return (cached, false);
             }
 
-            var loaded = await factory();
+            long generation;
+            lock (_sync) { generation = _generation; _loading = true; }
+            List<T> loaded;
+            try { loaded = await factory(); }
+            catch { lock (_sync) _loading = false; throw; }
             lock (_sync)
             {
+                _loading = false;
+                // A write refreshed this cache while the old SELECT was in flight.
+                if (_generation != generation && _items != null) return (_items.ToArray(), false);
                 _items = loaded;
+                _wasLoaded = true;
                 _lastFetchTime = DateTimeOffset.UtcNow;
                 LogMeasurement("Database", stopwatch, beforeMemory);
-                return (_items, true);
+                return (_items.ToArray(), true);
             }
         }
         finally
@@ -72,7 +84,7 @@ public sealed class BusMemoryCache<T>
         {
             if (_items is not null && DateTimeOffset.UtcNow - _lastFetchTime <= ttl)
             {
-                items = _items;
+                items = _items.ToArray();
                 return true;
             }
         }
@@ -86,6 +98,8 @@ public sealed class BusMemoryCache<T>
         lock (_sync)
         {
             _items = items.ToList();
+            _generation++;
+            _wasLoaded = true;
             _lastFetchTime = DateTimeOffset.UtcNow;
         }
     }
@@ -95,6 +109,7 @@ public sealed class BusMemoryCache<T>
         lock (_sync)
         {
             _items = null;
+            _generation++;
             _lastFetchTime = default;
         }
     }
@@ -115,6 +130,7 @@ public sealed class BusMemoryCache<T>
                 items.Add(item);
 
             _items = items;
+            _generation++;
             _lastFetchTime = DateTimeOffset.UtcNow;
         }
     }
@@ -124,7 +140,10 @@ public sealed class BusMemoryCache<T>
         lock (_sync)
         {
             if (_items is null) return false;
-            var removed = _items.RemoveAll(item => predicate(item)) > 0;
+            var copy = _items.Where(item => !predicate(item)).ToList();
+            var removed = copy.Count != _items.Count;
+            _items = copy;
+            _generation++;
             if (removed)
                 _lastFetchTime = DateTimeOffset.UtcNow;
             return removed;
@@ -138,6 +157,7 @@ public sealed class BusMemoryCache<T>
             if (_items is null) return;
 
             var changed = false;
+            _items = _items.ToList();
             for (var index = 0; index < _items.Count; index++)
             {
                 if (!predicate(_items[index])) continue;
@@ -146,7 +166,10 @@ public sealed class BusMemoryCache<T>
             }
 
             if (changed)
+            {
+                _generation++;
                 _lastFetchTime = DateTimeOffset.UtcNow;
+            }
         }
     }
 }

@@ -161,6 +161,7 @@ namespace backend.Services
 
         public async Task<InventoryListDTO> AdjustInventoryAsync(AdjustInventoryDTO dto)
         {
+            await using var transaction = await _inventoryRepo.BeginSalesTransactionAsync();
             var inventory = await _inventoryRepo.GetByIdAsync(dto.InventoryId);
             if (inventory == null)
                 throw new ArgumentException($"Không tìm thấy inventory với ID {dto.InventoryId}");
@@ -173,7 +174,6 @@ namespace backend.Services
             inventory.LastCheckedAt = DateTime.UtcNow;
 
             await _inventoryRepo.UpdateAsync(inventory);
-            _inventoryCache.AddOrUpdate(inventory, item => item.Id);
 
             // Ghi lịch sử điều chỉnh
             var adjustment = new InventoryAdjustment
@@ -185,7 +185,7 @@ namespace backend.Services
                 CreatedAt = DateTime.UtcNow
             };
             await _inventoryRepo.AddAdjustmentAsync(adjustment);
-            _adjustmentCache.Clear();
+            await transaction.CommitAsync();
 
             return new InventoryListDTO
             {

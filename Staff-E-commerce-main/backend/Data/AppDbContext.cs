@@ -235,6 +235,10 @@ namespace backend.Data
                 .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<PurchaseOrderDetail>()
+                .Property(detail => detail.Subtotal)
+                .HasComputedColumnSql("[quantity] * [import_price]", stored: true);
+
+            modelBuilder.Entity<PurchaseOrderDetail>()
                 .HasOne(detail => detail.PurchaseOrder)
                 .WithMany(po => po.Details)
                 .HasForeignKey(detail => detail.PurchaseOrderId)

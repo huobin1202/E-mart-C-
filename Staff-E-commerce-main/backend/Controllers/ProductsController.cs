@@ -106,7 +106,7 @@ namespace backend.Controllers
                 {
                     ProductName = productDto.ProductName,
                     Sku = productDto.Sku,
-                    // Barcode = productDto.Barcode,
+                    Barcode = productDto.Barcode,
                     CategoryId = productDto.CategoryId,
                     SupplierId = productDto.SupplierId,
                     Price = productDto.Price,
@@ -133,16 +133,19 @@ namespace backend.Controllers
         }
 
         [HttpPut("{id}")]
-        public async Task<ActionResult<ProductDTO>> UpdateProduct(int id, [FromBody] Product product)
+        public async Task<ActionResult<ProductDTO>> UpdateProduct(int id, [FromBody] ProductUpdateDTO request)
         {
             try
             {
-                product.Id = id;
-                product.UpdatedAt = DateTime.UtcNow;
+                var product = new Product { Id = id, ProductName = request.ProductName, Sku = request.Sku,
+                    Barcode = request.Barcode, CategoryId = request.CategoryId, SupplierId = request.SupplierId,
+                    UnitId = request.UnitId, Price = request.Price, Cost = request.Cost, Description = request.Description,
+                    ImageUrl = request.ImageUrl, IsActive = request.IsActive };
 
                 var updatedProduct = await _productService.UpdateProductAsync(product);
                 return updatedProduct;
             }
+            catch (ValidationException ex) { return BadRequest(new { errors = ex.Errors }); }
             catch (ArgumentException ex)
             {
                 return NotFound(ex.Message);

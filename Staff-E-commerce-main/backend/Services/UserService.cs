@@ -40,7 +40,7 @@ namespace backend.Services
             if (!string.IsNullOrWhiteSpace(role))
                 filtered = filtered.Where(user => string.Equals(user.Role, role.Trim(), StringComparison.OrdinalIgnoreCase));
             if (isActive.HasValue)
-                filtered = filtered.Where(user => user.IsActive == isActive.Value && user.IsLocked != isActive.Value);
+                filtered = filtered.Where(user => (user.IsActive && !user.IsLocked) == isActive.Value);
             if (!string.IsNullOrWhiteSpace(search))
             {
                 var keyword = search.Trim();
@@ -308,7 +308,7 @@ namespace backend.Services
             return excludeUserId == null || user.Id != excludeUserId.Value;
         }
 
-        private UserDTO MapToUserDto(User user)
+        internal static UserDTO MapToUserDto(User user)
         {
             return new UserDTO
             {

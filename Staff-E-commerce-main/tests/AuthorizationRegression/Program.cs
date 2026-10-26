@@ -34,31 +34,17 @@ builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
     ["Jwt:Issuer"] = "test", ["Jwt:Audience"] = "test"
 });
 builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlServer(connection.ConnectionString));
-builder.Services.AddScoped<UserRepository>();
-builder.Services.AddScoped<UserService>();
-builder.Services.AddScoped<JwtService>();
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<OrderRepository>();
-builder.Services.AddScoped<CustomerRepository>();
-builder.Services.AddScoped<PaymentRepository>();
-builder.Services.AddScoped<ActivityLogRepository>();
-builder.Services.AddScoped<ActivityLogService>();
-builder.Services.AddScoped<InvoiceService>();
-builder.Services.AddScoped<PosCheckoutService>();
-builder.Services.AddScoped<OrderService>();
-builder.Services.AddScoped<PaymentService>();
-builder.Services.AddScoped<OrderItemRepository>();
-builder.Services.AddScoped<OrderItemService>();
-builder.Services.AddScoped<PromotionRepository>();
-builder.Services.AddScoped<PromotionService>();
+builder.Services.AddStoreServices();
 builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Momo:AccessKey"] = "test-access", ["Momo:SecretKey"] = "test-secret" });
-builder.Services.AddScoped<PermissionFilter>();
-builder.Services.AddScoped<AccountMutationFilter>();
+builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["BankTransfer:Enabled"] = "true", ["BankTransfer:BankCode"] = "TEST",
+    ["BankTransfer:AccountNumber"] = "TEST-ONLY", ["BankTransfer:AccountName"] = "Test fixture - never pay" });
 builder.Services.AddControllers(o =>
 {
     o.Filters.AddService<PermissionFilter>();
+    o.Filters.AddService<ReadCacheRefreshFilter>(-1000);
     o.Filters.AddService<AccountMutationFilter>();
-}).AddApplicationPart(typeof(UsersController).Assembly);
+}).AddApplicationPart(typeof(UsersController).Assembly)
+    .AddJsonOptions(options => options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles);
 builder.Services.AddAuthorization(o => o.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(o =>
 {
@@ -70,9 +56,15 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
     o.Events = new JwtBearerEvents { OnTokenValidated = SessionValidator.ValidateAsync };
 });
 await using var app = builder.Build();
+app.Use(async (context, next) =>
+{
+    try { await next(); }
+    catch (Exception ex) { Console.Error.WriteLine($"API failure {context.Request.Method} {context.Request.Path}: {ex}"); throw; }
+});
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHub<backend.Hubs.OrderHub>("/hub/orders").RequireAuthorization("orders.realtime");
 var databaseCreated = false;
 var assertions = 0;
 try
@@ -82,6 +74,7 @@ try
     await WithDb(async db => await db.Database.ExecuteSqlRawAsync("""
         DROP INDEX ux_orders_checkout_key ON orders;
         ALTER TABLE orders DROP COLUMN checkout_key, checkout_hash, points_used, points_earned, cash_received, recipient_name, recipient_phone, shipping_address;
+        ALTER TABLE payments DROP COLUMN pay_url, provider_request_id;
         """));
     await AuthorizationSchemaInitializer.InitializeAsync(app.Services);
     int adminId = 0, staffId = 0, employeeId = 0, customerId = 0, adminEmployeeId = 0;
@@ -265,13 +258,14 @@ try
     Console.WriteLine($"PASS: {assertions} authorization and account lifecycle assertions.");
     await PosCheckoutRegression.RunAsync(app.Services, client, adminToken);
     await OrderDeliveryRegression.RunAsync(app.Services, client, adminToken);
+    await P1Regression.RunAsync(app.Services, client, adminToken);
 
     async Task CheckUserFilter(string query, int expectedTotal, int? expectedId = null, int? expectedPage = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/users/paginated?" + query);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
         using var response = await client.SendAsync(request);
-        Check(response.IsSuccessStatusCode, "Filtered users endpoint succeeds");
+        Check(response.IsSuccessStatusCode, "Filtered users endpoint succeeds: " + response.StatusCode + " " + await response.Content.ReadAsStringAsync());
         using var data = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = data.RootElement;
         Check(root.GetProperty("totalItems").GetInt32() == expectedTotal, "Filtered count: " + query);
@@ -295,13 +289,19 @@ try
 finally
 {
     await app.StopAsync();
-    if (databaseCreated) await WithDb(db => db.Database.EnsureDeletedAsync());
+    if (databaseCreated)
+    {
+        await WithDb(db => db.Database.EnsureDeletedAsync());
+        Console.WriteLine("TEMP_DATABASE_DELETED");
+    }
 }
 
 async Task WithDb(Func<AppDbContext, Task> action)
 {
     await using var scope = app.Services.CreateAsyncScope();
     await action(scope.ServiceProvider.GetRequiredService<AppDbContext>());
+    if (databaseCreated && await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.CanConnectAsync())
+        await scope.ServiceProvider.GetRequiredService<ReadCacheRefreshService>().RefreshAsync();
 }
 async Task<string> Token(int id)
 {

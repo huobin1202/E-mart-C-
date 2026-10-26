@@ -135,7 +135,7 @@ namespace backend.Services
                 OrderType = order.OrderType,
                 PaymentStatus = order.PaymentStatus,
                 PaymentMethod = order.PaymentMethod,
-                IsPosCheckout = order.CheckoutKey != null,
+                IsPosCheckout = order.OrderType == "pos" && order.CheckoutKey != null,
                 Subtotal = order.Subtotal,
                 Discount = order.Discount,
                 TotalAmount = order.TotalAmount,
@@ -195,42 +195,24 @@ namespace backend.Services
         {
             if (await _orderRepo.IsPosOrderAsync(orderId))
                 return await _checkout.CancelAsync(orderId);
-            // 1. Lấy user hiện tại
-            int currentUserId = GetCurrentUserId();
-
-            // 2. Kiểm tra order tồn tại
-            var order = await _orderRepo.GetByIdAsync(orderId);
-            if (order == null)
-                return false;
-
-            // 3. Ghi lại ai là người hủy đơn
-            await _orderRepo.UpdateOrderUserAsync(orderId, currentUserId);
-
-            // 4. Tiến hành hủy đơn
-            var cancelled = await _orderRepo.CancelOrderAsync(orderId);
-            if (cancelled) await _invoiceService.SyncOrderLifecycleAsync(orderId);
-            return cancelled;
+            return await RejectOnlineOrderAsync(orderId, null);
         }
 
-        public async Task<bool> CompletePendingOrderAsync(int orderId)
+        public Task<bool> CompletePendingOrderAsync(int orderId) => RunLifecycleAsync(orderId, async () =>
         {
             var order = await _orderRepo.GetStatusSnapshotAsync(orderId);
+            if (order?.OrderType != "pos") throw new InvalidOperationException("Đơn online phải hoàn tất qua nghiệp vụ giao hàng.");
             if (order?.CheckoutKey != null)
                 throw new InvalidOperationException("Đơn POS phải được xác nhận thanh toán theo đúng phương thức.");
             if (order?.PaymentStatus != "paid") throw new InvalidOperationException("Chưa có xác nhận thu đủ tiền cho đơn hàng.");
             var currentUserId = GetCurrentUserId();
-            var completed = await _orderRepo.CompletePendingOrderAsync(orderId, currentUserId);
-            if (completed) await _invoiceService.SyncOrderLifecycleAsync(orderId);
-            return completed;
-        }
+            return await _orderRepo.CompletePendingOrderAsync(orderId, currentUserId);
+        });
 
         // ===== ONLINE ORDER MANAGEMENT =====
 
-        public async Task<PagedResult<OnlineOrderDTO>> GetOnlineOrdersAsync(
-            int pageNumber, int pageSize, string? status, string? search, int? orderId = null)
+        internal async Task<List<OnlineOrderDTO>> LoadOnlineCacheAsync()
         {
-            var (cachedOrders, _) = await _onlineOrderCache.GetOrCreateAsync(async () =>
-            {
                 var orders = await _orderRepo.GetAllOnlineOrdersAsync();
                 return orders.Select(o =>
                 {
@@ -256,6 +238,14 @@ namespace backend.Services
                         }).ToList()
                     };
                 }).ToList();
+        }
+
+        public async Task<PagedResult<OnlineOrderDTO>> GetOnlineOrdersAsync(
+            int pageNumber, int pageSize, string? status, string? search, int? orderId = null)
+        {
+            var (cachedOrders, _) = await _onlineOrderCache.GetOrCreateAsync(async () =>
+            {
+                return await LoadOnlineCacheAsync();
             }, CacheTtl);
 
             IEnumerable<OnlineOrderDTO> filtered = cachedOrders;
@@ -285,50 +275,36 @@ namespace backend.Services
         /// <summary>Xác nhận đơn: pending -> processing</summary>
         public async Task<bool> ConfirmOnlineOrderAsync(int orderId)
         {
-            int userId = GetCurrentUserId();
-            var updated = await _orderRepo.ConfirmOnlineOrderAsync(orderId, userId);
-            if (updated)
-            {
-                _onlineOrderCache.Clear();
-                await _invoiceService.SyncOrderLifecycleAsync(orderId);
-            }
-            return updated;
+            return await RunLifecycleAsync(orderId, () => _orderRepo.ConfirmOnlineOrderAsync(orderId, GetCurrentUserId()));
         }
 
-        /// <summary>Từ chối đơn: pending|processing -> cancelled (hoàn kho)</summary>
-        public async Task<bool> RejectOnlineOrderAsync(int orderId, string? reason)
-        {
-            var cancelled = await _orderRepo.RejectOnlineOrderAsync(orderId, reason);
-            if (cancelled)
-            {
-                _onlineOrderCache.Clear();
-                await _invoiceService.SyncOrderLifecycleAsync(orderId);
-            }
-            return cancelled;
-        }
+        public Task<bool> RejectOnlineOrderAsync(int orderId, string? reason) =>
+            RunLifecycleAsync(orderId, () => _orderRepo.RejectOnlineOrderAsync(orderId, reason, GetCurrentUserId()));
 
-        /// <summary>Giao hàng thành công: processing -> completed</summary>
-        public async Task<bool> DeliverOnlineOrderAsync(int orderId)
-        {
-            int userId = GetCurrentUserId();
-            var delivered = await _orderRepo.DeliverOnlineOrderAsync(orderId, userId);
-            if (delivered)
-            {
-                _onlineOrderCache.Clear();
-                await _invoiceService.SyncOrderLifecycleAsync(orderId);
-            }
-            return delivered;
-        }
-
-        public async Task<bool> MarkOrderRefundedAsync(int orderId)
-        {
+        public Task<bool> CancelCustomerOrderAsync(int orderId, int customerId) => RunLifecycleAsync(orderId, async () => {
             var order = await _orderRepo.GetStatusSnapshotAsync(orderId);
-            if (order == null || order.PaymentStatus != "paid" || order.Status == "cancelled") return false;
-            await _invoiceService.EnsureInvoiceForOrderAsync(orderId);
-            var refunded = await _orderRepo.MarkOrderRefundedAsync(orderId);
-            if (refunded) _onlineOrderCache.Clear();
-            await _invoiceService.SyncOrderLifecycleAsync(orderId);
-            return refunded;
+            if (order?.CustomerId != customerId || order.PaymentStatus == "paid") return false;
+            return await _orderRepo.RejectOnlineOrderAsync(orderId, "Khách hàng yêu cầu hủy", GetCurrentUserId());
+        });
+
+        public Task<bool> DeliverOnlineOrderAsync(int orderId) => RunLifecycleAsync(orderId, async () => {
+            var order = await _orderRepo.GetStatusSnapshotAsync(orderId);
+            if (order?.PaymentMethod == "cash" && order.PaymentStatus != "paid" &&
+                !await _orderRepo.HasPermissionAsync(GetCurrentUserId(), "payments.write"))
+                throw new UnauthorizedAccessException("Bạn không có quyền xác nhận thu tiền COD.");
+            return await _orderRepo.DeliverOnlineOrderAsync(orderId, GetCurrentUserId());
+        });
+
+        public Task<bool> MarkOrderRefundedAsync(int orderId, decimal amount, string reference) =>
+            RunLifecycleAsync(orderId, () => _orderRepo.MarkOrderRefundedAsync(orderId, amount, reference));
+
+        private async Task<bool> RunLifecycleAsync(int orderId, Func<Task<bool>> action)
+        {
+            await using var transaction = await _orderRepo.BeginSalesTransactionAsync();
+            var result = await action();
+            if (result) await _invoiceService.SyncOrderLifecycleAsync(orderId);
+            await transaction.CommitAsync();
+            return result;
         }
 
         /// <summary>Lấy danh sách items của đơn hàng</summary>

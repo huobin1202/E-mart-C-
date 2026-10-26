@@ -28,13 +28,18 @@ namespace backend.Services
             _cache = cache;
         }
 
+        internal async Task<List<ProductDTO>> LoadCacheAsync()
+        {
+                var products = (await _productRepository.GetAllForCacheAsync()).Select(MapToProductDto).ToList();
+                await AddDiscountPricesAsync(products);
+                return products;
+        }
+
         private async Task<IReadOnlyList<ProductDTO>> GetCachedAsync()
         {
             var (items, _) = await _cache.GetOrCreateAsync(async () =>
             {
-                var products = (await _productRepository.GetAllForCacheAsync()).Select(MapToProductDto).ToList();
-                await AddDiscountPricesAsync(products);
-                return products;
+                return await LoadCacheAsync();
             }, CacheTtl);
             return items;
         }
@@ -141,7 +146,7 @@ namespace backend.Services
 
         public async Task<ProductDTO> UpdateProductAsync(Product product, IFormFile? imageFile = null)
         {
-            var existing = await _productRepository.GetByIdForUpdateAsync(product.Id);
+            var existing = await _productRepository.GetByIdAsync(product.Id);
             if (existing == null)
                 throw new ArgumentException("Product not found", nameof(product.Id));
 
@@ -152,7 +157,18 @@ namespace backend.Services
             var validator = await ValidateProductAsync(product, imageFile, mode: "edit");
             if (validator.HasErrors) throw validator;
 
-            var updated = await _productRepository.UpdateAsync(product);
+            existing.ProductName = product.ProductName;
+            existing.Sku = product.Sku;
+            existing.Barcode = product.Barcode == null ? existing.Barcode : string.IsNullOrWhiteSpace(product.Barcode) ? null : product.Barcode.Trim();
+            existing.Cost = product.Cost ?? existing.Cost;
+            existing.Price = product.Price;
+            existing.UnitId = product.UnitId;
+            existing.CategoryId = product.CategoryId;
+            existing.SupplierId = product.SupplierId;
+            existing.Description = product.Description;
+            existing.ImageUrl = product.ImageUrl;
+            existing.IsActive = product.IsActive;
+            var updated = await _productRepository.UpdateAsync(existing);
             var result = MapToProductDto(updated);
             _cache.AddOrUpdate(result, item => item.Id);
             return result;
@@ -262,7 +278,7 @@ namespace backend.Services
                 Barcode = p.Barcode,
                 CategoryId = p.CategoryId,
                 SupplierId = p.SupplierId,
-                Price = p.Price,
+                Price = backend.Helpers.SalePricing.Price(p.Price),
                 Cost = p.Cost,
                 UnitId = p.UnitId,
                 UnitName = p.Unit?.Name,
@@ -317,7 +333,7 @@ namespace backend.Services
                 if (!discounts.TryGetValue(product.Id, out var discount)) continue;
 
                 product.DiscountAmount = discount.Amount;
-                product.DiscountPrice = Math.Max(0, product.Price - discount.Amount);
+                product.DiscountPrice = Math.Max(0, backend.Helpers.SalePricing.Price(product.Price) - discount.Amount);
                 product.PromotionName = discount.Name;
             }
         }

@@ -16,6 +16,7 @@ namespace backend.Repository
         {
             _context = context;
         }
+        public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginSalesTransactionAsync() => SalesTransaction.BeginAsync(_context);
 
         public async Task<Inventory?> GetByProductIdAsync(int productId)
         {
@@ -61,7 +62,7 @@ namespace backend.Repository
 
         public async Task<bool> ReduceInventoryAsync(List<(int ProductId, int Quantity)> requestedQuantities)
         {
-            await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+            await using var transaction = await SalesTransaction.BeginAsync(_context);
             var productIds = requestedQuantities.Select(item => item.ProductId).ToList();
             var inventories = await _context.Inventory
                 .Where(inventory => productIds.Contains(inventory.ProductId))

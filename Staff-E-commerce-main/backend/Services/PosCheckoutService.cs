@@ -15,15 +15,8 @@ public sealed class PosCheckoutService(IHttpContextAccessor accessor, InvoiceSer
         ? id : throw new UnauthorizedAccessException("Không xác định được nhân viên.");
 
     // Serializes POS lifecycle changes across processes; inventory debits also have a conditional SQL check.
-    private static decimal Discount(Promotion p, decimal amount)
-    {
-        var value = p.DiscountType == "percent" ? decimal.Floor(amount * p.Value / 100m) : p.Value;
-        if (p.MaxDiscount.HasValue) value = Math.Min(value, p.MaxDiscount.Value);
-        return Math.Clamp(value, 0, amount);
-    }
-
-    private static bool Active(Promotion p) => !p.IsDeleted && p.Status == "active" &&
-        DateTimeHelper.IsWithinRange(p.StartDate, p.EndDate) && (!p.UsageLimit.HasValue || p.UsedCount < p.UsageLimit);
+    private static decimal Discount(Promotion p, decimal amount) => SalePricing.Discount(p, amount);
+    private static bool Active(Promotion p) => SalePricing.Active(p);
 
     public async Task<PosCheckoutResponse> CheckoutAsync(PosCheckoutRequest request)
     {
@@ -66,8 +59,8 @@ public sealed class PosCheckoutService(IHttpContextAccessor accessor, InvoiceSer
             var product = products[line.ProductId];
             if (product.Price < 0) throw new InvalidOperationException("Giá sản phẩm không hợp lệ.");
             var best = productPromotions.Where(p => p.ProductId == product.Id && p.Promotion != null && p.Promotion.Type == "product" && Active(p.Promotion))
-                .OrderByDescending(p => Discount(p.Promotion!, product.Price)).FirstOrDefault();
-            var price = decimal.Round(product.Price - (best == null ? 0 : Discount(best.Promotion!, product.Price)), 2);
+                .OrderByDescending(p => Discount(p.Promotion!, SalePricing.Price(product.Price))).FirstOrDefault();
+            var price = SalePricing.Price(product.Price) - (best == null ? 0 : Discount(best.Promotion!, SalePricing.Price(product.Price)));
             if (best != null) usedPromotions[best.PromotionId] = best.Promotion!;
             items.Add(new OrderItem { ProductId = product.Id, Quantity = line.Quantity, UnitPrice = price, TotalPrice = price * line.Quantity, CreatedAt = now });
         }
@@ -147,6 +140,18 @@ public sealed class PosCheckoutService(IHttpContextAccessor accessor, InvoiceSer
             ?? throw new ArgumentException("Không tìm thấy đơn POS.");
         if (amount != order.TotalAmount || order.PaymentMethod != (momo ? "e_wallet" : "card"))
             throw new ArgumentException("Số tiền hoặc phương thức không khớp đơn hàng.");
+        if (momo && order.Status == "cancelled" && order.PaymentStatus == "pending")
+        {
+            var latePayment = order.Payments.SingleOrDefault(p => p.TransactionRef == reference && p.Amount == amount)
+                ?? throw new ArgumentException("Không tìm thấy lần thanh toán MoMo.");
+            latePayment.Status = "completed";
+            order.PaymentStatus = "paid"; order.UpdatedAt = DateTime.UtcNow;
+            await repository.SaveChangesAsync();
+            await invoices.SyncOrderLifecycleAsync(order.Id);
+            var cancelled = await GetAsync(orderId);
+            await transaction.CommitAsync();
+            return cancelled;
+        }
         if (order.PaymentStatus == "paid")
         {
             if (!order.Payments.Any(p => p.Status == "completed" && p.TransactionRef == reference))

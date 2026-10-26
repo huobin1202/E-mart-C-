@@ -105,27 +105,46 @@ namespace backend.Repository
         // Update promotion
         public async Task<Promotion> UpdateAsync(Promotion promotion)
         {
+            await using var transaction = await SalesTransaction.BeginAsync(_context);
             var existing = await _context.Promotions
                 .Include(p => p.EventDetails).Include(p => p.VoucherDetails).Include(p => p.ProductDetails)
                 .FirstOrDefaultAsync(p => p.Id == promotion.Id);
             if (existing == null) throw new InvalidOperationException("Promotion not found");
+            await _context.Entry(existing).ReloadAsync();
+            if (existing.IsDeleted) throw new InvalidOperationException("Khuyến mãi đã bị xóa.");
 
             if (existing.ProductDetails != null) _context.ProductPromotions.RemoveRange(existing.ProductDetails);
             if (existing.EventDetails != null) _context.EventPromotions.Remove(existing.EventDetails);
             if (existing.VoucherDetails != null) _context.VoucherPromotions.Remove(existing.VoucherDetails);
+            var usedCount = existing.UsedCount;
             _context.Entry(existing).CurrentValues.SetValues(promotion);
+            existing.UsedCount = usedCount;
             existing.EventDetails = promotion.EventDetails;
             existing.VoucherDetails = promotion.VoucherDetails;
             existing.ProductDetails = promotion.ProductDetails;
             promotion.UpdatedAt = DateTimeHelper.UtcNow;
             existing.UpdatedAt = promotion.UpdatedAt;
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
             return existing;
+        }
+
+        public async Task<bool> ToggleActiveAsync(int id)
+        {
+            await using var transaction = await SalesTransaction.BeginAsync(_context);
+            var promotion = await _context.Promotions.FirstOrDefaultAsync(p => p.Id == id);
+            if (promotion == null) return false;
+            promotion.Status = promotion.Status == "disabled" ? "active" : "disabled";
+            promotion.UpdatedAt = DateTimeHelper.UtcNow;
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return true;
         }
 
         // Soft delete promotion
         public async Task<bool> DeleteAsync(int id)
         {
+            await using var transaction = await SalesTransaction.BeginAsync(_context);
             var promotion = await _context.Promotions.FirstOrDefaultAsync(p => p.Id == id);
             if (promotion == null) return false;
 
@@ -133,6 +152,7 @@ namespace backend.Repository
             promotion.DeletedAt = DateTimeHelper.UtcNow;
             _context.Promotions.Update(promotion);
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
             return true;
         }
 

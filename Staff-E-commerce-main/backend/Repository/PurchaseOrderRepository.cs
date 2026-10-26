@@ -55,7 +55,7 @@ public class PurchaseOrderRepository
 
     public async Task CompleteAsync(int id, int userId)
     {
-        await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+        await using var transaction = await SalesTransaction.BeginAsync(_context);
         var purchaseOrder = await _context.PurchaseOrders
             .Include(po => po.Details)
             .FirstOrDefaultAsync(po => po.Id == id);
@@ -99,6 +99,7 @@ public class PurchaseOrderRepository
 
     public async Task CancelAsync(int id, int userId)
     {
+        await using var transaction = await SalesTransaction.BeginAsync(_context);
         var purchaseOrder = await _context.PurchaseOrders.FindAsync(id);
         if (purchaseOrder == null) throw new KeyNotFoundException("Không tìm thấy phiếu nhập.");
         if (!string.Equals(purchaseOrder.Status, "pending", StringComparison.OrdinalIgnoreCase))
@@ -111,5 +112,6 @@ public class PurchaseOrderRepository
             EntityId = purchaseOrder.Id.ToString(), Payload = purchaseOrder.PoCode, CreatedAt = DateTime.UtcNow
         });
         await _context.SaveChangesAsync();
+        await transaction.CommitAsync();
     }
 }

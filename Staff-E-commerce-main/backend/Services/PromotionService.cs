@@ -200,13 +200,9 @@ namespace backend.Services
         // Toggle active status
         public async Task<bool> ToggleActiveAsync(int id)
         {
-            var promotion = await _promotionRepository.GetByIdAsync(id);
-            if (promotion == null) return false;
-
-            promotion.Status = promotion.Status == "disabled" ? "active" : "disabled";
-            await _promotionRepository.UpdateAsync(promotion);
-            _cache.Clear();
-            return true;
+            var changed = await _promotionRepository.ToggleActiveAsync(id);
+            if (changed) _cache.Clear();
+            return changed;
         }
 
         public async Task<List<ProductPromotionAvailabilityDTO>> GetProductSelectionLocksAsync(
@@ -330,46 +326,10 @@ namespace backend.Services
 
         private decimal CalculateDiscount(Promotion promotion, decimal orderAmount)
         {
-            decimal discount = 0;
-
-            if (promotion.DiscountType == "percent")
-            {
-                discount = orderAmount * (promotion.Value / 100);
-
-                // Áp dụng giới hạn giảm tối đa nếu có
-                if (promotion.MaxDiscount.HasValue && discount > promotion.MaxDiscount.Value)
-                {
-                    discount = promotion.MaxDiscount.Value;
-                }
-            }
-            else // fixed
-            {
-                discount = Math.Min(promotion.Value, orderAmount);
-            }
-
-            return discount;
+            return SalePricing.Discount(promotion, orderAmount);
         }
 
         // Apply promotion to order
-        public async Task<bool> ApplyPromotionByIdsAsync(int promotionId, int orderId, int? customerId)
-        {
-            var promotion = await _promotionRepository.GetByIdAsync(promotionId);
-            if (promotion == null) return false;
-
-            await _promotionRepository.IncrementUsedCountAsync(promotionId);
-
-            // Add redemption record
-            await _promotionRepository.AddRedemptionAsync(new PromotionRedemption
-            {
-                PromotionId = promotionId,
-                OrderId = orderId,
-                CustomerId = customerId
-            });
-
-            return true;
-        }
-
-
         // Get active promotions
         public async Task<List<PromotionDTO>> GetActivePromotionsAsync()
         {
@@ -446,7 +406,7 @@ namespace backend.Services
         }
 
         // Map Promotion to PromotionDTO
-        private PromotionDTO MapToDTO(Promotion p)
+        internal static PromotionDTO MapToDTO(Promotion p)
         {
             return new PromotionDTO
             {
@@ -477,27 +437,5 @@ namespace backend.Services
         /// <summary>
         /// Áp dụng khuyến mãi cho đơn hàng đã tạo
         /// </summary>
-        public async Task ApplyPromotionAsync(Order order)
-        {
-            if (!order.PromotionId.HasValue) return; // không có khuyến mãi thì thôi
-
-            try
-            {
-                await _promotionRepository.ApplyPromotionAsync(order);
-            }
-            catch (Exception ex)
-            {
-                // có thể log lỗi nếu muốn
-                throw new Exception($"Áp dụng khuyến mãi thất bại: {ex.Message}");
-            }
-        }
-
-        public async Task<bool> ApplyPromotionToOrderAsync(int orderId)
-        {
-            var order = await _promotionRepository.GetOrderByIdAsync(orderId);
-            if (order is null) return false;
-            await ApplyPromotionAsync(order);
-            return true;
-        }
     }
 }

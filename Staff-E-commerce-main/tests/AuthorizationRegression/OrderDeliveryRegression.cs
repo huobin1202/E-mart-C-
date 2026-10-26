@@ -71,7 +71,7 @@ public static class OrderDeliveryRegression
         }
         await Call(HttpMethod.Get, "/api/orders/search?orderType=invalid", adminToken, expected: HttpStatusCode.BadRequest);
 
-        var body = new { fullName = "Người nhận khác", phone = "0912345678", address = "99 Đường Giao Hàng\nPhường Mới", note = plainNote,
+        var body = new { requestId = Guid.NewGuid().ToString(), fullName = "Người nhận khác", phone = "0912345678", address = "99 Đường Giao Hàng\nPhường Mới", note = plainNote,
             paymentMethod = "cod", pointsUsed = 0, items = new[] { new { productId, quantity = 1 } } };
         var placed = await Call(HttpMethod.Post, "/api/storefront/orders", buyerToken, body);
         var orderId = placed.GetProperty("id").GetInt32();
@@ -98,7 +98,7 @@ public static class OrderDeliveryRegression
         await Call(HttpMethod.Post, "/api/storefront/orders", null, new { body.fullName, body.phone, body.address, pointsUsed = 1, body.items }, HttpStatusCode.Unauthorized);
         Console.WriteLine($"PASS: {assertions} delivery snapshot/migration assertions.");
 
-        async Task Db(Func<AppDbContext, Task> action) { await using var scope = services.CreateAsyncScope(); await action(scope.ServiceProvider.GetRequiredService<AppDbContext>()); }
+        async Task Db(Func<AppDbContext, Task> action) { await using var scope = services.CreateAsyncScope(); await action(scope.ServiceProvider.GetRequiredService<AppDbContext>()); await scope.ServiceProvider.GetRequiredService<ReadCacheRefreshService>().RefreshAsync(); }
         void Check(bool value, string message) { if (!value) throw new Exception(message); assertions++; }
         async Task<JsonElement> Call(HttpMethod method, string path, string? token, object? data = null, HttpStatusCode expected = HttpStatusCode.OK)
         {
@@ -108,7 +108,7 @@ public static class OrderDeliveryRegression
             using var response = await client.SendAsync(request);
             var text = await response.Content.ReadAsStringAsync();
             Check(response.StatusCode == expected, $"{path}: {response.StatusCode} {text}");
-            using var json = JsonDocument.Parse(text);
+            using var json = JsonDocument.Parse(string.IsNullOrWhiteSpace(text) ? "{}" : text);
             return json.RootElement.Clone();
         }
     }

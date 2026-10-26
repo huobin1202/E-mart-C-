@@ -22,7 +22,9 @@ namespace backend.Controllers
         private readonly IConfiguration _config;
         private readonly InvoiceService _invoiceService;
         private readonly StorefrontService _storefrontService;
-        private readonly IHubContext<OrderHub>? _orderHub;
+        private readonly OrderNotifications? _notifications;
+        private readonly StorefrontCheckoutService _checkout;
+        private readonly BankTransferService _bank;
 
         public StorefrontController(
             JwtService jwt,
@@ -31,7 +33,7 @@ namespace backend.Controllers
             IConfiguration config,
             InvoiceService invoiceService,
             StorefrontService storefrontService,
-            IHubContext<OrderHub>? orderHub = null)
+            StorefrontCheckoutService checkout, BankTransferService bank, OrderNotifications? notifications = null)
         {
             _jwt = jwt;
             _promotions = promotions;
@@ -39,7 +41,7 @@ namespace backend.Controllers
             _config = config;
             _invoiceService = invoiceService;
             _storefrontService = storefrontService;
-            _orderHub = orderHub;
+            _notifications = notifications; _checkout = checkout; _bank = bank;
         }
 
         [HttpGet("promotions")]
@@ -68,6 +70,7 @@ namespace backend.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> RegisterCustomer([FromBody] StorefrontCustomerRegisterRequest request)
         {
+            await using var registration = await _storefrontService.BeginRegistrationAsync();
             var phone = NormalizePhone(request.Phone);
             if (!Regex.IsMatch(phone, "^0[35789]\\d{8}$"))
                 return BadRequest(new { message = "Số điện thoại Việt Nam chưa đúng định dạng." });
@@ -96,8 +99,8 @@ namespace backend.Controllers
                     UpdatedAt = DateTime.UtcNow
                 };
             }
-            else if (await _storefrontService.CustomerHasAccountAsync(customer.Id))
-                return Conflict(new { message = "Số điện thoại này đã được đăng ký." });
+            else
+                return Conflict(new { message = "Số điện thoại đã có hồ sơ tại cửa hàng. Vui lòng liên hệ cửa hàng để xác minh và cấp tài khoản." });
 
             customer.FullName = request.FullName.Trim();
             customer.UpdatedAt = DateTime.UtcNow;
@@ -119,7 +122,9 @@ namespace backend.Controllers
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
-            await _storefrontService.SaveRegistrationAsync(customer, user);
+            try { await _storefrontService.SaveRegistrationAsync(customer, user); }
+            catch (DbUpdateException) { return Conflict(new { message = "Tên đăng nhập hoặc số điện thoại đã tồn tại." }); }
+            await registration.CommitAsync();
 
             var (token, expiresIn) = _jwt.GenerateToken(user);
             return Ok(new { token, tokenType = "Bearer", expiresIn, customer = ToCustomerProfile(customer) });
@@ -134,7 +139,7 @@ namespace backend.Controllers
 
             var user = await _storefrontService.GetCustomerLoginAsync(request.Username.Trim());
 
-            if (user?.Customer == null || !string.Equals(user.RoleEntity?.Name, "customer", StringComparison.OrdinalIgnoreCase) ||
+            if (user?.Customer == null || user.RoleEntity == null || !string.Equals(user.RoleEntity.Name, "customer", StringComparison.OrdinalIgnoreCase) ||
                 !user.IsActive || user.IsLocked || !user.RoleEntity.IsActive ||
                 !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
                 return Unauthorized(new { message = "Tên đăng nhập hoặc mật khẩu không đúng." });
@@ -307,233 +312,57 @@ namespace backend.Controllers
             return Ok(categories);
         }
 
-        [HttpPost("orders")]
+        [HttpGet("payment-options")]
         [AllowAnonymous]
+        public IActionResult PaymentOptions() => Ok(new { cod = true, bank = _bank.Enabled, bankDetails = _bank.Details,
+            momo = !string.IsNullOrWhiteSpace(_config["Momo:Endpoint"]) && !string.IsNullOrWhiteSpace(_config["Momo:SecretKey"]) });
+
+        [HttpPost("orders")]
+        [Authorize(Roles = "customer")]
         public async Task<IActionResult> CreateOrder([FromBody] StorefrontOrderRequest request)
         {
-            var requestedLines = request.Items
-                .GroupBy(line => line.ProductId)
-                .Select(group => new { ProductId = group.Key, Quantity = group.Sum(line => line.Quantity) })
-                .ToList();
-
-            if (request.EventPromotionId.HasValue && !string.IsNullOrWhiteSpace(request.PromotionCode))
-                return BadRequest(new { message = "Chỉ chọn một ưu đãi sự kiện hoặc nhập một mã voucher." });
-            if (requestedLines.Any(line => line.Quantity > 1000))
-                return BadRequest(new { message = "Số lượng mỗi sản phẩm không được vượt quá 1.000." });
-
             try
             {
-                var productIds = requestedLines.Select(line => line.ProductId).ToList();
-                var products = await _storefrontService.GetActiveProductsByIdsAsync(productIds);
-
-                if (products.Count != productIds.Count)
-                    return BadRequest(new { message = "Một hoặc nhiều sản phẩm không còn bán. Hãy tải lại giỏ hàng." });
-
-                var productPromotions = await _storefrontService.GetActiveProductPromotionsAsync(
-                    productIds, DateTimeHelper.VietnamToday);
-
-                // Order ownership/points belong to the signed-in customer, not the recipient's phone.
-                var authenticated = User.Identity?.IsAuthenticated == true;
-                var customer = authenticated ? await GetAuthenticatedCustomerAsync()
-                    : await _storefrontService.GetCustomerByPhoneAsync(request.Phone.Trim(), request.Phone.Trim());
-                if (authenticated && customer == null)
-                    return Unauthorized(new { message = "Không xác định được tài khoản khách hàng đặt đơn." });
-                if (!authenticated && request.PointsUsed > 0)
-                    return Unauthorized(new { message = "Đăng nhập để sử dụng điểm của tài khoản." });
-                if (customer != null && !customer.IsActive)
-                    return Conflict(new { message = "Không thể sử dụng số điện thoại này để đặt hàng." });
-
-                if (customer == null)
-                {
-                    customer = new Customer
-                    {
-                        FullName = request.FullName.Trim(),
-                        Phone = request.Phone.Trim(),
-                        Address = request.Address.Trim(),
-                        IsActive = true,
-                        CreatedAt = DateTime.UtcNow,
-                        UpdatedAt = DateTime.UtcNow
-                    };
-                    await _storefrontService.AddCustomerAsync(customer);
-                }
-
-                var now = DateTime.UtcNow;
-                var items = requestedLines.Select(line =>
-                {
-                    var product = products[line.ProductId];
-                    var productDiscount = productPromotions
-                        .Where(promotion => promotion.ProductId == product.Id)
-                        .Select(promotion => CalculateProductDiscount(product.Price, promotion.DiscountType, promotion.Value, promotion.MaxDiscount))
-                        .DefaultIfEmpty(0m)
-                        .Max();
-                    var unitPrice = Math.Max(0, product.Price - productDiscount);
-                    return new OrderItem
-                    {
-                        ProductId = product.Id,
-                        Quantity = line.Quantity,
-                        UnitPrice = unitPrice,
-                        TotalPrice = unitPrice * line.Quantity,
-                        CreatedAt = now
-                    };
-                }).ToList();
-                var subtotal = items.Sum(item => item.TotalPrice);
-                var discount = 0m;
-                Promotion? appliedPromotion = null;
-                if (request.EventPromotionId.HasValue || !string.IsNullOrWhiteSpace(request.PromotionCode))
-                {
-                    var validation = request.EventPromotionId.HasValue
-                        ? await _promotions.ValidateEventPromotionAsync(request.EventPromotionId.Value, subtotal)
-                        : await _promotions.ValidatePromotionAsync(request.PromotionCode!, subtotal);
-                    if (!validation.IsValid || validation.Promotion == null)
-                        return BadRequest(new { message = validation.Message });
-                    discount = Math.Min(subtotal, validation.DiscountAmount);
-                    appliedPromotion = await _storefrontService.GetPromotionAsync(validation.Promotion.Id);
-                }
-
-                // Áp dụng điểm thưởng khách hàng (nếu có yêu cầu dùng điểm)
-                int pointsUsed = 0;
-                if (request.PointsUsed > 0 && customer != null && customer.RewardPoints > 0)
-                {
-                    int maxPointsUsable = Math.Min(customer.RewardPoints, (int)((subtotal - discount) / 1000m));
-                    pointsUsed = Math.Min(request.PointsUsed, maxPointsUsable);
-                    if (pointsUsed > 0)
-                    {
-                        decimal pointsDiscount = pointsUsed * 1000m; // 1 điểm = 1.000 VNĐ
-                        discount += pointsDiscount;
-                        customer.RewardPoints -= pointsUsed;
-                        customer.UpdatedAt = now;
-                    }
-                }
-
-                // Phương thức thanh toán chuẩn hóa theo check constraint DB
-                string requestedMethod = (request.PaymentMethod ?? "cod").ToLowerInvariant();
-                string dbPaymentMethod = requestedMethod switch
-                {
-                    "momo" => "e_wallet",
-                    "card" or "bank" => "card",
-                    _ => "cash"
-                };
-
-                var order = new Order
-                {
-                    OrderNumber = $"WEB-{Guid.NewGuid():N}",
-                    OrderType = "mobile",
-                    CustomerId = customer.Id,
-                    UserId = null,
-                    Status = "pending",
-                    Subtotal = subtotal,
-                    Discount = discount,
-                    TotalAmount = Math.Max(0, subtotal - discount),
-                    PaymentMethod = dbPaymentMethod,
-                    PaymentStatus = "pending",
-                    PromotionId = appliedPromotion?.Id,
-                    RecipientName = request.FullName.Trim(),
-                    RecipientPhone = request.Phone.Trim(),
-                    ShippingAddress = request.Address.Trim(),
-                    Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
-                    CreatedAt = now,
-                    UpdatedAt = now,
-                    OrderItems = items
-                };
-
-                await _storefrontService.SaveOrderAndReduceInventoryAsync(
-                    order,
-                    appliedPromotion,
-                    requestedLines.Select(line => (line.ProductId, line.Quantity)).ToList(),
-                    products.ToDictionary(pair => pair.Key, pair => pair.Value.ProductName));
-
-                // Tạo liên kết thanh toán MoMo nếu khách chọn MoMo
-                string? momoPayUrl = null;
-                if (requestedMethod == "momo")
+                var (order, replay) = await _checkout.CreateAsync(request);
+                string? payUrl = null, paymentError = null;
+                if (order.PaymentMethod == "e_wallet" && order.PaymentStatus == "pending" && order.Status == "pending")
                 {
                     try
                     {
-                        var backendBase = _config["App:BaseUrl"] ?? "http://localhost:5099";
-                        var momoReq = new MomoPaymentRequestDTO
-                        {
-                            OrderId = order.Id,
-                            Amount = order.TotalAmount,
-                            ReturnUrl = $"{backendBase}/api/payment/momo/return",
-                            NotifyUrl = $"{backendBase}/api/payment/momo/ipn"
-                        };
-                        var momoResult = await _paymentService.CreatePaymentAsync(momoReq);
-                        if (momoResult.Success)
-                            momoPayUrl = momoResult.PayUrl;
+                        var origin = _config["App:BaseUrl"] ?? "http://localhost:5099";
+                        var result = await _paymentService.CreatePaymentAsync(new MomoPaymentRequestDTO { OrderId = order.Id,
+                            ReturnUrl = $"{origin}/api/payment/momo/return", NotifyUrl = $"{origin}/api/payment/momo/ipn" });
+                        payUrl = result.PayUrl; paymentError = result.Success ? null : result.Message;
                     }
-                    catch (Exception ex)
-                    {
-                        Console.Error.WriteLine($"[MoMo] Failed to create payment URL: {ex.Message}");
-                    }
+                    catch { paymentError = "Đơn đã lưu nhưng chưa tạo được liên kết MoMo. Hãy kiểm tra trạng thái, thử lại hoặc hủy đơn chưa thanh toán."; }
                 }
-
-                // Mã VietQR nếu khách chọn chuyển khoản ngân hàng
-                string? vietQrUrl = null;
-                if (requestedMethod == "bank")
-                {
-                    vietQrUrl = $"https://img.vietqr.io/image/MB-0987654321-compact2.png?amount={Math.Round(order.TotalAmount):0}&addInfo=EMART_{order.OrderNumber}&accountName=EMART%20STORE";
-                }
-
-                // Bắn thông báo Realtime SignalR tới Web POS
-                if (_orderHub != null)
-                {
-                    _ = _orderHub.Clients.All.SendAsync("NewOrderReceived", new
-                    {
-                        orderId = order.Id,
-                        orderNumber = order.OrderNumber,
-                        customerName = request.FullName.Trim(),
-                        phone = request.Phone.Trim(),
-                        totalAmount = order.TotalAmount,
-                        itemCount = items.Count,
-                        paymentMethod = requestedMethod,
-                        createdAt = order.CreatedAt
-                    });
-                }
-
-                return Ok(new
-                {
-                    order.Id,
-                    order.OrderNumber,
-                    order.Status,
-                    order.Subtotal,
-                    order.Discount,
-                    order.TotalAmount,
-                    paymentMethod = requestedMethod,
-                    order.PaymentStatus,
-                    order.CreatedAt,
-                    momoPayUrl,
-                    order.RecipientName,
-                    order.RecipientPhone,
-                    order.ShippingAddress,
-                    order.Note,
-                    vietQrUrl,
-                    pointsUsed
-                });
+                if (!replay && _notifications != null)
+                    await _notifications.PublishAsync("NewOrderReceived", new { orderId = order.Id, orderNumber = order.OrderNumber,
+                        customerName = order.RecipientName, phone = order.RecipientPhone, totalAmount = order.TotalAmount,
+                        itemCount = request.Items.Count, paymentMethod = request.PaymentMethod, createdAt = order.CreatedAt });
+                return Ok(new { order.Id, order.OrderNumber, order.Status, order.Subtotal, order.Discount, order.TotalAmount,
+                    paymentMethod = order.PaymentMethod == "e_wallet" ? "momo" : order.PaymentMethod == "card" ? "bank" : "cod",
+                    order.PaymentStatus, order.CreatedAt, order.RecipientName, order.RecipientPhone, order.ShippingAddress,
+                    order.Note, pointsUsed = order.PointsUsed, momoPayUrl = payUrl, paymentError, bankDetails = _bank.Details,
+                    vietQrUrl = order.PaymentMethod == "card" ? _bank.QrUrl(order.TotalAmount, order.OrderNumber) : null, replay });
             }
-            catch (DbUpdateException)
-            {
-                return Conflict(new { message = "Không thể lưu đơn hàng. Hãy thử lại sau." });
-            }
-            catch (InvalidOperationException ex) when (ex.Message.StartsWith("Sản phẩm", StringComparison.Ordinal))
-            {
-                return Conflict(new { message = ex.Message });
-            }
-            catch
-            {
-                throw;
-            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message, checkoutNotCreated = true }); }
+            catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message, checkoutNotCreated = true }); }
+            catch (DbUpdateException) { return Conflict(new { message = "Không thể lưu đơn hàng. Vui lòng thử lại đúng yêu cầu đã gửi.", checkoutNotCreated = true }); }
         }
 
         [HttpGet("orders/{id}/payment-status")]
-        [AllowAnonymous]
+        [Authorize(Roles = "customer")]
         public async Task<IActionResult> GetOrderPaymentStatus(int id)
         {
             var order = await _storefrontService.GetOrderForPaymentStatusAsync(id);
-            if (order == null) return NotFound(new { message = "Không tìm thấy đơn hàng." });
+            if (order == null || order.CustomerId?.ToString() != User.FindFirst("customer_id")?.Value) return NotFound(new { message = "Không tìm thấy đơn hàng." });
 
             string? vietQrUrl = null;
-            if (order.PaymentStatus == "pending")
+            if (order.PaymentStatus == "pending" && order.PaymentMethod == "card")
             {
-                vietQrUrl = $"https://img.vietqr.io/image/MB-0987654321-compact2.png?amount={Math.Round(order.TotalAmount):0}&addInfo=EMART_{order.OrderNumber}&accountName=EMART%20STORE";
+                vietQrUrl = _bank.QrUrl(order.TotalAmount, order.OrderNumber);
             }
 
             return Ok(new
@@ -548,12 +377,25 @@ namespace backend.Controllers
             });
         }
 
+        [HttpPost("orders/{id:int}/cancel")]
+        [Authorize(Roles = "customer")]
+        public async Task<IActionResult> CancelCustomerOrder(int id, [FromServices] OrderService orders)
+        {
+            var customer = await GetAuthenticatedCustomerAsync();
+            if (customer == null) return Unauthorized();
+            var snapshot = await _storefrontService.GetOrderForPaymentStatusAsync(id);
+            if (snapshot == null || snapshot.CustomerId != customer.Id) return NotFound();
+            if (snapshot.PaymentStatus == "paid") return Conflict(new { message = "Đơn đã nhận tiền. Vui lòng liên hệ cửa hàng để hủy và đối soát hoàn tiền." });
+            var cancelled = await orders.CancelCustomerOrderAsync(id, customer.Id);
+            return cancelled ? Ok(new { status = "cancelled" }) : Conflict(new { message = "Đơn không còn có thể hủy." });
+        }
+
         [HttpPost("orders/{id}/pay-momo")]
-        [AllowAnonymous]
+        [Authorize(Roles = "customer")]
         public async Task<IActionResult> RecreateMomoPayment(int id)
         {
             var order = await _storefrontService.GetOrderForPaymentStatusAsync(id);
-            if (order == null) return NotFound(new { message = "Không tìm thấy đơn hàng." });
+            if (order == null || order.CustomerId?.ToString() != User.FindFirst("customer_id")?.Value) return NotFound(new { message = "Không tìm thấy đơn hàng." });
             if (order.PaymentStatus == "paid") return BadRequest(new { message = "Đơn hàng đã được thanh toán." });
 
             try
@@ -649,6 +491,8 @@ namespace backend.Controllers
 
     public class StorefrontOrderRequest
     {
+        [Required, StringLength(36)] public string RequestId { get; set; } = "";
+        public decimal? ExpectedTotal { get; set; }
         [Required, StringLength(150, MinimumLength = 2)]
         public string FullName { get; set; } = string.Empty;
 
@@ -667,7 +511,7 @@ namespace backend.Controllers
         public int? EventPromotionId { get; set; }
 
         /// <summary>Số điểm thưởng muốn dùng để giảm giá (1 điểm = 1.000 VNĐ)</summary>
-        public int PointsUsed { get; set; } = 0;
+        [Range(0, int.MaxValue)] public int PointsUsed { get; set; } = 0;
 
         /// <summary>Phương thức thanh toán: "cod" (mặc định) | "momo" | "bank"</summary>
         [StringLength(20)]

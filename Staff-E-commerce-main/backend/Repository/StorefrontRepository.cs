@@ -10,6 +10,7 @@ public sealed class StorefrontRepository
     private readonly AppDbContext _context;
 
     public StorefrontRepository(AppDbContext context) => _context = context;
+    public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginRegistrationAsync() => SalesTransaction.BeginAsync(_context);
 
     public Task<Customer?> GetActiveCustomerAsync(int customerId)
     {
@@ -148,12 +149,14 @@ public sealed class StorefrontRepository
 
     public Task<List<StorefrontProductPromotionDTO>> GetActiveProductPromotionsAsync(List<int> productIds, DateTime today)
     {
+        var startUtc = backend.Helpers.DateTimeHelper.ToUtc(today.Date);
+        var endUtc = startUtc.AddDays(1);
         return (from link in _context.ProductPromotions.AsNoTracking()
                 join promotion in _context.Promotions.AsNoTracking() on link.PromotionId equals promotion.Id
                 where productIds.Contains(link.ProductId) && !promotion.IsDeleted && promotion.Status == "active" &&
                       promotion.Type == "product" &&
-                      (!promotion.StartDate.HasValue || promotion.StartDate.Value.Date <= today) &&
-                      (!promotion.EndDate.HasValue || promotion.EndDate.Value.Date >= today) &&
+                      (!promotion.StartDate.HasValue || promotion.StartDate.Value < endUtc) &&
+                      (!promotion.EndDate.HasValue || promotion.EndDate.Value >= startUtc) &&
                       (!promotion.UsageLimit.HasValue || promotion.UsedCount < promotion.UsageLimit)
                 select new StorefrontProductPromotionDTO
                 {
@@ -182,38 +185,4 @@ public sealed class StorefrontRepository
         return customer;
     }
 
-    public async Task SaveOrderAndReduceInventoryAsync(
-        Order order,
-        Promotion? appliedPromotion,
-        List<(int ProductId, int Quantity)> requestedLines,
-        IReadOnlyDictionary<int, string> productNames)
-    {
-        await using var transaction = await _context.Database.BeginTransactionAsync();
-        try
-        {
-            _context.Orders.Add(order);
-            if (appliedPromotion != null)
-                appliedPromotion.UsedCount++;
-            await _context.SaveChangesAsync();
-
-            foreach (var line in requestedLines)
-            {
-                var inventory = await _context.Inventory
-                    .Where(stock => stock.ProductId == line.ProductId && stock.Quantity >= line.Quantity)
-                    .SingleOrDefaultAsync();
-                if (inventory == null)
-                    throw new InvalidOperationException($"Sản phẩm {productNames[line.ProductId]} vừa hết hàng hoặc không đủ số lượng.");
-                inventory.Quantity -= line.Quantity;
-                inventory.UpdatedAt = DateTime.UtcNow;
-            }
-
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
-        }
-        catch
-        {
-            await transaction.RollbackAsync();
-            throw;
-        }
-    }
 }

@@ -62,7 +62,7 @@ public sealed class RoleService
         return (result, null, 200);
     }
 
-    private static RoleDTO Map(Role role) => new()
+    internal static RoleDTO Map(Role role) => new()
     {
         Id = role.Id, Name = role.Name, Description = role.Description, IsActive = role.IsActive,
         PermissionIds = role.RolePermissions.Select(rp => rp.PermissionId).ToList(),

@@ -12,6 +12,7 @@ public sealed class StorefrontService(
     BusMemoryCache<StorefrontCategoryResponse> categoryCache)
 {
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
+    public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginRegistrationAsync() => repository.BeginRegistrationAsync();
 
     public Task<bool> UsernameExistsAsync(string username) => repository.UsernameExistsAsync(username);
     public Task<Customer?> GetCustomerByPhoneAsync(string phone, string internationalPhone) => repository.GetCustomerByPhoneAsync(phone, internationalPhone);
@@ -44,25 +45,15 @@ public sealed class StorefrontService(
 
     public Task<Customer> AddCustomerAsync(Customer customer) => repository.AddCustomerAsync(customer);
 
-    public async Task SaveOrderAndReduceInventoryAsync(
-        Order order,
-        Promotion? appliedPromotion,
-        List<(int ProductId, int Quantity)> requestedLines,
-        IReadOnlyDictionary<int, string> productNames)
+    internal async Task<List<StorefrontProductDTO>> LoadProductsAsync()
     {
-        await repository.SaveOrderAndReduceInventoryAsync(order, appliedPromotion, requestedLines, productNames);
-        productCache.Clear();
-    }
-
-    public async Task<List<StorefrontProductDTO>> GetAvailableProductsAsync()
-    {
-        var (products, _) = await productCache.GetOrCreateAsync(async () =>
-        {
             var loadedProducts = await repository.GetAvailableProductsAsync();
             var promotions = await repository.GetActiveProductPromotionsAsync(
                 loadedProducts.Select(product => product.Id).ToList(), DateTimeHelper.VietnamToday);
             foreach (var product in loadedProducts)
             {
+                product.OriginalPrice = SalePricing.Price(product.OriginalPrice);
+                product.Price = product.OriginalPrice;
                 var best = promotions.Where(promotion => promotion.ProductId == product.Id)
                     .Select(promotion => new
                     {
@@ -79,15 +70,20 @@ public sealed class StorefrontService(
                 product.PromotionEndsAt = best.Promotion.EndDate;
             }
             return loadedProducts;
+    }
+
+    public async Task<List<StorefrontProductDTO>> GetAvailableProductsAsync()
+    {
+        var (products, _) = await productCache.GetOrCreateAsync(async () =>
+        {
+            return await LoadProductsAsync();
         }, CacheTtl);
         return products.ToList();
     }
 
     private static decimal CalculateProductDiscount(decimal price, string discountType, decimal value, decimal? maxDiscount)
     {
-        var discount = discountType == "percent" ? price * value / 100m : value;
-        if (maxDiscount.HasValue) discount = Math.Min(discount, maxDiscount.Value);
-        return Math.Min(price, discount);
+        return SalePricing.Discount(discountType, value, maxDiscount, SalePricing.Price(price));
     }
 
     public async Task<List<StorefrontCategoryResponse>> GetActiveCategoriesAsync()

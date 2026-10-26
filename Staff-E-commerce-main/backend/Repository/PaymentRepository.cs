@@ -13,6 +13,13 @@ namespace backend.Repository
             _context = context;
         }
 
+        public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginSalesTransactionAsync() => SalesTransaction.BeginAsync(_context);
+        public Task<Payment?> GetPendingMomoAsync(int orderId) => _context.Payments.AsNoTracking()
+            .Where(p => p.OrderId == orderId && p.Method == "other" && p.Status == "pending")
+            .OrderByDescending(p => p.Id).FirstOrDefaultAsync();
+        public Task SetPayUrlAsync(int id, string url) => _context.Payments.Where(p => p.Id == id && p.Status == "pending")
+            .ExecuteUpdateAsync(u => u.SetProperty(p => p.PayUrl, url));
+
         // Các phương thức liên quan sẽ được triển khai ở đây.
         // 1. Thêm bản ghi payment mới vào cơ sở dữ liệu
         public async Task<Payment> AddPaymentAsync(Payment payment)
@@ -74,7 +81,7 @@ namespace backend.Repository
 
         public Task<bool> IsLockedPosOrderAsync(int orderId)
         {
-            return _context.Orders.AnyAsync(o => o.Id == orderId && o.CheckoutKey != null);
+            return _context.Orders.AnyAsync(o => o.Id == orderId && o.OrderType == "pos");
         }
 
         public Task<Order?> GetOrderSnapshotAsync(int orderId)
@@ -84,7 +91,7 @@ namespace backend.Repository
 
         public Task<Payment?> GetByTransactionRefAsync(string? transactionRef)
         {
-            return _context.Payments.FirstOrDefaultAsync(p => p.TransactionRef == transactionRef);
+            return _context.Payments.AsNoTracking().FirstOrDefaultAsync(p => p.TransactionRef == transactionRef);
         }
 
         public async Task MarkPendingPaymentFailedAsync(int paymentId)

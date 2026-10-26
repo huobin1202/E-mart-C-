@@ -178,7 +178,6 @@ namespace backend.Controllers
                     StartDate = promotionDto.StartDate,
                     EndDate = promotionDto.EndDate,
                     UsageLimit = promotionDto.UsageLimit,
-                    UsedCount = promotionDto.UsedCount,
                     Active = promotionDto.Active,
                     Status = promotionDto.Status ?? (promotionDto.Active ? "active" : "disabled"),
                     Description = promotionDto.Description
@@ -355,34 +354,17 @@ namespace backend.Controllers
 
         // POST api/promotions/{orderId}/apply (for POS)
         [HttpPost("{orderId}/apply")]
-        public async Task<ActionResult> ApplyPromotionToOrder(int orderId)
+        public ActionResult ApplyPromotionToOrder(int orderId)
         {
-            try
-            {
-                if (!await _promotionService.ApplyPromotionToOrderAsync(orderId))
-                    return NotFound(new { message = "Order không tồn tại" });
-                return Ok(new { message = "Áp dụng khuyến mãi thành công" });
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            return Conflict(new { message = "Khuyến mãi được ghi nhận trong giao dịch chốt đơn; không áp dụng lại trên đơn đã tạo." });
         }
         /// <summary>
         /// Áp dụng khuyến mãi cho đơn hàng dựa trên promotionId, orderId, và customerId (dùng cho POS hoặc test)
         /// </summary>
         [HttpPost("apply")]
-        public async Task<IActionResult> ApplyPromotion([FromBody] ApplyPromotionRequest request)
+        public IActionResult ApplyPromotion([FromBody] ApplyPromotionRequest request)
         {
-            try
-            {
-                await _promotionService.ApplyPromotionByIdsAsync(request.PromotionId, request.OrderId, request.CustomerId);
-                return Ok(new { message = "Áp dụng khuyến mãi thành công" });
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            return Conflict(new { message = "Khuyến mãi được ghi nhận trong giao dịch chốt đơn; không áp dụng lại trên đơn đã tạo." });
         }
 
 

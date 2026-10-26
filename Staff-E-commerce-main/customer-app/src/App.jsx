@@ -1,3 +1,4 @@
+import { checkoutStorageKey, createCheckoutRequestId, parsePendingCheckout, checkoutDefinitelyRejected, preparePendingCheckout } from "./utils/storefrontCheckoutSession";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import ProductDescription from "./components/ProductDescription";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -583,6 +584,36 @@ export default function App() {
   const [vouchersLoading, setVouchersLoading] = useState(false);
 
   const [paymentMethod, setPaymentMethod] = useState("cod");
+  const [paymentOptions, setPaymentOptions] = useState({ cod: true, bank: false, momo: false });
+  const [pendingCheckout, setPendingCheckout] = useState(null);
+  const checkoutLock = useRef(false);
+  useEffect(() => {
+    fetch(API_URL + "/storefront/payment-options").then(r => r.ok ? r.json() : Promise.reject())
+      .then(setPaymentOptions).catch(() => {});
+  }, []);
+  useEffect(() => {
+    let active = true;
+    if (!customer?.id) { setPendingCheckout(null); return; }
+    AsyncStorage.getItem(checkoutStorageKey(customer.id)).then(raw => {
+      if (!active) return;
+      const pending = parsePendingCheckout(raw, customer.id);
+      setPendingCheckout(pending);
+      if (pending) { setCart(pending.cart); setCheckoutForm(pending.payload); setPaymentMethod(pending.payload.paymentMethod); setAppliedVoucher(pending.voucher || null); setUseRewardPoints(pending.payload.pointsUsed > 0); }
+    }).catch(() => { if (active) setOrderError("Không đọc được yêu cầu đặt hàng cũ. Kiểm tra dữ liệu phiên trước khi gửi đơn khác."); });
+    return () => { active = false; };
+  }, [customer?.id]);
+  useEffect(() => {
+    if (!completedOrder?.id || completedOrder.paymentStatus !== "pending" || !customerToken || !["momo", "bank"].includes(completedOrder.paymentMethod) || completedOrder.status === "cancelled") return;
+    let active = true;
+    const timer = setInterval(async () => {
+      try {
+        const response = await fetch(API_URL + "/storefront/orders/" + completedOrder.id + "/payment-status", { headers: { Authorization: "Bearer " + customerToken } });
+        if (!response.ok) return; const status = await response.json();
+        if (active) setCompletedOrder(current => current?.id === completedOrder.id ? { ...current, ...status } : current);
+      } catch { /* The order history and retry actions remain available. */ }
+    }, 3000);
+    return () => { active = false; clearInterval(timer); };
+  }, [completedOrder?.id, completedOrder?.paymentStatus, completedOrder?.paymentMethod, completedOrder?.status, customerToken]);
   const [useRewardPoints, setUseRewardPoints] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
 
@@ -1006,7 +1037,7 @@ export default function App() {
   const originalSubtotal = subtotal + productDiscount;
   const voucherDiscount = appliedVoucher?.discountAmount || 0;
   const afterVoucher = Math.max(0, subtotal - voucherDiscount);
-  const maxPointsUsable = Math.min(customer?.rewardPoints || 0, Math.floor(afterVoucher / 1000));
+  const maxPointsUsable = Math.max(0, Math.min(customer?.rewardPoints || 0, Math.floor(afterVoucher / 1000)));
   const pointsDiscount = useRewardPoints ? maxPointsUsable * 1000 : 0;
   const payable = Math.max(0, afterVoucher - pointsDiscount);
 
@@ -1085,6 +1116,7 @@ export default function App() {
   }, []);
 
   const addToCart = useCallback((product, event) => {
+    if (checkoutLock.current || pendingCheckout) { setOrderError("Có yêu cầu chưa xác định kết quả. Hãy kiểm tra đúng đơn đã gửi trước khi đổi giỏ hàng."); setCheckoutOpen(true); return; }
     if (!requireAuthenticatedCustomer()) return;
     if (loading || loadError) return;
     const available = stockLimit(products.find((item) => item.id === product.id));
@@ -1113,9 +1145,10 @@ export default function App() {
         quantity: 1,
       }];
     });
-  }, [requireAuthenticatedCustomer, loading, loadError, products, flyProductToCart]);
+  }, [requireAuthenticatedCustomer, loading, loadError, products, flyProductToCart, pendingCheckout]);
 
   const changeQuantity = useCallback((id, amount) => {
+    if (checkoutLock.current || pendingCheckout) { setOrderError("Có yêu cầu chưa xác định kết quả. Hãy kiểm tra đúng đơn đã gửi trước khi đổi giỏ hàng."); setCheckoutOpen(true); return; }
     if (amount > 0 && !requireAuthenticatedCustomer()) return;
     if (amount > 0 && (loading || loadError)) return;
     const available = stockLimit(products.find((product) => product.id === id));
@@ -1130,9 +1163,10 @@ export default function App() {
       next[index] = { ...item, quantity };
       return next;
     });
-  }, [requireAuthenticatedCustomer, loading, loadError, products]);
+  }, [requireAuthenticatedCustomer, loading, loadError, products, pendingCheckout]);
 
   const setProductQuantity = useCallback((id, quantity) => {
+    if (checkoutLock.current || pendingCheckout) { setOrderError("Có yêu cầu chưa xác định kết quả. Hãy kiểm tra đúng đơn đã gửi trước khi đổi giỏ hàng."); setCheckoutOpen(true); return; }
     if (!requireAuthenticatedCustomer() || loading || loadError) return;
     if (!Number.isSafeInteger(quantity) || quantity < 1) return;
     const available = Math.min(1000, stockLimit(products.find((product) => product.id === id)));
@@ -1145,7 +1179,7 @@ export default function App() {
       next[index] = { ...current[index], quantity: nextQuantity };
       return next;
     });
-  }, [requireAuthenticatedCustomer, loading, loadError, products]);
+  }, [requireAuthenticatedCustomer, loading, loadError, products, pendingCheckout]);
 
   const getCartQuantity = (productId) => cart.find((item) => item.id === productId)?.quantity || 0;
 
@@ -1176,56 +1210,54 @@ export default function App() {
       setCheckoutOpen(false);
       return;
     }
-    if (!checkoutForm.fullName.trim() || !checkoutForm.phone.trim() || !checkoutForm.address.trim()) {
+    if (!pendingCheckout && (!checkoutForm.fullName.trim() || !checkoutForm.phone.trim() || !checkoutForm.address.trim())) {
       setOrderError("Nhập họ tên, số điện thoại và địa chỉ nhận hàng.");
       return;
     }
-    if (!/^(0|\+84)[35789]\d{8}$/.test(checkoutForm.phone.trim())) {
+    if (!pendingCheckout && !/^(0|\+84)[35789]\d{8}$/.test(checkoutForm.phone.trim())) {
       setOrderError("Số điện thoại Việt Nam chưa đúng định dạng.");
       return;
     }
-    if (!cart.length) return;
+    if ((!cart.length && !pendingCheckout) || checkoutLock.current) return;
+    checkoutLock.current = true;
     setOrderSubmitting(true);
     setOrderError("");
     try {
-      const response = await fetch(`${API_URL}/storefront/orders`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${customerToken}`,
-        },
-        body: JSON.stringify({
-          ...checkoutForm,
-          fullName: checkoutForm.fullName.trim(),
-          phone: checkoutForm.phone.trim(),
-          paymentMethod,
+      const storageKey = checkoutStorageKey(customer.id);
+      const pending = await preparePendingCheckout(AsyncStorage, customer.id, () => ({ owner: customer.id, cart, voucher: appliedVoucher, payload: { ...checkoutForm,
+          fullName: checkoutForm.fullName.trim(), phone: checkoutForm.phone.trim(),
+          requestId: createCheckoutRequestId(), expectedTotal: payable, paymentMethod,
           pointsUsed: useRewardPoints ? maxPointsUsable : 0,
-          items: cart.map((item) => ({ productId: item.id, quantity: item.quantity })),
-          promotionCode: appliedVoucher?.code || null,
-          eventPromotionId: appliedVoucher?.eventPromotionId || null,
-        }),
-      });
-      if (!response.ok) throw new Error(await readError(response));
-      const result = await response.json();
+          items: cart.map(item => ({ productId: item.id, quantity: item.quantity })),
+          promotionCode: appliedVoucher?.code || null, eventPromotionId: appliedVoucher?.eventPromotionId || null } }));
+      setPendingCheckout(pending);
+      const response = await fetch(API_URL + "/storefront/orders", { method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + customerToken },
+        body: JSON.stringify(pending.payload) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (checkoutDefinitelyRejected(response.status, result)) { await AsyncStorage.removeItem(storageKey); setPendingCheckout(null); }
+        throw new Error(result.message || result.title || "Chưa xác định được kết quả đặt hàng. Thử kiểm tra lại yêu cầu đã lưu.");
+      }
+      if (customerSession.current !== customerToken) return;
+      await AsyncStorage.removeItem(storageKey); setPendingCheckout(null);
       setCompletedOrder({
         ...result,
-        paymentMethod,
-        pointsDiscount,
-        vietQrUrl: result.vietQrUrl || (paymentMethod === "bank" ? `https://img.vietqr.io/image/MB-0987654321-compact2.png?amount=${result.totalAmount}&addInfo=EMART_${result.orderNumber}&accountName=EMART%20STORE` : null)
+        paymentMethod: result.paymentMethod || pending.payload.paymentMethod,
+        pointsDiscount: (result.pointsUsed ?? pending.payload.pointsUsed) * 1000,
+        vietQrUrl: result.vietQrUrl || null
       });
-      if (customer && useRewardPoints && maxPointsUsable > 0) {
-        setCustomer((prev) => prev ? ({ ...prev, rewardPoints: Math.max(0, (prev.rewardPoints || 0) - maxPointsUsable) }) : null);
-      }
+      fetch(`${API_URL}/storefront/account`, { headers: { Authorization: `Bearer ${customerToken}` } }).then(r => r.ok ? r.json() : null).then(profile => { if (profile && customerSession.current === customerToken) setCustomer(profile); }).catch(() => {});
       const placedOrder = {
         ...result,
-        paymentMethod,
-        recipientName: result.recipientName || checkoutForm.fullName.trim(),
-        recipientPhone: result.recipientPhone || checkoutForm.phone.trim(),
-        shippingAddress: result.shippingAddress || checkoutForm.address.trim(),
-        note: result.note ?? (checkoutForm.note.trim() || null),
-        paymentStatus: "pending",
+        paymentMethod: result.paymentMethod || pending.payload.paymentMethod,
+        recipientName: result.recipientName || pending.payload.fullName,
+        recipientPhone: result.recipientPhone || pending.payload.phone,
+        shippingAddress: result.shippingAddress || pending.payload.address,
+        note: result.note ?? (pending.payload.note?.trim() || null),
+        paymentStatus: result.paymentStatus || "pending",
         orderType: "mobile",
-        items: cart.map((item) => ({
+        items: pending.cart.map((item) => ({
           productId: item.id,
           productName: item.name,
           imageUrl: item.image,
@@ -1241,8 +1273,29 @@ export default function App() {
     } catch (error) {
       setOrderError(error.message || "Không thể gửi đơn hàng. Kiểm tra kết nối rồi thử lại.");
     } finally {
-      setOrderSubmitting(false);
+      checkoutLock.current = false; setOrderSubmitting(false);
     }
+  };
+
+  const retryCompletedMomo = async () => {
+    try {
+      const statusResponse = await fetch(API_URL + "/storefront/orders/" + completedOrder.id + "/payment-status", { headers: { Authorization: "Bearer " + customerToken } });
+      const status = await statusResponse.json(); if (!statusResponse.ok) throw new Error(status.message);
+      if (status.paymentStatus === "paid" || status.status === "cancelled") { setCompletedOrder(current => ({ ...current, ...status, momoPayUrl: null, paymentError: null })); return; }
+      const response = await fetch(API_URL + "/storefront/orders/" + completedOrder.id + "/pay-momo", { method: "POST", headers: { Authorization: "Bearer " + customerToken } });
+      const body = await response.json(); if (!response.ok) throw new Error(body.message);
+      setCompletedOrder(current => ({ ...current, momoPayUrl: body.payUrl, paymentError: null }));
+    } catch (error) { setCompletedOrder(current => ({ ...current, paymentError: error.message || "Chưa tạo được liên kết thanh toán." })); }
+  };
+  const cancelCompletedOrder = async () => {
+    try {
+      const response = await fetch(API_URL + "/storefront/orders/" + completedOrder.id + "/cancel", { method: "POST", headers: { Authorization: "Bearer " + customerToken } });
+      if (!response.ok) throw new Error(await readError(response));
+      setCompletedOrder(current => ({ ...current, status: "cancelled", paymentError: null, momoPayUrl: null }));
+      setCustomerOrders(current => current.map(order => order.id === completedOrder.id ? { ...order, status: "cancelled" } : order));
+      fetch(`${API_URL}/storefront/account`, { headers: { Authorization: `Bearer ${customerToken}` } }).then(r => r.ok ? r.json() : null).then(profile => { if (profile && customerSession.current === customerToken) setCustomer(profile); }).catch(() => {});
+      void loadStore();
+    } catch (error) { setCompletedOrder(current => ({ ...current, paymentError: error.message })); }
   };
 
   const currentBanner = BANNERS[bannerIndex];
@@ -1454,7 +1507,7 @@ export default function App() {
                 secondary
                 onPress={() => Alert.alert("Xóa giỏ hàng", "Bạn có chắc muốn xóa tất cả sản phẩm khỏi giỏ?", [
                   { text: "Hủy", style: "cancel" },
-                  { text: "Xóa hết", style: "destructive", onPress: () => { setCart([]); setAppliedVoucher(null); } }
+                  { text: "Xóa hết", style: "destructive", onPress: () => { if (pendingCheckout || checkoutLock.current) { setOrderError("Kiểm tra yêu cầu đã gửi trước khi xóa giỏ hàng."); setCheckoutOpen(true); return; } setCart([]); setAppliedVoucher(null); } }
                 ])}
               />
             </View>
@@ -2030,7 +2083,7 @@ export default function App() {
                 <View style={styles.successBadgeCircle}>
                   <IconCheck size={26} color="#ffffff" />
                 </View>
-                <Text style={styles.eyebrow}>ĐẶT HÀNG THÀNH CÔNG</Text>
+                <Text style={styles.eyebrow}>{completedOrder.status === "cancelled" ? "ĐƠN HÀNG ĐÃ HỦY" : "ĐẶT HÀNG THÀNH CÔNG"}</Text>
                 <Text style={styles.successTitle}>Cảm ơn bạn đã mua sắm tại Bách Hóa Xanh!</Text>
 
                 <Text style={styles.inputLabel}>MÃ ĐƠN HÀNG</Text>
@@ -2043,17 +2096,21 @@ export default function App() {
                     <Text style={styles.paymentBoxMomoDesc}>
                       Nhấn nút bên dưới để chuyển tiếp sang Ví MoMo và thanh toán {money(completedOrder.totalAmount)}.
                     </Text>
-                    {completedOrder.momoPayUrl ? (
+                    {completedOrder.momoPayUrl && completedOrder.paymentStatus !== "paid" ? (
                       <Pressable onPress={() => Linking.openURL(completedOrder.momoPayUrl)} style={styles.momoActionBtn}>
                         <Text style={styles.momoActionText}>Mở App MoMo thanh toán ngay  →</Text>
                       </Pressable>
                     ) : (
-                      <Text style={styles.paymentWaitText}>Đang tạo liên kết ví MoMo...</Text>
+                      <Text style={styles.paymentWaitText}>{completedOrder.paymentStatus === "paid" ? "Đã ghi nhận thanh toán." : completedOrder.status === "cancelled" ? "Đơn đã hủy." : completedOrder.paymentError || "Chưa có liên kết thanh toán. Kiểm tra hoặc thử lại."}</Text>
                     )}
                   </View>
                 )}
 
                 {/* Quét mã VietQR */}
+                {completedOrder.paymentMethod === "momo" && completedOrder.status === "pending" && completedOrder.paymentStatus === "pending" && <View style={{ gap: 8 }}>
+                  <Pressable onPress={retryCompletedMomo}><Text style={styles.paymentWaitText}>Kiểm tra / thử lại thanh toán MoMo</Text></Pressable>
+                  <Pressable onPress={cancelCompletedOrder}><Text style={styles.paymentWaitText}>Hủy đơn chưa thanh toán và hoàn lại điểm</Text></Pressable>
+                </View>}
                 {completedOrder.paymentMethod === "bank" && (
                   <View style={styles.paymentBoxBank}>
                     <Text style={styles.paymentBoxBankTitle}>Quét mã QR ngân hàng (VietQR)</Text>
@@ -2062,9 +2119,9 @@ export default function App() {
                       <Image source={{ uri: completedOrder.vietQrUrl }} style={styles.vietQrImage} resizeMode="contain" />
                     )}
                     <View style={styles.bankDetailCard}>
-                      <Text style={styles.bankDetailLine}>• Ngân hàng: <Text style={styles.bankBold}>MBBank (Quân Đội)</Text></Text>
-                      <Text style={styles.bankDetailLine}>• Số tài khoản: <Text style={styles.bankBold}>0987654321</Text></Text>
-                      <Text style={styles.bankDetailLine}>• Chủ tài khoản: <Text style={styles.bankBold}>EMART STORE</Text></Text>
+                      <Text style={styles.bankDetailLine}>• Ngân hàng: <Text style={styles.bankBold}>{completedOrder.bankDetails?.bankCode}</Text></Text>
+                      <Text style={styles.bankDetailLine}>• Số tài khoản: <Text style={styles.bankBold}>{completedOrder.bankDetails?.accountNumber}</Text></Text>
+                      <Text style={styles.bankDetailLine}>• Chủ tài khoản: <Text style={styles.bankBold}>{completedOrder.bankDetails?.accountName}</Text></Text>
                       <Text style={styles.bankDetailLine}>• Số tiền: <Text style={styles.bankMoney}>{money(completedOrder.totalAmount)}</Text></Text>
                       <Text style={styles.bankDetailLine}>• Nội dung: <Text style={styles.bankContent}>EMART_{completedOrder.orderNumber}</Text></Text>
                     </View>
@@ -2132,7 +2189,7 @@ export default function App() {
                     { key: "cod", label: "Tiền mặt khi nhận hàng (COD)", desc: "Nhận hàng kiểm tra rồi trả tiền mặt" },
                     { key: "momo", label: "Ví điện tử MoMo", desc: "Thanh toán online qua ứng dụng MoMo" },
                     { key: "bank", label: "Chuyển khoản QR ngân hàng", desc: "Quét mã VietQR chuyển khoản siêu tốc" },
-                  ].map((m) => (
+                  ].filter(m => paymentOptions[m.key]).map((m) => (
                     <Pressable
                       key={m.key}
                       onPress={() => setPaymentMethod(m.key)}
@@ -2172,6 +2229,7 @@ export default function App() {
                   </Pressable>
                 )}
 
+                {pendingCheckout && <Text style={styles.paymentWaitText}>Có yêu cầu đặt hàng chưa xác định kết quả. Gửi lại sẽ kiểm tra đúng yêu cầu đã lưu.</Text>}
                 {orderError ? <Text style={styles.orderError}>{orderError}</Text> : null}
 
                 <View style={styles.checkoutTotal}>
