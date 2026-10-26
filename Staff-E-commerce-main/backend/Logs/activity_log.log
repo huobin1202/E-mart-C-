@@ -1139,3 +1139,10 @@
 [2026-10-26 14:27:27] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#register] [IP:127.0.0.1] {"username":"haha","password":"[REDACTED]","fullName":"minas","phone":"0945021928"}
 [2026-10-26 14:27:32] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#register] [IP:127.0.0.1] {"username":"lolo","password":"[REDACTED]","fullName":"minas","phone":"0945021928"}
 [2026-10-26 14:28:34] [User:1] [Action:CREATE_Customers] [Entity:Customers#0] [IP:127.0.0.1] {"fullName":"\u0111asa","email":null,"phone":"0945021928","address":null,"dateOfBirth":null}
+[2026-10-26 16:40:58] [User:2] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"username":"admin","password":"[REDACTED]"}
+[2026-10-26 16:41:04] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-26 16:43:18] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-26 16:44:56] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-26 16:45:22] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-26 16:45:22] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-26 16:45:28] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
