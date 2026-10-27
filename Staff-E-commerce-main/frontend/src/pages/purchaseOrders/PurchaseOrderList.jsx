@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDebouncedSearch } from "../../hook/useDebouncedSearch";
+import { useLocation, useNavigate } from "react-router-dom";
 import { getAllSuppliers } from "../../api/supplierApi";
 import { getProductsPaginated } from "../../api/apiClient";
 import {
@@ -22,6 +23,8 @@ const statusStyle = {
 };
 
 export default function PurchaseOrderList() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
@@ -69,6 +72,16 @@ export default function PurchaseOrderList() {
       .then(([supplierData, productData]) => {
         setSuppliers((supplierData || []).filter((supplier) => supplier.isActive));
         setProducts(productData.items || []);
+        const prefill = location.state?.prefillProduct;
+        if (prefill) {
+          setForm({
+            supplierId: String(prefill.supplierId ?? prefill.supplier?.id ?? prefill.supplier_id ?? ""),
+            note: `Nhập hàng bổ sung: ${prefill.productName ?? prefill.name ?? ""}`,
+            items: [{ productId: String(prefill.id), quantity: 1, importPrice: "" }],
+          });
+          setShowCreate(true);
+          navigate(location.pathname, { replace: true, state: null });
+        }
       })
       .catch((err) => setError(err.message || "Không thể tải dữ liệu tạo phiếu nhập."));
   }, []);
@@ -133,7 +146,7 @@ export default function PurchaseOrderList() {
 
       <div className="overflow-x-auto border border-gray-200 rounded-md bg-white">
         <table className="min-w-full text-sm"><thead className="bg-gray-50 text-left text-gray-600"><tr><th className="px-4 py-3 font-medium">Mã phiếu</th><th className="px-4 py-3 font-medium">Nhà cung cấp</th><th className="px-4 py-3 font-medium">Người lập</th><th className="px-4 py-3 font-medium text-right">Tổng tiền</th><th className="px-4 py-3 font-medium">Trạng thái</th><th className="px-4 py-3 font-medium">Ngày lập</th><th className="px-4 py-3" /></tr></thead>
-          <tbody>{loading ? <tr><td colSpan="7" className="px-4 py-10 text-center text-gray-500">Đang tải...</td></tr> : orders.length === 0 ? <tr><td colSpan="7" className="px-4 py-10 text-center text-gray-500">Chưa có phiếu nhập phù hợp.</td></tr> : orders.map((order) => <tr key={order.id} className="border-t border-gray-100 hover:bg-gray-50"><td className="px-4 py-3 font-medium text-gray-900">{order.poCode}</td><td className="px-4 py-3">{order.supplierName}</td><td className="px-4 py-3">{order.userName || "-"}</td><td className="px-4 py-3 text-right">{formatMoney(order.totalAmount)}</td><td className="px-4 py-3"><span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${statusStyle[order.status] || "bg-gray-100 text-gray-700"}`}>{order.status === "pending" ? "Chờ xử lý" : order.status === "completed" ? "Đã nhập kho" : "Đã hủy"}</span></td><td className="px-4 py-3 whitespace-nowrap">{formatDate(order.createdAt)}</td><td className="px-4 py-3 text-right"><button onClick={() => openDetail(order.id)} className="text-primary-700 hover:underline">Chi tiết</button></td></tr>)}</tbody>
+          <tbody>{loading ? <tr><td colSpan="7" className="px-4 py-10 text-center text-gray-500">Đang tải...</td></tr> : orders.length === 0 ? <tr><td colSpan="7" className="px-4 py-10 text-center text-gray-500">Chưa có phiếu nhập phù hợp.</td></tr> : orders.map((order) => <tr key={order.id} onClick={() => openDetail(order.id)} title="Bấm để xem chi tiết" className="cursor-pointer border-t border-gray-100 hover:bg-primary-50/60"><td className="px-4 py-3 font-medium text-gray-900">{order.poCode}</td><td className="px-4 py-3">{order.supplierName}</td><td className="px-4 py-3">{order.userName || "-"}</td><td className="px-4 py-3 text-right">{formatMoney(order.totalAmount)}</td><td className="px-4 py-3"><span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${statusStyle[order.status] || "bg-gray-100 text-gray-700"}`}>{order.status === "pending" ? "Chờ xử lý" : order.status === "completed" ? "Đã nhập kho" : "Đã hủy"}</span></td><td className="px-4 py-3 whitespace-nowrap">{formatDate(order.createdAt)}</td><td className="px-4 py-3 text-right" onClick={(event) => event.stopPropagation()}><button onClick={() => openDetail(order.id)} className="text-primary-700 hover:underline">Chi tiết</button></td></tr>)}</tbody>
         </table>
       </div>
       <Pagination meta={meta} onPageChange={setPage} />

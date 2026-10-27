@@ -66,6 +66,7 @@ const CategoryAddModal = ({ isOpen, onClose, onSuccess }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (loading) return;
     setError("");
     setSuccessMessage("");
 
@@ -98,11 +99,8 @@ const CategoryAddModal = ({ isOpen, onClose, onSuccess }) => {
           description: "",
         });
 
-        // Close modal after 1.5 seconds
-        setTimeout(() => {
-          onSuccess();
-          onClose();
-        }, 1500);
+        onSuccess?.();
+        onClose();
       }
     } catch (err) {
       console.error("Error creating category:", err);

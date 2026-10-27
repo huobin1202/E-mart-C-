@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import ProductDescription from "./components/ProductDescription";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AppState,
   ActivityIndicator,
   Alert,
   Animated,
@@ -62,6 +63,13 @@ function deliveryAddressFromProfile(value) {
     : { street: (value || "").trim(), ward: "", city: "", otherReceiver: false };
 }
 
+function normalizeVietnamesePhone(value) {
+  let phone = String(value || "").trim().replace(/[\s().-]/g, "");
+  if (phone.startsWith("+84")) phone = `0${phone.slice(3)}`;
+  else if (phone.startsWith("84")) phone = `0${phone.slice(2)}`;
+  return phone;
+}
+
 // Bảng màu chuẩn Bách Hóa Xanh
 const BHX_GREEN = "#008848";
 const BHX_DARK_GREEN = "#006837";
@@ -78,9 +86,10 @@ const money = (value) => new Intl.NumberFormat("vi-VN", { style: "currency", cur
 const productPriceLabel = (product, price = product.price) => `${money(price)}${product.unitName ? `/${product.unitName}` : ""}`;
 const stockLimit = (product) => Number.isFinite(product?.stockQuantity) ? Math.max(0, Math.floor(product.stockQuantity)) : 0;
 
-function ProductStock({ product, style = styles.stockLabel }) {
+function ProductStock({ product, reservedQuantity = 0, style = styles.stockLabel }) {
   if (product.stockQuantity == null) return null;
-  return <Text style={style}>Còn: {product.stockQuantity}{product.unitName ? ` ${product.unitName}` : ""}</Text>;
+  const available = Math.max(0, stockLimit(product) - reservedQuantity);
+  return <Text style={style}>Còn: {available}{product.unitName ? ` ${product.unitName}` : ""}</Text>;
 }
 
 const productDiscountAmount = (product) => Math.max(0, product.discountAmount ?? ((product.originalPrice ?? product.price) - product.price));
@@ -258,7 +267,7 @@ const ProductCard = memo(function ProductCard({ product, cartQty = 0, onAdd, onQ
           )}
         </View>
 
-        <ProductStock product={product} />
+        <ProductStock product={product} reservedQuantity={cartQty} />
         {/* Smart Stepper Control */}
         <View style={styles.stepperContainer}>
           {cartQty === 0 ? (
@@ -297,7 +306,7 @@ const ProductCard = memo(function ProductCard({ product, cartQty = 0, onAdd, onQ
   );
 });
 
-function ProductDetails({ product, products = [], quantity, onClose, onAdd, onQuantityChange, onQuantitySet, onViewCart, onOpen, flight, onFlightComplete, descriptionStatus }) {
+function ProductDetails({ product, products = [], quantity, getCartQuantity, onClose, onAdd, onQuantityChange, onQuantitySet, onViewCart, onOpen, flight, onFlightComplete, descriptionStatus }) {
   const relatedProducts = product.categoryId == null ? [] : products.filter((item) => (
     String(item.categoryId) === String(product.categoryId) && String(item.id) !== String(product.id)
   ));
@@ -323,7 +332,7 @@ function ProductDetails({ product, products = [], quantity, onClose, onAdd, onQu
             </View>
             {productDiscountAmount(product) > 0 && <Text style={styles.productDetailSaving}>Tiết kiệm {money(productDiscountAmount(product))}</Text>}
           </View>
-          <ProductStock product={product} style={styles.productDetailStock} />
+          <ProductStock product={product} reservedQuantity={quantity} style={styles.productDetailStock} />
         </View>
         <View style={styles.relatedProductsSection}>
           <Text style={styles.relatedProductsTitle}>Sản phẩm liên quan</Text>
@@ -336,7 +345,7 @@ function ProductDetails({ product, products = [], quantity, onClose, onAdd, onQu
                   </View>
                   <Text style={styles.relatedProductName} numberOfLines={2}>{item.productName}</Text>
                   <Text style={styles.relatedProductPrice}>{productPriceLabel(item)}</Text>
-                  <ProductStock product={item} />
+                  <ProductStock product={item} reservedQuantity={getCartQuantity?.(item.id) || 0} />
                 </Pressable>
               ))}
             </ScrollView>
@@ -560,6 +569,9 @@ export default function App() {
   const [registerMode, setRegisterMode] = useState(false);
   const [registerFullName, setRegisterFullName] = useState("");
   const [registerPhone, setRegisterPhone] = useState("");
+  const [registerEmail, setRegisterEmail] = useState("");
+  const [registerAddress, setRegisterAddress] = useState("");
+  const [registerDateOfBirth, setRegisterDateOfBirth] = useState("");
   const [accountName, setAccountName] = useState("");
   const [accountEmail, setAccountEmail] = useState("");
   const [accountAddress, setAccountAddress] = useState("");
@@ -610,12 +622,14 @@ export default function App() {
     return () => { active = false; };
   }, [customer?.id, customer?.address, customerToken]);
 
-  const loadStore = useCallback(async () => {
-    setLoading(true);
-    setLoadError("");
+  const loadStore = useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+      setLoadError("");
+    }
     try {
       const [productsResponse, categoriesResponse] = await Promise.all([
-        fetch(`${API_URL}/storefront/products`),
+        fetch(`${API_URL}/storefront/products`, { cache: "no-store" }),
         fetch(`${API_URL}/storefront/categories`),
       ]);
       if (!productsResponse.ok) throw new Error(await readError(productsResponse));
@@ -624,13 +638,19 @@ export default function App() {
       setProducts(Array.isArray(productData) ? productData : []);
       setCategories(Array.isArray(categoryData) ? categoryData : []);
     } catch (error) {
-      setLoadError(error.message || "Không thể tải sản phẩm.");
+      if (!silent) setLoadError(error.message || "Không thể tải sản phẩm.");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { loadStore(); }, [loadStore]);
+  useEffect(() => {
+    loadStore();
+    const stockRefresh = setInterval(() => {
+      if (AppState.currentState === "active") loadStore(true);
+    }, 15000);
+    return () => clearInterval(stockRefresh);
+  }, [loadStore]);
 
   const productInfoRequest = useRef(null);
   const [descriptionStatus, setDescriptionStatus] = useState(null);
@@ -781,15 +801,28 @@ export default function App() {
   };
 
   const registerCustomer = async () => {
-    const username = loginUsername.trim();
     const fullName = registerFullName.trim();
-    const phone = registerPhone.trim();
-    if (username.length < 3 || loginPassword.length < 6 || fullName.length < 2) {
-      setAccountError("Vui lòng nhập tên đăng nhập, mật khẩu và họ tên hợp lệ.");
+    const phone = normalizeVietnamesePhone(registerPhone);
+    const email = registerEmail.trim();
+    const address = registerAddress.trim();
+    if (loginPassword.length < 6 || fullName.length < 2) {
+      setAccountError("Vui lòng nhập họ tên và mật khẩu hợp lệ (ít nhất 6 ký tự).");
       return;
     }
-    if (!/^(0|\+84)[35789]\d{8}$/.test(phone)) {
+    if (!/^0[35789]\d{8}$/.test(phone)) {
       setAccountError("Số điện thoại Việt Nam chưa đúng định dạng.");
+      return;
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setAccountError("Email chưa đúng định dạng.");
+      return;
+    }
+    if (address.length > 500) {
+      setAccountError("Địa chỉ không được vượt quá 500 ký tự.");
+      return;
+    }
+    if (registerDateOfBirth && (!/^\d{4}-\d{2}-\d{2}$/.test(registerDateOfBirth) || new Date(`${registerDateOfBirth}T00:00:00`) > new Date())) {
+      setAccountError("Ngày sinh chưa hợp lệ.");
       return;
     }
 
@@ -800,7 +833,7 @@ export default function App() {
       const response = await fetch(`${API_URL}/storefront/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password: loginPassword, fullName, phone }),
+        body: JSON.stringify({ username: phone, password: loginPassword, fullName, phone, email: email || null, address: address || null, dateOfBirth: registerDateOfBirth || null }),
       });
       if (!response.ok) throw new Error(await readError(response));
       const result = await response.json();
@@ -811,13 +844,29 @@ export default function App() {
       setCustomerToken(result.token);
       setCustomer(result.customer);
       setAccountName(result.customer.fullName || "");
+      setAccountEmail(result.customer.email || "");
+      setAccountAddress(result.customer.address || "");
+      setAccountDateOfBirth(result.customer.dateOfBirth ? result.customer.dateOfBirth.slice(0, 10) : "");
       setCheckoutForm((form) => ({ ...form, fullName: result.customer.fullName || "", phone: result.customer.phone || "" }));
-      setAccountMessage("Tạo tài khoản thành công.");
+      setLoginPassword("");
+      setRegisterFullName("");
+      setRegisterPhone("");
+      setRegisterEmail("");
+      setRegisterAddress("");
+      setRegisterDateOfBirth("");
+      setTab("home");
     } catch (error) {
       setAccountError(error.message || "Không thể tạo tài khoản.");
     } finally {
       setAccountBusy(false);
     }
+  };
+
+  const markAccountEdited = (setter) => (value) => {
+    setter(value);
+    // A prior success must not look like confirmation for edits made afterward.
+    setAccountMessage("");
+    setAccountError("");
   };
 
   const saveAccountName = async () => {
@@ -852,7 +901,7 @@ export default function App() {
       setAccountAddress(profile.address || "");
       setAccountDateOfBirth(profile.dateOfBirth ? profile.dateOfBirth.slice(0, 10) : "");
       setCheckoutForm((form) => ({ ...form, fullName: profile.fullName }));
-      setAccountMessage("Đã cập nhật họ tên.");
+      setAccountMessage("Đã cập nhật thông tin tài khoản.");
     } catch (error) {
       setAccountError(error.message || "Không thể lưu thông tin tài khoản.");
     } finally {
@@ -908,39 +957,56 @@ export default function App() {
     }
   };
 
+  const clearCustomerSession = async () => {
+    const customerAddressKey = customer?.id ? `${ADDRESS_KEY}:${customer.id}` : null;
+    const sessionKeys = [CUSTOMER_TOKEN_KEY, CUSTOMER_KEY, ADDRESS_KEY, customerAddressKey].filter(Boolean);
+    let storageError = false;
+    try {
+      await AsyncStorage.multiRemove(sessionKeys);
+    } catch {
+      storageError = true;
+      await Promise.all(sessionKeys.map((key) => AsyncStorage.removeItem(key).catch(() => { })));
+    }
+
+    customerSession.current = "";
+    setCustomer(null);
+    setCustomerToken("");
+    setAccountName("");
+    setAccountEmail("");
+    setAccountAddress("");
+    setAccountDateOfBirth("");
+    setLoginUsername("");
+    setLoginPassword("");
+    setRegisterFullName("");
+    setRegisterPhone("");
+    setRegisterEmail("");
+    setRegisterAddress("");
+    setRegisterDateOfBirth("");
+    setAccountError("");
+    setAccountMessage("");
+    setDeliveryAddress({ city: "", ward: "", street: "", otherReceiver: false });
+    setAddressMessage("");
+    setProfilePage("");
+    setRegisterMode(false);
+    setDatePickerOpen(false);
+    setCheckoutOpen(false);
+    setCheckoutForm({ fullName: "", phone: "", address: "", note: "" });
+
+    if (storageError) Alert.alert("Đăng xuất", "Đã thoát tài khoản trong ứng dụng nhưng thiết bị chưa xóa được phiên đã lưu.");
+  };
+
   const logoutCustomer = () => {
-    Alert.alert("Đăng xuất", "Bạn muốn đăng xuất khỏi tài khoản này?", [
+    const title = "Đăng xuất";
+    const message = "Bạn muốn đăng xuất khỏi tài khoản này?";
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.confirm(`${title}\n${message}`)) {
+        clearCustomerSession();
+      }
+      return;
+    }
+    Alert.alert(title, message, [
       { text: "Ở lại", style: "cancel" },
-      {
-        text: "Đăng xuất",
-        style: "destructive",
-        onPress: async () => {
-          customerSession.current = "";
-          setCustomer(null);
-          setCustomerToken("");
-          setAccountName("");
-          setAccountEmail("");
-          setAccountAddress("");
-          setAccountDateOfBirth("");
-          setLoginUsername("");
-          setLoginPassword("");
-          setRegisterFullName("");
-          setRegisterPhone("");
-          setAccountError("");
-          setAccountMessage("");
-          setDeliveryAddress({ city: "", ward: "", street: "", otherReceiver: false });
-          setAddressMessage("");
-          setProfilePage("");
-          setDatePickerOpen(false);
-          setCheckoutOpen(false);
-          setCheckoutForm({ fullName: "", phone: "", address: "", note: "" });
-          try {
-            await AsyncStorage.multiRemove([CUSTOMER_TOKEN_KEY, CUSTOMER_KEY, ADDRESS_KEY, `${ADDRESS_KEY}:${customer.id}`]);
-          } catch {
-            Alert.alert("Đăng xuất", "Không thể xóa dữ liệu đăng nhập trên thiết bị. Vui lòng thử lại.");
-          }
-        },
-      },
+      { text: "Đăng xuất", style: "destructive", onPress: clearCustomerSession },
     ]);
   };
 
@@ -1157,6 +1223,7 @@ export default function App() {
       onOpen={openProduct}
       descriptionStatus={descriptionStatus?.id === selectedProduct.id ? descriptionStatus : null}
       quantity={getCartQuantity(selectedProduct.id)}
+      getCartQuantity={getCartQuantity}
       onClose={() => setSelectedProduct(null)}
       onAdd={addToCart}
       onQuantityChange={changeQuantity}
@@ -1644,13 +1711,13 @@ export default function App() {
       {profilePage && customer && customerToken ? <>
         <View style={styles.accountPageHeading}><Pressable style={styles.accountBackButton} onPress={() => { setProfilePage(""); setAccountError(""); setAccountMessage(""); setAddressMessage(""); }}><Text style={styles.accountBack}>‹</Text></Pressable><Text style={styles.accountPageTitle}>{profilePage === "personal" ? "Thông tin tài khoản" : "Địa chỉ nhận hàng"}</Text></View>
         {profilePage === "personal" ? <View style={styles.infoCard}>
-          <TextInput value={accountName} onChangeText={setAccountName} placeholder="Họ và tên *" style={styles.accountInput} maxLength={150} autoCapitalize="words" />
-          <TextInput value={accountEmail} onChangeText={setAccountEmail} placeholder="Email" style={styles.accountInput} keyboardType="email-address" autoCapitalize="none" />
+          <TextInput value={accountName} onChangeText={markAccountEdited(setAccountName)} placeholder="Họ và tên *" style={styles.accountInput} maxLength={150} autoCapitalize="words" />
+          <TextInput value={accountEmail} onChangeText={markAccountEdited(setAccountEmail)} placeholder="Email" style={styles.accountInput} keyboardType="email-address" autoCapitalize="none" />
           {Platform.OS === "web" ? (
             <input
               type="date"
               value={accountDateOfBirth}
-              onChange={(event) => setAccountDateOfBirth(event.target.value)}
+              onChange={(event) => markAccountEdited(setAccountDateOfBirth)(event.target.value)}
               style={styles.webDateInput}
               aria-label="Ngày sinh"
             />
@@ -1661,14 +1728,13 @@ export default function App() {
               </Text>
             </Pressable>
           )}
-          <TextInput value={accountAddress} onChangeText={setAccountAddress} placeholder="Địa chỉ" style={styles.accountInput} />
+          <TextInput value={accountAddress} onChangeText={markAccountEdited(setAccountAddress)} placeholder="Địa chỉ" style={styles.accountInput} />
           <Text style={[styles.accountInput, styles.phoneReadonly]}><Text style={styles.phoneHint}>Số điện thoại *</Text>{"\n"}{customer?.phone}</Text>
           {accountError ? <Text style={styles.orderError}>{accountError}</Text> : null}
           {accountMessage ? <Text style={styles.accountMessage}>{accountMessage}</Text> : null}
           <AppButton title={accountBusy ? "Đang lưu..." : "Lưu chỉnh sửa"} onPress={saveAccountName} disabled={accountBusy} />
 
         </View> : <View style={styles.infoCard}>
-          <Pressable style={styles.locationButton} onPress={() => Alert.alert("Lấy vị trí hiện tại", "Tính năng định vị sẽ được bổ sung khi ứng dụng tích hợp quyền truy cập vị trí.")}><Text style={styles.locationButtonText}>◎ Lấy vị trí hiện tại</Text></Pressable>
           <TextInput value={deliveryAddress.city} onChangeText={(city) => setDeliveryAddress((a) => ({ ...a, city }))} placeholder="Tỉnh/Thành phố" style={styles.accountInput} />
           <TextInput value={deliveryAddress.ward} onChangeText={(ward) => setDeliveryAddress((a) => ({ ...a, ward }))} placeholder="Phường/Xã" style={styles.accountInput} />
           <TextInput value={deliveryAddress.street} onChangeText={(street) => setDeliveryAddress((a) => ({ ...a, street }))} placeholder="Số nhà, tên đường" style={styles.accountInput} />
@@ -1705,9 +1771,12 @@ export default function App() {
         </> : <>
           <View style={styles.infoCard}>
             <Text style={styles.inputLabel}>{registerMode ? "TẠO TÀI KHOẢN KHÁCH HÀNG" : "ĐĂNG NHẬP KHÁCH HÀNG"}</Text>
-            {registerMode ? <TextInput value={registerFullName} onChangeText={setRegisterFullName} placeholder="Họ và tên" style={styles.formInput} autoCapitalize="words" /> : null}
-            {registerMode ? <TextInput value={registerPhone} onChangeText={setRegisterPhone} placeholder="Số điện thoại" style={styles.formInput} keyboardType="phone-pad" maxLength={13} autoComplete="tel" /> : null}
-            <TextInput value={loginUsername} onChangeText={setLoginUsername} placeholder="Tên đăng nhập" style={styles.formInput} autoCapitalize="none" autoComplete="username" />
+            {registerMode ? <TextInput value={registerFullName} onChangeText={setRegisterFullName} placeholder="Họ và tên *" style={styles.formInput} autoCapitalize="words" maxLength={150} /> : null}
+            {registerMode ? <TextInput value={registerPhone} onChangeText={setRegisterPhone} placeholder="Số điện thoại *" style={styles.formInput} keyboardType="phone-pad" maxLength={16} autoComplete="tel" /> : null}
+            {registerMode ? <TextInput value={registerEmail} onChangeText={setRegisterEmail} placeholder="Email" style={styles.formInput} keyboardType="email-address" autoCapitalize="none" maxLength={255} /> : null}
+            {registerMode ? <TextInput value={registerDateOfBirth} onChangeText={setRegisterDateOfBirth} placeholder="Ngày sinh (YYYY-MM-DD)" style={styles.formInput} keyboardType="numbers-and-punctuation" maxLength={10} /> : null}
+            {registerMode ? <TextInput value={registerAddress} onChangeText={setRegisterAddress} placeholder="Địa chỉ" style={styles.formInput} multiline maxLength={500} /> : null}
+            {!registerMode ? <TextInput value={loginUsername} onChangeText={setLoginUsername} placeholder="Số điện thoại" style={styles.formInput} autoCapitalize="none" autoComplete="tel" keyboardType="phone-pad" /> : null}
             <TextInput value={loginPassword} onChangeText={setLoginPassword} placeholder="Mật khẩu" style={styles.formInput} secureTextEntry autoCapitalize="none" autoComplete="password" />
             {accountError ? <Text style={styles.orderError}>{accountError}</Text> : null}
             <AppButton title={accountBusy ? (registerMode ? "Đang tạo tài khoản..." : "Đang đăng nhập...") : (registerMode ? "Tạo tài khoản" : "Đăng nhập")} onPress={registerMode ? registerCustomer : loginCustomer} disabled={accountBusy} />
@@ -1723,7 +1792,7 @@ export default function App() {
               <Text style={styles.infoTitle}>Chọn ngày sinh</Text>
               <TextInput
                 value={accountDateOfBirth}
-                onChangeText={setAccountDateOfBirth}
+                onChangeText={markAccountEdited(setAccountDateOfBirth)}
                 placeholder="YYYY-MM-DD"
                 style={styles.accountInput}
                 keyboardType="numbers-and-punctuation"
@@ -1996,7 +2065,7 @@ export default function App() {
                       </View>
                       <Text style={styles.drawerProductName} numberOfLines={2}>{product.productName}</Text>
                       <Text style={styles.drawerProductPrice}>{productPriceLabel(product)}</Text>
-                      <ProductStock product={product} style={styles.drawerProductStock} />
+                      <ProductStock product={product} reservedQuantity={cartItemMap[product.id] || 0} style={styles.drawerProductStock} />
                     </Pressable>
                   ))}
 
@@ -2105,7 +2174,8 @@ export default function App() {
                   maxLength={13}
                 />
 
-                <Text style={styles.inputLabel}>ĐỊA CHỈ NHẬN HÀNG</Text>
+                <Text style={styles.inputLabel}>ĐỊA CHỈ NHẬN HÀNG (CHỈ CHO ĐƠN NÀY)</Text>
+                <Text style={{ color: TEXT_MUTED, fontSize: 12, marginBottom: 6 }}>Bạn có thể nhập địa chỉ khác. Địa chỉ mặc định đã lưu sẽ không thay đổi.</Text>
                 <TextInput
                   value={checkoutForm.address}
                   onChangeText={(value) => setCheckoutForm((form) => ({ ...form, address: value }))}
@@ -2280,7 +2350,8 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  homeProductRow: { justifyContent: "space-between", marginBottom: 10 },
+  // Keep incomplete rows aligned with the same fixed column positions as full rows.
+  homeProductRow: { justifyContent: "flex-start", columnGap: 10, marginBottom: 10 },
   flyingProductOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 100, elevation: 100 },
   flyingProduct: { position: "absolute", top: 0, left: 0, width: 52, height: 52, borderRadius: 26, backgroundColor: "#fff", borderWidth: 2, borderColor: BHX_GREEN, overflow: "hidden" },
   flyingProductImage: { width: "100%", height: "100%" },
@@ -2295,7 +2366,7 @@ const styles = StyleSheet.create({
   bhxHeaderCircleBtn: { alignItems: "center", justifyContent: "center", gap: 4, minHeight: 48, minWidth: 44, paddingHorizontal: 2 },
   bhxHeaderBtnLabel: { color: "#fff", fontSize: 11, fontWeight: "700", textAlign: "center" },
   bhxModalSearchBox: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 8, minHeight: 42, backgroundColor: "#fff", borderRadius: 8, paddingHorizontal: 10 },
-  bhxModalSearchInput: { flex: 1, minWidth: 0, color: TEXT_DARK, fontSize: 12, paddingVertical: 8 },
+  bhxModalSearchInput: { flex: 1, minWidth: 0, color: TEXT_DARK, fontSize: 12, paddingVertical: 8, outlineStyle: "none" },
   drawerBody: { flex: 1, minHeight: 0, flexDirection: "row" },
   drawerSidebarWrapper: { backgroundColor: "#f1f5f9", flexShrink: 0 },
   drawerSidebar: { flex: 1 },
@@ -2396,7 +2467,7 @@ const styles = StyleSheet.create({
   cartBadgeText: { color: "#fff", fontSize: 10, fontWeight: "800" },
   searchBar: { height: 44, backgroundColor: "#f4f6f2", borderRadius: 11, marginTop: 12, paddingHorizontal: 12, flexDirection: "row", alignItems: "center" },
   searchIcon: { color: "#7f8a81", fontSize: 24, marginRight: 7 },
-  searchInput: { flex: 1, minWidth: 0, color: TEXT_DARK, fontSize: 13, paddingVertical: 0 },
+  searchInput: { flex: 1, minWidth: 0, color: TEXT_DARK, fontSize: 13, paddingVertical: 0, outlineStyle: "none" },
   searchClearButton: { width: 36, height: 44, alignItems: "center", justifyContent: "center" },
   searchCategoryBtn: { width: 36, height: 36, borderRadius: 8, backgroundColor: BHX_GREEN, alignItems: "center", justifyContent: "center", marginRight: 8 },
   promises: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 9, gap: 9 },
@@ -2646,8 +2717,6 @@ const styles = StyleSheet.create({
   phoneHint: { color: "#98a0ac", fontSize: 12 },
   deleteHint: { color: "#293443", fontSize: 14, lineHeight: 21, textAlign: "center", marginTop: 22 },
   deleteLink: { color: "#c44343", textDecorationLine: "underline", fontSize: 16, textAlign: "center", marginTop: 12, marginBottom: 5 },
-  locationButton: { minHeight: 48, borderWidth: 1, borderColor: "#e1e5e1", borderRadius: 10, alignItems: "center", justifyContent: "center", marginBottom: 15 },
-  locationButtonText: { color: BHX_GREEN, fontSize: 16, fontWeight: "800" },
   receiverLine: { color: "#293443", fontSize: 15, marginTop: 5, marginBottom: 10 },
   receiverPhone: { fontWeight: "900" },
   receiverCheck: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 9 },

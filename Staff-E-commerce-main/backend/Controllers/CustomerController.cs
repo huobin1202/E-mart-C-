@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using backend.Services;
 using backend.DTO;
+using Microsoft.EntityFrameworkCore;
 
 namespace backend.Controllers
 {
@@ -99,9 +100,19 @@ namespace backend.Controllers
         [HttpDelete("{id:int}")]
         public async Task<IActionResult> DeleteCustomer(int id)
         {
-            if (!await _service.DeleteCustomerAsync(id))
-                return NotFound("Customer not found.");
-            return NoContent();
+            if (await _service.HasLoginAccountAsync(id))
+                return Conflict(new { message = "Không thể xóa khách hàng đang có tài khoản đăng nhập. Hãy chuyển trạng thái khách hàng sang Không hoạt động để khóa đăng nhập và giữ nguyên lịch sử." });
+
+            try
+            {
+                if (!await _service.DeleteCustomerAsync(id))
+                    return NotFound(new { message = "Không tìm thấy khách hàng." });
+                return NoContent();
+            }
+            catch (DbUpdateException)
+            {
+                return Conflict(new { message = "Không thể xóa khách hàng vì hồ sơ đang được dữ liệu nghiệp vụ khác tham chiếu." });
+            }
         }
     }
 }

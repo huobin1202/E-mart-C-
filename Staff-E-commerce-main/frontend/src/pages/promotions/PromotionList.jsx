@@ -426,7 +426,9 @@ export default function PromotionList() {
                     {filteredItems.map((promo, idx) => (
                       <tr
                         key={promo.id}
-                        className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}
+                        onClick={() => setSelectedPromotionId(promo.id)}
+                        title="Bấm để xem chi tiết"
+                        className={`cursor-pointer hover:bg-primary-50/60 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
                       >
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="text-sm font-medium text-gray-900 font-mono bg-primary-50 px-2 py-1 rounded">
@@ -488,7 +490,7 @@ export default function PromotionList() {
                         <td className="px-6 py-4 whitespace-nowrap">
                           {getStatusBadge(promo)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm" onClick={(event) => event.stopPropagation()}>
                           <div className="flex items-center justify-end gap-2">
                             <button
                               onClick={() => setSelectedPromotionId(promo.id)}

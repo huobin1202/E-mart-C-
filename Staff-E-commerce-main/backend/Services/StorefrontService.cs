@@ -8,7 +8,6 @@ namespace backend.Services;
 
 public sealed class StorefrontService(
     StorefrontRepository repository,
-    BusMemoryCache<StorefrontProductDTO> productCache,
     BusMemoryCache<StorefrontCategoryResponse> categoryCache)
 {
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
@@ -17,10 +16,11 @@ public sealed class StorefrontService(
     public Task<Customer?> GetCustomerByPhoneAsync(string phone, string internationalPhone) => repository.GetCustomerByPhoneAsync(phone, internationalPhone);
     public Task<bool> CustomerHasAccountAsync(int customerId) => repository.CustomerHasAccountAsync(customerId);
     public Task<Role?> GetActiveCustomerRoleAsync() => repository.GetActiveCustomerRoleAsync();
-    public Task<User?> GetCustomerLoginAsync(string username) => repository.GetCustomerLoginAsync(username);
+    public Task<User?> GetCustomerLoginAsync(string identifier, string normalizedPhone) => repository.GetCustomerLoginAsync(identifier, normalizedPhone);
     public Task SaveRegistrationAsync(Customer customer, User user) => repository.SaveRegistrationAsync(customer, user);
     public Task UpdateLastLoginAsync(int userId, DateTime lastLogin) => repository.UpdateLastLoginAsync(userId, lastLogin);
     public Task<bool> EmailUsedByOtherAsync(int customerId, string email) => repository.EmailUsedByOtherAsync(customerId, email);
+    public Task<bool> UserEmailExistsAsync(string email) => repository.UserEmailExistsAsync(email);
     public Task<User?> GetUserByCustomerIdAsync(int customerId) => repository.GetUserByCustomerIdAsync(customerId);
     public Task SaveAccountAsync(Customer customer, User? account) => repository.SaveAccountAsync(customer, account);
     public Task SaveCustomerAsync(Customer customer) => repository.SaveCustomerAsync(customer);
@@ -51,36 +51,31 @@ public sealed class StorefrontService(
         IReadOnlyDictionary<int, string> productNames)
     {
         await repository.SaveOrderAndReduceInventoryAsync(order, appliedPromotion, requestedLines, productNames);
-        productCache.Clear();
     }
 
     public async Task<List<StorefrontProductDTO>> GetAvailableProductsAsync()
     {
-        var (products, _) = await productCache.GetOrCreateAsync(async () =>
+        var products = await repository.GetAvailableProductsAsync();
+        var promotions = await repository.GetActiveProductPromotionsAsync(
+            products.Select(product => product.Id).ToList(), DateTimeHelper.VietnamToday);
+        foreach (var product in products)
         {
-            var loadedProducts = await repository.GetAvailableProductsAsync();
-            var promotions = await repository.GetActiveProductPromotionsAsync(
-                loadedProducts.Select(product => product.Id).ToList(), DateTimeHelper.VietnamToday);
-            foreach (var product in loadedProducts)
-            {
-                var best = promotions.Where(promotion => promotion.ProductId == product.Id)
-                    .Select(promotion => new
-                    {
-                        Promotion = promotion,
-                        Discount = CalculateProductDiscount(product.OriginalPrice, promotion.DiscountType, promotion.Value, promotion.MaxDiscount)
-                    })
-                    .OrderByDescending(item => item.Discount)
-                    .FirstOrDefault();
-                if (best == null || best.Discount <= 0) continue;
-                product.Price = Math.Max(0, product.OriginalPrice - best.Discount);
-                product.PromotionName = best.Promotion.Name;
-                product.DiscountAmount = best.Discount;
-                product.DiscountPercent = product.OriginalPrice == 0 ? 0 : Math.Round(best.Discount / product.OriginalPrice * 100, 0);
-                product.PromotionEndsAt = best.Promotion.EndDate;
-            }
-            return loadedProducts;
-        }, CacheTtl);
-        return products.ToList();
+            var best = promotions.Where(promotion => promotion.ProductId == product.Id)
+                .Select(promotion => new
+                {
+                    Promotion = promotion,
+                    Discount = CalculateProductDiscount(product.OriginalPrice, promotion.DiscountType, promotion.Value, promotion.MaxDiscount)
+                })
+                .OrderByDescending(item => item.Discount)
+                .FirstOrDefault();
+            if (best == null || best.Discount <= 0) continue;
+            product.Price = Math.Max(0, product.OriginalPrice - best.Discount);
+            product.PromotionName = best.Promotion.Name;
+            product.DiscountAmount = best.Discount;
+            product.DiscountPercent = product.OriginalPrice == 0 ? 0 : Math.Round(best.Discount / product.OriginalPrice * 100, 0);
+            product.PromotionEndsAt = best.Promotion.EndDate;
+        }
+        return products;
     }
 
     private static decimal CalculateProductDiscount(decimal price, string discountType, decimal value, decimal? maxDiscount)

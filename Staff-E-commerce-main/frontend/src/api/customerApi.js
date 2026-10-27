@@ -1,28 +1,4 @@
-const BASE_URL = "http://localhost:5099/api";
-
-async function request(path, options = {}) {
-  const url = `${BASE_URL}${path}`;
-  const res = await fetch(url, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(localStorage.getItem("auth_token")
-        ? { Authorization: `Bearer ${localStorage.getItem("auth_token")}` }
-        : {}),
-    },
-    ...options,
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`${res.status} ${res.statusText} - ${errText}`);
-  }
-
-  const contentType = res.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) {
-    return res.json();
-  }
-  return res.text();
-}
+import { request } from "./apiClient";
 
 // Lấy danh sách khách hàng với phân trang
 export async function getCustomers(
@@ -57,7 +33,7 @@ export async function createCustomer(customerData) {
 // Cập nhật thông tin khách hàng
 export async function updateCustomer(customerId, customerData) {
   return request(`/customers/${customerId}`, {
-    method: "PUT",
+    method: "PATCH",
     body: JSON.stringify(customerData),
   });
 }

@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { getInvoice, getInvoices } from "../../api/invoiceApi";
 import { useDebouncedSearch } from "../../hook/useDebouncedSearch";
 import { orderStatusLabels } from "../../utils/orderStatus";
+import { useRealtimeNotifications } from "../../hooks/useRealtimeNotifications";
 
 const money = (value) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(value || 0);
 const dateTime = (value) => new Date(value).toLocaleString("vi-VN");
@@ -24,6 +25,7 @@ export default function InvoicePage() {
   const [selected, setSelected] = useState(null);
   const [error, setError] = useState("");
   const latestRequest = useRef(0);
+  useRealtimeNotifications({ NewOrderPlaced: () => load() });
 
   useDebouncedSearch(customerInput, customerSearch, (keyword) => {
     setCustomerSearch(keyword);

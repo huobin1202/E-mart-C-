@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { getCustomerById } from "../../api/customerApi";
 
 export default function CustomerDetailModal({ onClose, customerId }) {
   const [customer, setCustomer] = useState(null);
@@ -13,13 +14,7 @@ export default function CustomerDetailModal({ onClose, customerId }) {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(
-          `http://localhost:5099/api/customers/${customerId}`
-        );
-        if (!response.ok) {
-          throw new Error("Failed to fetch customer details");
-        }
-        const data = await response.json();
+        const data = await getCustomerById(customerId);
         setCustomer(data);
       } catch (err) {
         setError(err.message || "Error loading customer details");

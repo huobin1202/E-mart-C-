@@ -121,9 +121,8 @@ export async function request(path, options = {}) {
   const isLoginPath = path.toLowerCase().startsWith("/auth/login");
 
   // Build headers
-  const defaultHeaders = {
-    "Content-Type": "application/json",
-  };
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  const defaultHeaders = isFormData ? {} : { "Content-Type": "application/json" };
 
   const token = getAuthToken();
   if (token && !options.skipAuth) {
@@ -148,7 +147,7 @@ export async function request(path, options = {}) {
   if (
     fetchOptions.body &&
     typeof fetchOptions.body === "object" &&
-    !(fetchOptions.body instanceof FormData)
+    !(typeof FormData !== "undefined" && fetchOptions.body instanceof FormData)
   ) {
     fetchOptions.body = JSON.stringify(fetchOptions.body);
   }

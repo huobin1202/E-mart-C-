@@ -10,13 +10,15 @@ public class PurchaseOrderService
     private readonly PurchaseOrderRepository _repository;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly BusMemoryCache<PurchaseOrderListDTO> _cache;
+    private readonly RealtimeNotificationService _realtime;
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
 
-    public PurchaseOrderService(PurchaseOrderRepository repository, IHttpContextAccessor httpContextAccessor, BusMemoryCache<PurchaseOrderListDTO> cache)
+    public PurchaseOrderService(PurchaseOrderRepository repository, IHttpContextAccessor httpContextAccessor, BusMemoryCache<PurchaseOrderListDTO> cache, RealtimeNotificationService realtime)
     {
         _repository = repository;
         _httpContextAccessor = httpContextAccessor;
         _cache = cache;
+        _realtime = realtime;
     }
 
     public async Task<PaginationResult<PurchaseOrderListDTO>> GetPagedAsync(int page, int pageSize, string? search, string? status, int? supplierId)
@@ -81,7 +83,15 @@ public class PurchaseOrderService
     {
         await _repository.CompleteAsync(id, GetCurrentUserId());
         _cache.Clear();
-        return (await GetByIdAsync(id))!;
+        var completed = (await GetByIdAsync(id))!;
+        await _realtime.BroadcastStock("StockUpdated", new
+        {
+            productIds = completed.Items.Select(item => item.ProductId).Distinct().ToArray(),
+            purchaseOrderId = completed.Id,
+            source = "purchase-order",
+            changedAt = DateTime.UtcNow
+        });
+        return completed;
     }
 
     public async Task<PurchaseOrderDetailDTO> CancelAsync(int id)

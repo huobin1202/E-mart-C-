@@ -37,7 +37,10 @@ namespace backend.Services
         {
             var all = await GetAllUsersAsync();
             IEnumerable<UserDTO> filtered = all;
-            if (!string.IsNullOrWhiteSpace(role))
+            if (string.Equals(role?.Trim(), "internal", StringComparison.OrdinalIgnoreCase))
+                filtered = filtered.Where(user => string.Equals(user.Role, "admin", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(user.Role, "staff", StringComparison.OrdinalIgnoreCase));
+            else if (!string.IsNullOrWhiteSpace(role))
                 filtered = filtered.Where(user => string.Equals(user.Role, role.Trim(), StringComparison.OrdinalIgnoreCase));
             if (isActive.HasValue)
                 filtered = filtered.Where(user => user.IsActive == isActive.Value && user.IsLocked != isActive.Value);

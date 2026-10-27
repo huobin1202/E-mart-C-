@@ -17,9 +17,7 @@ namespace backend.Services
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly InvoiceService _invoiceService;
         private readonly PosCheckoutService _checkout;
-        private readonly BusMemoryCache<OrderDTO> _orderCache;
-        private readonly BusMemoryCache<OnlineOrderDTO> _onlineOrderCache;
-        private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
+        private readonly RealtimeNotificationService _realtime;
 
         public OrderService(
             OrderRepository orderRepo,
@@ -28,8 +26,7 @@ namespace backend.Services
             CustomerRepository customerRepo,
             IHttpContextAccessor httpContextAccessor,
             InvoiceService invoiceService, PosCheckoutService checkout,
-            BusMemoryCache<OrderDTO> orderCache,
-            BusMemoryCache<OnlineOrderDTO> onlineOrderCache)
+            RealtimeNotificationService realtime)
         {
             _orderRepo = orderRepo;
             _logService = logService;
@@ -38,8 +35,7 @@ namespace backend.Services
             _httpContextAccessor = httpContextAccessor;
             _invoiceService = invoiceService;
             _checkout = checkout;
-            _orderCache = orderCache;
-            _onlineOrderCache = onlineOrderCache;
+            _realtime = realtime;
         }
 
         // Tự động lấy user_id
@@ -163,24 +159,10 @@ namespace backend.Services
             string? orderType = null
         )
         {
-            var cached = await _orderCache.GetOrCreateAsync(
-                () => _orderRepo.GetAllForCacheAsync(), CacheTtl);
-            IEnumerable<OrderDTO> filtered = cached.Items;
-            if (!string.IsNullOrWhiteSpace(status)) filtered = filtered.Where(o => o.Status == status);
-            if (!string.IsNullOrWhiteSpace(orderType)) filtered = filtered.Where(o => o.OrderType == orderType);
-            if (startDate.HasValue) filtered = filtered.Where(o => o.CreatedAt >= startDate.Value.Date);
-            if (endDate.HasValue) filtered = filtered.Where(o => o.CreatedAt <= endDate.Value.Date.AddDays(1).AddTicks(-1));
-            if (!string.IsNullOrWhiteSpace(search))
-            {
-                var keyword = search.Trim();
-                filtered = filtered.Where(o =>
-                    (o.OrderNumber?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                    (o.CustomerName?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                    (o.UserName?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false));
-            }
-            var allItems = filtered.ToList();
-            var totalItems = allItems.Count;
-            var data = allItems.Skip((pageNumber - 1) * pageSize).Take(pageSize).ToList();
+            pageNumber = Math.Max(pageNumber, 1);
+            pageSize = Math.Clamp(pageSize, 1, 100);
+            var (data, totalItems) = await _orderRepo.GetPagedOrdersAsync(
+                pageNumber, pageSize, status, startDate, endDate, search, orderType);
 
             return new PagedResult<OrderDTO>
             {
@@ -229,10 +211,10 @@ namespace backend.Services
         public async Task<PagedResult<OnlineOrderDTO>> GetOnlineOrdersAsync(
             int pageNumber, int pageSize, string? status, string? search, int? orderId = null)
         {
-            var (cachedOrders, _) = await _onlineOrderCache.GetOrCreateAsync(async () =>
-            {
-                var orders = await _orderRepo.GetAllOnlineOrdersAsync();
-                return orders.Select(o =>
+            // Mobile checkouts can be committed by another API instance, so always
+            // query SQL here instead of serving a process-local cache entry.
+            var orders = await _orderRepo.GetAllOnlineOrdersAsync();
+            var allOrders = orders.Select(o =>
                 {
                     var delivery = OrderDeliveryDetails.FromOrder(o);
                     return new OnlineOrderDTO
@@ -256,9 +238,8 @@ namespace backend.Services
                         }).ToList()
                     };
                 }).ToList();
-            }, CacheTtl);
 
-            IEnumerable<OnlineOrderDTO> filtered = cachedOrders;
+            IEnumerable<OnlineOrderDTO> filtered = allOrders;
             if (orderId.HasValue) filtered = filtered.Where(order => order.Id == orderId.Value);
             if (!string.IsNullOrWhiteSpace(status)) filtered = filtered.Where(order => order.Status == status);
             if (!string.IsNullOrWhiteSpace(search))
@@ -289,7 +270,7 @@ namespace backend.Services
             var updated = await _orderRepo.ConfirmOnlineOrderAsync(orderId, userId);
             if (updated)
             {
-                _onlineOrderCache.Clear();
+                await _realtime.BroadcastToWeb("OrderStatusChanged", new { orderId, status = "processing" });
                 await _invoiceService.SyncOrderLifecycleAsync(orderId);
             }
             return updated;
@@ -301,7 +282,7 @@ namespace backend.Services
             var cancelled = await _orderRepo.RejectOnlineOrderAsync(orderId, reason);
             if (cancelled)
             {
-                _onlineOrderCache.Clear();
+                await _realtime.BroadcastToWeb("OrderStatusChanged", new { orderId, status = "cancelled" });
                 await _invoiceService.SyncOrderLifecycleAsync(orderId);
             }
             return cancelled;
@@ -314,7 +295,7 @@ namespace backend.Services
             var delivered = await _orderRepo.DeliverOnlineOrderAsync(orderId, userId);
             if (delivered)
             {
-                _onlineOrderCache.Clear();
+                await _realtime.BroadcastToWeb("OrderStatusChanged", new { orderId, status = "completed" });
                 await _invoiceService.SyncOrderLifecycleAsync(orderId);
             }
             return delivered;
@@ -326,7 +307,6 @@ namespace backend.Services
             if (order == null || order.PaymentStatus != "paid" || order.Status == "cancelled") return false;
             await _invoiceService.EnsureInvoiceForOrderAsync(orderId);
             var refunded = await _orderRepo.MarkOrderRefundedAsync(orderId);
-            if (refunded) _onlineOrderCache.Clear();
             await _invoiceService.SyncOrderLifecycleAsync(orderId);
             return refunded;
         }

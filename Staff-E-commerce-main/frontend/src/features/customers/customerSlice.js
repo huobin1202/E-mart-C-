@@ -76,8 +76,8 @@ export const removeCustomer = createAsyncThunk(
   "customers/removeCustomer",
   async (customerId, { rejectWithValue }) => {
     try {
-      const data = await deleteCustomer(customerId);
-      return data;
+      await deleteCustomer(customerId);
+      return { id: customerId };
     } catch (error) {
       return rejectWithValue(error.message || "Error deleting customer");
     }
@@ -122,6 +122,15 @@ const customerSlice = createSlice({
       state.filters.status = "all";
       state.pagination.currentPage = 1;
     },
+    mergeRealtimeCustomer: (state, action) => {
+      const customer = action.payload;
+      if (!customer?.id) return;
+      const index = state.items.findIndex((item) => Number(item.id) === Number(customer.id));
+      if (index >= 0) state.items[index] = { ...state.items[index], ...customer };
+      if (Number(state.currentCustomer?.id) === Number(customer.id)) {
+        state.currentCustomer = { ...state.currentCustomer, ...customer };
+      }
+    },
     clearError: (state) => {
       state.error = null;
     },
@@ -162,7 +171,7 @@ const customerSlice = createSlice({
       })
       .addCase(fetchCustomerById.fulfilled, (state, action) => {
         state.loading = false;
-        state.currentCustomer = action.payload.data;
+        state.currentCustomer = action.payload?.data ?? action.payload;
       })
       .addCase(fetchCustomerById.rejected, (state, action) => {
         state.loading = false;
@@ -178,7 +187,11 @@ const customerSlice = createSlice({
       .addCase(createNewCustomer.fulfilled, (state, action) => {
         state.loading = false;
         state.successMessage = "Tạo khách hàng thành công";
-        state.items.unshift(action.payload.data);
+        const customer = action.payload?.data ?? action.payload;
+        if (customer?.id) {
+          state.items = [customer, ...state.items.filter((item) => item.id !== customer.id)];
+          state.pagination.totalItems += 1;
+        }
       })
       .addCase(createNewCustomer.rejected, (state, action) => {
         state.loading = false;
@@ -194,13 +207,12 @@ const customerSlice = createSlice({
       .addCase(updateCustomerInfo.fulfilled, (state, action) => {
         state.loading = false;
         state.successMessage = "Cập nhật khách hàng thành công";
-        const index = state.items.findIndex(
-          (item) => item.id === action.payload.data.id
-        );
+        const customer = action.payload?.data ?? action.payload;
+        const index = state.items.findIndex((item) => item.id === customer?.id);
         if (index !== -1) {
-          state.items[index] = action.payload.data;
+          state.items[index] = customer;
         }
-        state.currentCustomer = action.payload.data;
+        state.currentCustomer = customer;
       })
       .addCase(updateCustomerInfo.rejected, (state, action) => {
         state.loading = false;
@@ -236,9 +248,10 @@ const customerSlice = createSlice({
       .addCase(removeCustomer.fulfilled, (state, action) => {
         state.loading = false;
         state.successMessage = "Xóa khách hàng thành công";
-        state.items = state.items.filter(
-          (item) => item.id !== action.payload.data.id
-        );
+        const customerId = action.payload?.id ?? action.meta.arg;
+        const hadCustomer = state.items.some((item) => item.id === customerId);
+        state.items = state.items.filter((item) => item.id !== customerId);
+        if (hadCustomer) state.pagination.totalItems = Math.max(0, state.pagination.totalItems - 1);
       })
       .addCase(removeCustomer.rejected, (state, action) => {
         state.loading = false;
@@ -252,6 +265,7 @@ export const {
   setSearchTerm,
   setStatusFilter,
   resetFilters,
+  mergeRealtimeCustomer,
   clearError,
   clearSuccess,
 } = customerSlice.actions;

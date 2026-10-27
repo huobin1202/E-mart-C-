@@ -29,9 +29,10 @@ public sealed class StorefrontRepository
     public Task<Role?> GetActiveCustomerRoleAsync() =>
         _context.Roles.FirstOrDefaultAsync(role => role.Name == "customer" && role.IsActive);
 
-    public Task<User?> GetCustomerLoginAsync(string username) =>
+    public Task<User?> GetCustomerLoginAsync(string identifier, string normalizedPhone) =>
         _context.Users.Include(user => user.RoleEntity).Include(user => user.Customer)
-            .FirstOrDefaultAsync(user => user.Username == username);
+            .FirstOrDefaultAsync(user => user.Username == identifier ||
+                (user.Customer != null && user.Customer.Phone == normalizedPhone));
 
     public async Task SaveRegistrationAsync(Customer customer, User user)
     {
@@ -51,6 +52,9 @@ public sealed class StorefrontRepository
 
     public Task<bool> EmailUsedByOtherAsync(int customerId, string email) =>
         _context.Customers.AnyAsync(item => item.Id != customerId && item.Email == email);
+
+    public Task<bool> UserEmailExistsAsync(string email) =>
+        _context.Users.AnyAsync(user => user.Email == email);
 
     public Task<User?> GetUserByCustomerIdAsync(int customerId) =>
         _context.Users.FirstOrDefaultAsync(user => user.CustomerId == customerId);

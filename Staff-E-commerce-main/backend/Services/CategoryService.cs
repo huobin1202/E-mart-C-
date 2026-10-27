@@ -31,6 +31,8 @@ namespace backend.Services
             {
                 Id = c.Id,
                 Name = c.Name,
+                Slug = c.Slug,
+                Description = c.Description,
                 CreatedAt = c.CreatedAt,
                 UpdatedAt = c.UpdatedAt,
                 IsActive = c.IsActive
@@ -115,6 +117,8 @@ namespace backend.Services
             {
                 Id = c.Id,
                 Name = c.Name,
+                Slug = c.Slug,
+                Description = c.Description,
                 IsActive = c.IsActive,
                 CreatedAt = c.CreatedAt,
                 UpdatedAt = c.UpdatedAt
@@ -142,6 +146,8 @@ namespace backend.Services
             {
                 Id = category.Id,
                 Name = category.Name,
+                Slug = category.Slug,
+                Description = category.Description,
                 IsActive = category.IsActive,
                 CreatedAt = category.CreatedAt,
                 UpdatedAt = category.UpdatedAt
@@ -239,6 +245,13 @@ namespace backend.Services
             var updatedCategory = await _repo.UpdateAsync(category);
             _cache.AddOrUpdate(MapToDto(updatedCategory), item => item.Id);
             return ServiceResultDTO<CategoryResponseDTO>.CreateSuccessResult(MapToCategoryResponseDto(updatedCategory), 200);
+        }
+
+        public async Task<bool> DeleteCategoryAsync(int id)
+        {
+            var deleted = await _repo.DeleteAsync(id);
+            if (deleted) _cache.RemoveWhere(item => item.Id == id);
+            return deleted;
         }
 
         // Map sang CategoryResponseDTO

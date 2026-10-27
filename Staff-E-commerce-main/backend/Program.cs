@@ -104,6 +104,7 @@ builder.Services.AddScoped<OrderService>();
 builder.Services.AddScoped<InvoiceService>();
 builder.Services.AddScoped<PosCheckoutService>();
 builder.Services.AddScoped<StorefrontService>();
+builder.Services.AddScoped<RealtimeNotificationService>();
 builder.Services.AddScoped<ActivityLogService>();
 builder.Services.AddScoped<CustomerService>();
 builder.Services.AddScoped<CategoryService>();
@@ -143,7 +144,17 @@ builder.Services.AddAuthentication(options =>
 {
     options.RequireHttpsMetadata = false; // true in production
     options.SaveToken = true;
-    options.Events = new JwtBearerEvents { OnTokenValidated = SessionValidator.ValidateAsync };
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = SessionValidator.ValidateAsync,
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            if (!string.IsNullOrEmpty(accessToken) && context.HttpContext.Request.Path.StartsWithSegments("/hub/notifications"))
+                context.Token = accessToken;
+            return Task.CompletedTask;
+        }
+    };
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = true,
@@ -211,7 +222,7 @@ app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseHttpsRedirection();
 
 app.MapControllers();
-app.MapHub<OrderHub>("/hub/orders").AllowAnonymous();
+app.MapHub<NotificationHub>("/hub/notifications");
 
 // -------------------------
 // Serve frontend SPA (Vite)

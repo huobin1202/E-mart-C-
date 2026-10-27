@@ -5,9 +5,7 @@ using backend.Models;
 using backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
-using backend.Hubs;
 using backend.Helpers;
 
 namespace backend.Controllers
@@ -22,7 +20,8 @@ namespace backend.Controllers
         private readonly IConfiguration _config;
         private readonly InvoiceService _invoiceService;
         private readonly StorefrontService _storefrontService;
-        private readonly IHubContext<OrderHub>? _orderHub;
+        private readonly CustomerService _customerService;
+        private readonly RealtimeNotificationService _realtime;
 
         public StorefrontController(
             JwtService jwt,
@@ -31,7 +30,8 @@ namespace backend.Controllers
             IConfiguration config,
             InvoiceService invoiceService,
             StorefrontService storefrontService,
-            IHubContext<OrderHub>? orderHub = null)
+            CustomerService customerService,
+            RealtimeNotificationService realtime)
         {
             _jwt = jwt;
             _promotions = promotions;
@@ -39,7 +39,8 @@ namespace backend.Controllers
             _config = config;
             _invoiceService = invoiceService;
             _storefrontService = storefrontService;
-            _orderHub = orderHub;
+            _customerService = customerService;
+            _realtime = realtime;
         }
 
         [HttpGet("promotions")]
@@ -77,11 +78,13 @@ namespace backend.Controllers
                 return BadRequest(new { message = "Mật khẩu phải có ít nhất 6 ký tự." });
             if (string.IsNullOrWhiteSpace(request.FullName) || request.FullName.Trim().Length < 2)
                 return BadRequest(new { message = "Họ tên phải có ít nhất 2 ký tự." });
+            if (request.DateOfBirth.HasValue && request.DateOfBirth.Value.Date > DateTime.UtcNow.Date)
+                return BadRequest(new { message = "Ngày sinh không thể ở trong tương lai." });
 
             var internationalPhone = $"+84{phone[1..]}";
-            var username = request.Username.Trim();
+            var username = phone;
             if (await _storefrontService.UsernameExistsAsync(username))
-                return Conflict(new { message = "Tên đăng nhập đã tồn tại." });
+                return Conflict(new { message = "Số điện thoại này đã được đăng ký." });
 
             var customer = await _storefrontService.GetCustomerByPhoneAsync(phone, internationalPhone);
 
@@ -99,7 +102,18 @@ namespace backend.Controllers
             else if (await _storefrontService.CustomerHasAccountAsync(customer.Id))
                 return Conflict(new { message = "Số điện thoại này đã được đăng ký." });
 
+            var email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
+            if (email != null && await _storefrontService.EmailUsedByOtherAsync(customer?.Id ?? 0, email))
+                return Conflict(new { message = "Email này đã được sử dụng cho khách hàng khác." });
+            if (email != null && await _storefrontService.UserEmailExistsAsync(email))
+                return Conflict(new { message = "Email này đã được sử dụng cho tài khoản khác." });
+
             customer.FullName = request.FullName.Trim();
+            customer.Phone = phone;
+            customer.Email = email;
+            customer.Address = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address.Trim();
+            customer.DateOfBirth = request.DateOfBirth;
+            customer.IsActive = true;
             customer.UpdatedAt = DateTime.UtcNow;
             var role = await _storefrontService.GetActiveCustomerRoleAsync();
             if (role == null)
@@ -120,6 +134,8 @@ namespace backend.Controllers
                 UpdatedAt = DateTime.UtcNow
             };
             await _storefrontService.SaveRegistrationAsync(customer, user);
+            _customerService.SyncRegisteredCustomer(customer);
+            await _realtime.BroadcastToWeb("CustomerCreated", ToCustomerAdminPayload(customer));
 
             var (token, expiresIn) = _jwt.GenerateToken(user);
             return Ok(new { token, tokenType = "Bearer", expiresIn, customer = ToCustomerProfile(customer) });
@@ -132,7 +148,8 @@ namespace backend.Controllers
             if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
                 return BadRequest(new { message = "Vui lòng nhập tên đăng nhập và mật khẩu." });
 
-            var user = await _storefrontService.GetCustomerLoginAsync(request.Username.Trim());
+            var identifier = request.Username.Trim();
+            var user = await _storefrontService.GetCustomerLoginAsync(identifier, NormalizePhone(identifier));
 
             if (user?.Customer == null || !string.Equals(user.RoleEntity?.Name, "customer", StringComparison.OrdinalIgnoreCase) ||
                 !user.IsActive || user.IsLocked || !user.RoleEntity.IsActive ||
@@ -179,6 +196,8 @@ namespace backend.Controllers
             customer.Address = address;
             customer.UpdatedAt = DateTime.UtcNow;
             await _storefrontService.SaveCustomerAsync(customer);
+            _customerService.SyncRegisteredCustomer(customer);
+            await _realtime.BroadcastToWeb("CustomerUpdated", ToCustomerAdminPayload(customer));
             return Ok(ToCustomerProfile(customer));
         }
 
@@ -220,6 +239,8 @@ namespace backend.Controllers
             {
                 return Conflict(new { message = "Không thể lưu thông tin. Email hoặc dữ liệu hồ sơ có thể bị trùng." });
             }
+            _customerService.SyncRegisteredCustomer(customer);
+            await _realtime.BroadcastToWeb("CustomerUpdated", ToCustomerAdminPayload(customer));
             return Ok(ToCustomerProfile(customer));
         }
 
@@ -275,11 +296,27 @@ namespace backend.Controllers
             RewardPoints = customer.RewardPoints
         };
 
+        private static object ToCustomerAdminPayload(Customer customer) => new
+        {
+            id = customer.Id,
+            fullName = customer.FullName,
+            phone = customer.Phone,
+            email = customer.Email,
+            address = customer.Address,
+            dateOfBirth = customer.DateOfBirth,
+            rewardPoints = customer.RewardPoints,
+            isActive = customer.IsActive,
+            createdAt = customer.CreatedAt,
+            updatedAt = customer.UpdatedAt
+        };
+
         private static string NormalizePhone(string phone)
         {
-            var normalized = Regex.Replace(phone.Trim(), "[\\s()-]", string.Empty);
+            var normalized = Regex.Replace(phone.Trim(), "[\\s().-]", string.Empty);
             if (normalized.StartsWith("+84", StringComparison.Ordinal))
                 normalized = $"0{normalized[3..]}";
+            else if (normalized.StartsWith("84", StringComparison.Ordinal))
+                normalized = $"0{normalized[2..]}";
             return normalized;
         }
 
@@ -474,20 +511,25 @@ namespace backend.Controllers
                 }
 
                 // Bắn thông báo Realtime SignalR tới Web POS
-                if (_orderHub != null)
+                await _realtime.BroadcastToWeb("NewOrderPlaced", new
                 {
-                    _ = _orderHub.Clients.All.SendAsync("NewOrderReceived", new
-                    {
-                        orderId = order.Id,
-                        orderNumber = order.OrderNumber,
-                        customerName = request.FullName.Trim(),
-                        phone = request.Phone.Trim(),
-                        totalAmount = order.TotalAmount,
-                        itemCount = items.Count,
-                        paymentMethod = requestedMethod,
-                        createdAt = order.CreatedAt
-                    });
-                }
+                    orderId = order.Id,
+                    orderNumber = order.OrderNumber,
+                    orderType = order.OrderType,
+                    customerName = request.FullName.Trim(),
+                    phone = request.Phone.Trim(),
+                    totalAmount = order.TotalAmount,
+                    itemCount = items.Count,
+                    paymentMethod = requestedMethod,
+                    createdAt = order.CreatedAt
+                });
+                await _realtime.BroadcastStock("StockUpdated", new
+                {
+                    productIds = requestedLines.Select(line => line.ProductId).ToArray(),
+                    orderId = order.Id,
+                    source = "mobile-checkout",
+                    changedAt = DateTime.UtcNow
+                });
 
                 return Ok(new
                 {
@@ -619,6 +661,14 @@ namespace backend.Controllers
 
         [Required, StringLength(20)]
         public string Phone { get; set; } = string.Empty;
+
+        [EmailAddress, StringLength(255)]
+        public string? Email { get; set; }
+
+        [StringLength(500)]
+        public string? Address { get; set; }
+
+        public DateTime? DateOfBirth { get; set; }
     }
 
     public class StorefrontAddressUpdateRequest

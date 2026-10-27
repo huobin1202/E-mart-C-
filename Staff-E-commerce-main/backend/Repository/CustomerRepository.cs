@@ -23,6 +23,7 @@ namespace backend.Repository
         public async Task<List<Customer>> GetAllAsync()
         {
             return await _context.Customers
+                .AsNoTracking()
                 .OrderBy(c => c.FullName)
                 .ToListAsync();
         }
@@ -79,6 +80,23 @@ namespace backend.Repository
         public async Task<bool> ExistsAsync(int id)
         {
             return await _context.Customers.AnyAsync(c => c.Id == id);
+        }
+
+        public Task<bool> HasLoginAccountAsync(int customerId) =>
+            _context.Users.AnyAsync(user => user.CustomerId == customerId);
+
+        public async Task<Customer> UpdateActiveAsync(Customer customer, bool isActive)
+        {
+            customer.IsActive = isActive;
+            customer.UpdatedAt = DateTime.UtcNow;
+            var account = await _context.Users.FirstOrDefaultAsync(user => user.CustomerId == customer.Id);
+            if (account != null)
+            {
+                account.IsActive = isActive;
+                account.UpdatedAt = DateTime.UtcNow;
+            }
+            await _context.SaveChangesAsync();
+            return customer;
         }
 
 

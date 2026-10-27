@@ -15,7 +15,7 @@ export default function RoleManagement() {
   useEffect(() => {
     Promise.all([getRoles(), getPermissions()])
       .then(([roleData, permissionData]) => {
-        const internalRoles = (roleData ?? []).filter((role) => role.name !== "customer");
+        const internalRoles = (roleData ?? []).filter((role) => ["admin", "staff"].includes(role.name?.toLowerCase()));
         setRoles(internalRoles);
         setPermissions(permissionData ?? []);
         if (internalRoles.length) selectRole(internalRoles[0]);

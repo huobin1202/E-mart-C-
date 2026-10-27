@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { getCategoryById, updateCategory } from "../../api/categoryApi";
 
 export default function CategoryEditModal({ onClose, categoryId, onSave }) {
   const [formData, setFormData] = useState({
@@ -40,13 +41,7 @@ export default function CategoryEditModal({ onClose, categoryId, onSave }) {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(
-          `http://localhost:5099/api/categories/${categoryId}`
-        );
-        if (!response.ok) {
-          throw new Error("Failed to fetch category details");
-        }
-        const data = await response.json();
+        const data = await getCategoryById(categoryId);
         setFormData({
           name: data.name || "",
           description: data.description || "",
@@ -78,6 +73,7 @@ export default function CategoryEditModal({ onClose, categoryId, onSave }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (saving || loading) return;
 
     // Validate form first
     const validationErrors = validateForm();
@@ -93,23 +89,7 @@ export default function CategoryEditModal({ onClose, categoryId, onSave }) {
     setErrors({});
 
     try {
-      const response = await fetch(
-        `http://localhost:5099/api/categories/${categoryId}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(formData),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to update category");
-      }
-
-      const updatedData = await response.json();
+      const updatedData = await updateCategory(categoryId, formData);
       setSuccessMessage("Cập nhật thông tin danh mục thành công!");
       setErrors({});
 
@@ -118,10 +98,7 @@ export default function CategoryEditModal({ onClose, categoryId, onSave }) {
         onSave(updatedData);
       }
 
-      // Đóng modal sau 2 giây
-      setTimeout(() => {
-        onClose();
-      }, 2000);
+      onClose();
     } catch (err) {
       setError(err.message || "Error updating category");
     } finally {

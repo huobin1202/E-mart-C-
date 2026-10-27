@@ -14,7 +14,6 @@ namespace backend.Services
         private readonly CategoryRepository _categoryRepository;
         private readonly SupplierRepository _supplierRepository;
         private readonly BusMemoryCache<ProductDTO> _cache;
-        private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
 
         public ProductService(
             ProductRepository productRepository,
@@ -28,15 +27,13 @@ namespace backend.Services
             _cache = cache;
         }
 
-        private async Task<IReadOnlyList<ProductDTO>> GetCachedAsync()
+        private async Task<IReadOnlyList<ProductDTO>> GetLiveProductsAsync()
         {
-            var (items, _) = await _cache.GetOrCreateAsync(async () =>
-            {
-                var products = (await _productRepository.GetAllForCacheAsync()).Select(MapToProductDto).ToList();
-                await AddDiscountPricesAsync(products);
-                return products;
-            }, CacheTtl);
-            return items;
+            // Inventory can change from mobile orders, POS, and purchase receipts.
+            // Read the current SQL values so all product endpoints show the same stock.
+            var products = (await _productRepository.GetAllForCacheAsync()).Select(MapToProductDto).ToList();
+            await AddDiscountPricesAsync(products);
+            return products;
         }
 
 
@@ -53,7 +50,7 @@ namespace backend.Services
                    int? status = null,
                    string? stockStatus = null)
         {
-            var products = (await GetCachedAsync()).AsEnumerable();
+            var products = (await GetLiveProductsAsync()).AsEnumerable();
             if (supplierId.HasValue) products = products.Where(product => product.SupplierId == supplierId.Value);
             if (categoryId.HasValue) products = products.Where(product => product.CategoryId == categoryId.Value);
             if (minPrice.HasValue) products = products.Where(product => product.Price >= minPrice.Value);
@@ -328,7 +325,7 @@ namespace backend.Services
             if (page < 1) page = 1;
             if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-            var available = (await GetCachedAsync())
+            var available = (await GetLiveProductsAsync())
                 .Where(product => product.Inventory?.Quantity > 0)
                 .OrderByDescending(product => product.CreatedAt)
                 .ToList();
@@ -352,7 +349,7 @@ namespace backend.Services
         {
             if (string.IsNullOrWhiteSpace(keyword)) return new List<ProductDTO>();
             var value = keyword.Trim();
-            return (await GetCachedAsync())
+            return (await GetLiveProductsAsync())
                 .Where(p => p.ProductName.Contains(value, StringComparison.OrdinalIgnoreCase)
                     || (p.Sku?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false)
                     || (p.Barcode?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false)
@@ -363,7 +360,7 @@ namespace backend.Services
 
         public async Task<ProductDTO?> GetProductByBarcodeAsync(string barcode)
         {
-            return (await GetCachedAsync()).FirstOrDefault(p =>
+            return (await GetLiveProductsAsync()).FirstOrDefault(p =>
                 string.Equals(p.Barcode, barcode, StringComparison.OrdinalIgnoreCase));
         }
     }

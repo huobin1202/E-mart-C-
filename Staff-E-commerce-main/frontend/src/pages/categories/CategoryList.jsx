@@ -7,6 +7,7 @@ import {
   setSearchTerm,
   setStatusFilter,
   toggleStatus,
+  removeCategory,
   resetFilters,
 } from "../../features/categories/categorySlice";
 import Pagination from "../../components/ui/Pagination";
@@ -23,6 +24,7 @@ import {
   CheckCircle,
   Clock,
   XCircle,
+  Trash2,
 } from "lucide-react";
 import { getCategories } from "../../api/categoryApi";
 import { useAuth } from "../../hook/useAuth";
@@ -41,11 +43,18 @@ const CategoryList = () => {
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
   const [editingCategoryId, setEditingCategoryId] = useState(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [actionNotice, setActionNotice] = useState(null);
   const [stats, setStats] = useState({
     total: 0,
     active: 0,
     inactive: 0,
   });
+
+  useEffect(() => {
+    if (!actionNotice) return undefined;
+    const timer = window.setTimeout(() => setActionNotice(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [actionNotice]);
 
   const { user } = useAuth();
   const isStaff = user?.role?.toLowerCase() === "staff";
@@ -138,9 +147,35 @@ const CategoryList = () => {
           active: activeData.totalItems || 0,
           inactive: inactiveData.totalItems || 0,
         });
+        setActionNotice({ type: "success", message: "Đã cập nhật trạng thái danh mục." });
       } catch (error) {
-        console.error("Error toggling status:", error);
+        setActionNotice({ type: "error", message: error.message || "Không thể cập nhật trạng thái danh mục." });
       }
+    }
+  };
+
+  const handleDeleteCategory = async (category) => {
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa danh mục "${category.name}"? Sản phẩm thuộc danh mục sẽ được giữ lại.`)) return;
+    try {
+      await dispatch(removeCategory(category.id)).unwrap();
+      const result = await dispatch(fetchCategories({
+        page: pagination.currentPage,
+        pageSize: pagination.pageSize,
+        search: filters.search,
+        status: filters.status,
+      })).unwrap();
+      if (result.items.length === 0 && pagination.currentPage > 1) {
+        dispatch(setCurrentPage(pagination.currentPage - 1));
+      }
+      const [totalData, activeData, inactiveData] = await Promise.all([
+        getCategories(1, 1, "", "all"),
+        getCategories(1, 1, "", "active"),
+        getCategories(1, 1, "", "inactive"),
+      ]);
+      setStats({ total: totalData.totalItems || 0, active: activeData.totalItems || 0, inactive: inactiveData.totalItems || 0 });
+      setActionNotice({ type: "success", message: "Đã xóa danh mục." });
+    } catch (error) {
+      setActionNotice({ type: "error", message: error.message || "Không thể xóa danh mục." });
     }
   };
 
@@ -183,6 +218,7 @@ const CategoryList = () => {
           </button>
         )}
       </div>
+      {actionNotice && <div role={actionNotice.type === "error" ? "alert" : "status"} className={`fixed right-4 top-4 z-50 max-w-md rounded-lg border p-3 shadow-lg ${actionNotice.type === "error" ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>{actionNotice.message}<button type="button" className="ml-3 underline" onClick={() => setActionNotice(null)}>Đóng</button></div>}
 
       {/* Statistics */}
       <div className="mb-6 grid grid-cols-4 gap-4">
@@ -310,7 +346,9 @@ const CategoryList = () => {
                 categories.map((category) => (
                   <tr
                     key={category.id}
-                    className="border-b border-gray-200 hover:bg-gray-50"
+                    onClick={() => handleView(category.id)}
+                    title="Bấm để xem chi tiết"
+                    className="cursor-pointer border-b border-gray-200 hover:bg-primary-50/60"
                   >
                     <td className="px-6 py-3">
                       <div>
@@ -355,7 +393,7 @@ const CategoryList = () => {
                         );
                       })()}
                     </td>
-                    <td className="px-6 py-3 text-center">
+                    <td className="px-6 py-3 text-center" onClick={(event) => event.stopPropagation()}>
                       <div className="flex items-center justify-center gap-2">
                         <button
                           onClick={() => handleView(category.id)}
@@ -387,6 +425,14 @@ const CategoryList = () => {
                               }
                             >
                               <Power size={18} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCategory(category)}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                              title="Xóa danh mục"
+                            >
+                              <Trash2 size={18} />
                             </button>
                           </>
                         )}
@@ -450,6 +496,7 @@ const CategoryList = () => {
               active: activeData.totalItems || 0,
               inactive: inactiveData.totalItems || 0,
             });
+            setActionNotice({ type: "success", message: "Đã cập nhật danh mục." });
           }}
         />
       )}
@@ -479,6 +526,7 @@ const CategoryList = () => {
             active: activeData.totalItems || 0,
             inactive: inactiveData.totalItems || 0,
           });
+          setActionNotice({ type: "success", message: "Đã thêm danh mục." });
         }}
       />
     </div>

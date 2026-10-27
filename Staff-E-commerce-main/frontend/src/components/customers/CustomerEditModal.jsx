@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { getCustomerById, updateCustomer } from "../../api/customerApi";
 
 export default function CustomerEditModal({ onClose, customerId, onSave }) {
   const [formData, setFormData] = useState({
@@ -70,13 +71,7 @@ export default function CustomerEditModal({ onClose, customerId, onSave }) {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(
-          `http://localhost:5099/api/customers/${customerId}`
-        );
-        if (!response.ok) {
-          throw new Error("Failed to fetch customer details");
-        }
-        const data = await response.json();
+        const data = await getCustomerById(customerId);
         setFormData({
           fullName: data.fullName || "",
           email: data.email || "",
@@ -111,6 +106,7 @@ export default function CustomerEditModal({ onClose, customerId, onSave }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (saving || loading) return;
 
     // Validate form first
     const validationErrors = validateForm();
@@ -126,23 +122,7 @@ export default function CustomerEditModal({ onClose, customerId, onSave }) {
     setErrors({});
 
     try {
-      const response = await fetch(
-        `http://localhost:5099/api/customers/${customerId}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(formData),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to update customer");
-      }
-
-      const updatedData = await response.json();
+      const updatedData = await updateCustomer(customerId, formData);
       setSuccessMessage("Cập nhật thông tin khách hàng thành công!");
       setErrors({});
 
@@ -151,10 +131,7 @@ export default function CustomerEditModal({ onClose, customerId, onSave }) {
         onSave(updatedData);
       }
 
-      // Đóng modal sau 2 giây
-      setTimeout(() => {
-        onClose();
-      }, 2000);
+      onClose();
     } catch (err) {
       setError(err.message || "Error updating customer");
     } finally {

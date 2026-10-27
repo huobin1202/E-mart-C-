@@ -11,6 +11,7 @@ const ProductModal = ({
   onSave,
   onCancel,
   onDelete,
+  onCreatePurchaseOrder,
   saving = false,
   categories = [],
   suppliers = [],
@@ -18,6 +19,7 @@ const ProductModal = ({
 }) => {
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
+  const [uploading, setUploading] = useState(false);
   const [descriptionLoading, setDescriptionLoading] = useState(false);
   const [descriptionError, setDescriptionError] = useState("");
 
@@ -202,21 +204,24 @@ const ProductModal = ({
   };
 
   const handleSave = async () => {
-    if (mode === "view") return;
+    if (mode === "view" || saving || uploading) return;
     if (!validate()) return;
 
     let finalImageUrl = formData.imageUrl;
 
     // Nếu có file upload từ máy
     if (formData.imageFile) {
+      setUploading(true);
       try {
         const productId = mode === "edit" && product?.id ? product.id : null;
         const uploadedUrl = await uploadImage(formData.imageFile, productId);
         finalImageUrl = uploadedUrl;
       } catch (error) {
         console.error("Lỗi upload ảnh:", error);
-        alert("Lỗi upload ảnh. Vui lòng thử lại.");
+        alert(error.message || "Lỗi upload ảnh. Vui lòng thử lại.");
         return;
+      } finally {
+        setUploading(false);
       }
     }
 
@@ -241,6 +246,7 @@ const ProductModal = ({
       description: formData.description !== undefined ? formData.description : (product?.description || ""),
       isActive: formData.isActive !== undefined ? formData.isActive : (product?.isActive !== undefined ? product.isActive : true),
     };
+    delete saveData.imageFile;
 
     onSave?.(saveData, mode);
   };
@@ -251,17 +257,11 @@ const ProductModal = ({
     formData.append("image", file);
 
     // Thêm productId vào query string nếu có
-    const url = productId
-      ? `http://localhost:5099/api/products/upload-image?productId=${productId}`
-      : "http://localhost:5099/api/products/upload-image";
-
-    const response = await fetch(url, {
+    const query = productId ? `?productId=${encodeURIComponent(productId)}` : "";
+    const data = await request(`/products/upload-image${query}`, {
       method: "POST",
       body: formData,
     });
-
-    if (!response.ok) throw new Error("Upload failed");
-    const data = await response.json();
     return data.imageUrl;
   };
 
@@ -727,6 +727,11 @@ const ProductModal = ({
 
               {/* --- BUTTONS --- */}
               <div className="col-span-2 flex items-center justify-end gap-2">
+                {isView && onCreatePurchaseOrder && (
+                  <button type="button" className="mr-auto px-3 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => onCreatePurchaseOrder(product)}>
+                    Nhập hàng từ nhà cung cấp
+                  </button>
+                )}
                 <button className="px-3 py-1 rounded border" onClick={onCancel}>
                   Hủy
                 </button>
@@ -734,9 +739,9 @@ const ProductModal = ({
                   <button
                     className="px-3 py-1 rounded bg-primary-600 text-white hover:bg-primary-700"
                     onClick={handleSave}
-                    disabled={saving}
+                    disabled={saving || uploading}
                   >
-                    {saving
+                    {uploading ? "Đang tải ảnh..." : saving
                       ? "Đang lưu..."
                       : mode === "create"
                       ? "Thêm mới"

@@ -5,6 +5,7 @@ import OrderTable from "../../components/orders/OrderTable";
 import { useOrders } from "../../hook/useOrders";
 import { useDebouncedSearch } from "../../hook/useDebouncedSearch";
 import { orderStatusLabels } from "../../utils/orderStatus";
+import { useRealtimeNotifications } from "../../hooks/useRealtimeNotifications";
 
 export default function OrdersPage() {
   const location = useLocation();
@@ -18,6 +19,23 @@ export default function OrdersPage() {
     selectedEndDate, setSelectedEndDate, searchKeyword, setSearchKeyword,
     loading, opening, error, loadOrdersAdvanced, showOrderById,
   } = useOrders();
+  useRealtimeNotifications({
+    NewOrderPlaced: () => loadOrdersAdvanced({ silent: true }),
+    OrderStatusChanged: () => loadOrdersAdvanced({ silent: true }),
+  });
+  useEffect(() => {
+    const refreshVisibleOrders = () => {
+      if (document.visibilityState === "visible") loadOrdersAdvanced({ silent: true });
+    };
+    const timer = window.setInterval(refreshVisibleOrders, 3000);
+    window.addEventListener("focus", refreshVisibleOrders);
+    document.addEventListener("visibilitychange", refreshVisibleOrders);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshVisibleOrders);
+      document.removeEventListener("visibilitychange", refreshVisibleOrders);
+    };
+  }, [loadOrdersAdvanced]);
   useDebouncedSearch(searchInput, searchKeyword, (keyword) => { setSearchKeyword(keyword); setCurrentPage(1); });
   useEffect(() => {
     const orderId = location.state?.orderId;

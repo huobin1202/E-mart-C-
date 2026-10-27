@@ -13,6 +13,8 @@ import {
   getPaginatedProducts,
   getCurrentUserId,
   request,
+  BASE_URL,
+  getAuthToken,
 } from "../../api/apiClient";
 import { getCustomers } from "../../api/customerApi";
 import { formatPrice } from "../../utils/formatPrice";
@@ -225,19 +227,21 @@ export default function POS() {
   // =========================================================
   // SIGNALR REAL-TIME NOTIFICATIONS
   // =========================================================
+  const refreshPosProductsRef = useRef(() => {});
   useEffect(() => {
     let connection = null;
     try {
-      const hubUrl = "http://localhost:5099/hub/orders";
+      const hubUrl = `${BASE_URL.replace(/\/api\/?$/, "")}/hub/notifications`;
       connection = new signalR.HubConnectionBuilder()
         .withUrl(hubUrl, {
+          accessTokenFactory: () => getAuthToken() || "",
           skipNegotiation: false,
           transport: signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.LongPolling,
         })
         .withAutomaticReconnect()
         .build();
 
-      connection.on("NewOrderReceived", (data) => {
+      connection.on("NewOrderPlaced", (data) => {
         playNewOrderChime();
         setRealtimeAlert({
           id: Date.now(),
@@ -253,6 +257,9 @@ export default function POS() {
       connection.on("OrderStatusChanged", () => {
         fetchOrders(page);
       });
+
+      connection.on("StockUpdated", () => refreshPosProductsRef.current());
+      connection.on("StockReserved", () => refreshPosProductsRef.current());
 
       connection.start().catch((err) => {
         console.debug("SignalR connection error (may retry):", err);
@@ -282,6 +289,7 @@ export default function POS() {
       if (sequence === productRequest.current) setPosProductLoading(false);
     }
   }, []);
+  refreshPosProductsRef.current = () => loadPosProducts(posProductSearch);
 
   useEffect(() => {
     if (activeTab === "pos") {
@@ -709,7 +717,9 @@ export default function POS() {
                 {orders.map((o) => (
                   <div
                     key={o.id}
-                    className="bg-white rounded-2xl p-5 border shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
+                    onClick={() => setDetailOrder(o)}
+                    title="Bấm để xem chi tiết đơn hàng"
+                    className="cursor-pointer bg-white rounded-2xl p-5 border shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
                   >
                     <div className="space-y-1.5 flex-1">
                       <div className="flex items-center gap-3">
@@ -740,7 +750,7 @@ export default function POS() {
 
                     <div className="flex flex-col md:items-end gap-2 w-full md:w-auto">
                       <div className="text-xl font-black text-gray-900">{formatPrice(o.totalAmount)}</div>
-                      <div className="flex gap-2 flex-wrap">
+                      <div className="flex gap-2 flex-wrap" onClick={(event) => event.stopPropagation()}>
                         <button
                           onClick={() => setDetailOrder(o)}
                           className="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold transition"

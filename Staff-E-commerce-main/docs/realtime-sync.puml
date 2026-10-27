@@ -1,0 +1,62 @@
+@startuml
+title Customer App → API → SQL/Redis → SignalR → Admin/POS
+autonumber
+actor Customer
+participant "Mobile App" as App
+participant "ASP.NET Core API" as API
+database "SQL Server" as SQL
+collections "Redis (inventory holds, TTL 15m)" as Redis
+participant "NotificationHub" as Hub
+participant "Web Admin" as Admin
+participant "POS screen" as POS
+
+== UpdateProfile ==
+Customer -> App: Edit profile and tap Save
+App -> API: PUT /api/storefront/account
+activate API
+API -> SQL: Validate and update Customer (+ linked User)
+SQL --> API: Commit
+API -> API: UpdateProfile() / Sync customer cache
+API -> Hub: BroadcastToWeb("CustomerUpdated", customer)
+Hub -> Admin: CustomerUpdated(customer)
+Admin -> Admin: Update row and customer statistics
+API --> App: Updated profile
+deactivate API
+
+== ReserveStock (when Redis hold endpoint is enabled) ==
+Customer -> App: Add product to cart
+App -> API: POST /api/storefront/cart/reservations
+activate API
+API -> SQL: Read Inventory.Quantity
+API -> Redis: ReserveStock(customer, product, quantity, TTL=15m)
+Redis --> API: Reserved / available quantity
+API -> Hub: BroadcastStock("StockReserved", product, available)
+Hub -> Admin: StockReserved(product, available)
+Hub -> POS: StockReserved(product, available)
+API --> App: Reservation result
+deactivate API
+
+== CheckoutOrder ==
+Customer -> App: Confirm checkout
+App -> API: POST /api/storefront/orders
+activate API
+API -> SQL: Begin transaction; validate and decrement Inventory; insert Order
+SQL --> API: Commit
+API -> Redis: Release customer's holds
+API -> Hub: BroadcastToWeb("NewOrderPlaced", order)
+API -> Hub: BroadcastStock("StockUpdated", productIds)
+Hub -> Admin: NewOrderPlaced(order)
+Hub -> POS: NewOrderPlaced(order)
+Hub -> Admin: StockUpdated(productIds)
+Hub -> POS: StockUpdated(productIds)
+Admin -> Admin: Refresh orders, invoices, stock
+POS -> POS: Notify staff and refresh orders/stock
+API --> App: Order confirmation
+deactivate API
+
+note over API,Redis
+The current repository has no Redis client, reservation endpoint,
+or Redis connection setting yet. The reservation section is the
+required next integration; SQL inventory remains authoritative.
+end note
+@enduml

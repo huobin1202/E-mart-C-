@@ -7,6 +7,7 @@ import {
 } from "../../api/inventoryApi";
 import { formatPrice } from "../../utils/formatPrice";
 import { useAuth } from "../../hook/useAuth";
+import { useRealtimeNotifications } from "../../hooks/useRealtimeNotifications";
 
 export default function InventoryList({ embedded = false }) {
   const { user } = useAuth();
@@ -130,6 +131,17 @@ export default function InventoryList({ embedded = false }) {
       }
     }
   }, []);
+
+  useRealtimeNotifications({
+    StockUpdated: () => {
+      fetchInventory(page, pageSize, debouncedSearch, stockStatus);
+      fetchStats();
+    },
+    StockReserved: () => {
+      fetchInventory(page, pageSize, debouncedSearch, stockStatus);
+      fetchStats();
+    },
+  });
 
   // --- fetch khi page, debouncedSearch, sortBy, stockStatus thay đổi
   useEffect(() => {

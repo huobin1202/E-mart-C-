@@ -7,20 +7,15 @@ namespace backend.Services;
 public sealed class EmployeeService
 {
     private readonly EmployeeRepository _repository;
-    private readonly BusMemoryCache<EmployeeDTO> _cache;
-    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
 
-    public EmployeeService(EmployeeRepository repository, BusMemoryCache<EmployeeDTO> cache)
+    public EmployeeService(EmployeeRepository repository)
     {
         _repository = repository;
-        _cache = cache;
     }
 
     public async Task<IReadOnlyList<EmployeeDTO>> GetAllAsync()
     {
-        var (items, _) = await _cache.GetOrCreateAsync(
-            async () => (await _repository.GetAllAsync()).Select(Map).ToList(), CacheTtl);
-        return items;
+        return (await _repository.GetAllAsync()).Select(Map).ToList();
     }
 
     public async Task<EmployeeDTO?> GetByIdAsync(int id) =>
@@ -44,7 +39,6 @@ public sealed class EmployeeService
 
         var created = await _repository.CreateAsync(employee);
         var result = Map(created);
-        _cache.AddOrUpdate(result, item => item.Id);
         return result;
     }
 
@@ -81,14 +75,12 @@ public sealed class EmployeeService
 
         var updated = await _repository.UpdateAsync(employee);
         var result = Map(updated);
-        _cache.AddOrUpdate(result, item => item.Id);
         return result;
     }
 
     public async Task<bool> DeleteAsync(int id)
     {
         var deleted = await _repository.DeleteAsync(id);
-        if (deleted) _cache.RemoveWhere(item => item.Id == id);
         return deleted;
     }
 

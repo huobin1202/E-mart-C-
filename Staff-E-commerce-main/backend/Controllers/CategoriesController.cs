@@ -84,6 +84,14 @@ namespace backend.Controllers
             return Ok(result.Data);
         }
 
+        [HttpDelete("{id:int}")]
+        public async Task<IActionResult> DeleteCategory(int id)
+        {
+            if (!await _service.DeleteCategoryAsync(id))
+                return NotFound(new { message = "Không tìm thấy danh mục." });
+            return NoContent();
+        }
+
         // GET api/categories/paginated (endpoint cũ - giữ lại cho backward compatibility)
         [HttpGet("paginated")]
         public async Task<ActionResult<PaginationResult<CategoryDTO>>> GetPaginated(

@@ -360,7 +360,7 @@ export default function UnitList() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredUnits.map((unit, index) => (
-                  <tr key={unit.id} className="hover:bg-gray-50 transition">
+                  <tr key={unit.id} onClick={() => openModal("view", unit)} title="Bấm để xem chi tiết" className="cursor-pointer hover:bg-primary-50/60 transition">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {index + 1}
                     </td>
@@ -375,7 +375,7 @@ export default function UnitList() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
                       <button
-                        onClick={() => handleToggleActive(unit.id)}
+                        onClick={(event) => { event.stopPropagation(); handleToggleActive(unit.id); }}
                         disabled={isStaff}
                         className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
                           unit.isActive
@@ -386,7 +386,7 @@ export default function UnitList() {
                         {unit.isActive ? "Đang dùng" : "Ngừng dùng"}
                       </button>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
+                    <td className="px-6 py-4 whitespace-nowrap text-center text-sm" onClick={(event) => event.stopPropagation()}>
                       <div className="flex items-center justify-center gap-2">
                         <button
                           onClick={() => openModal("view", unit)}

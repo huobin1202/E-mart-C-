@@ -12,17 +12,20 @@ namespace backend.Services
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly BusMemoryCache<Inventory> _inventoryCache;
         private readonly BusMemoryCache<InventoryAdjustmentDTO> _adjustmentCache;
+        private readonly RealtimeNotificationService _realtime;
 
         public InventoryService(
             InventoryRepository inventoryRepo,
             IHttpContextAccessor httpContextAccessor,
             BusMemoryCache<Inventory> inventoryCache,
-            BusMemoryCache<InventoryAdjustmentDTO> adjustmentCache)
+            BusMemoryCache<InventoryAdjustmentDTO> adjustmentCache,
+            RealtimeNotificationService realtime)
         {
             _inventoryRepo = inventoryRepo;
             _httpContextAccessor = httpContextAccessor;
             _inventoryCache = inventoryCache;
             _adjustmentCache = adjustmentCache;
+            _realtime = realtime;
         }
 
         private int? TryGetCurrentUserId()
@@ -69,6 +72,12 @@ namespace backend.Services
                         return inventory;
                     });
             }
+            await _realtime.BroadcastStock("StockUpdated", new
+            {
+                productIds = requestedQuantities.Select(item => item.ProductId).ToArray(),
+                source = "inventory-reduction",
+                changedAt = DateTime.UtcNow
+            });
             return true;
         }
 
@@ -79,10 +88,8 @@ namespace backend.Services
             string? sortBy = "",
             string? stockStatus = null)
         {
-            var cached = await _inventoryCache.GetOrCreateAsync(
-                () => _inventoryRepo.GetAllForCacheAsync(),
-                TimeSpan.FromMinutes(15));
-            IEnumerable<Inventory> filtered = cached.Items;
+            var liveInventory = await _inventoryRepo.GetAllForCacheAsync();
+            IEnumerable<Inventory> filtered = liveInventory;
 
             if (!string.IsNullOrWhiteSpace(search))
             {
@@ -186,6 +193,12 @@ namespace backend.Services
             };
             await _inventoryRepo.AddAdjustmentAsync(adjustment);
             _adjustmentCache.Clear();
+            await _realtime.BroadcastStock("StockUpdated", new
+            {
+                productIds = new[] { inventory.ProductId },
+                source = "inventory-adjustment",
+                changedAt = DateTime.UtcNow
+            });
 
             return new InventoryListDTO
             {
@@ -253,9 +266,7 @@ namespace backend.Services
 
         public async Task<InventoryStatsDTO> GetInventoryStatsAsync()
         {
-            var items = (await _inventoryCache.GetOrCreateAsync(
-                () => _inventoryRepo.GetAllForCacheAsync(),
-                TimeSpan.FromMinutes(15))).Items;
+            var items = await _inventoryRepo.GetAllForCacheAsync();
 
             return new InventoryStatsDTO
             {

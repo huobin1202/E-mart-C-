@@ -354,7 +354,9 @@ export default function SupplierList() {
                 filteredSuppliers.map((supplier, index) => (
                   <tr
                     key={supplier.id}
-                    className="hover:bg-gray-50 transition-colors"
+                    onClick={() => handleView(supplier)}
+                    title="Bấm để xem chi tiết"
+                    className="cursor-pointer hover:bg-primary-50/60 transition-colors"
                   >
                     <td className="px-4 py-4 text-sm text-gray-500 font-medium">
                       {index + 1}
@@ -437,7 +439,7 @@ export default function SupplierList() {
                         {supplier.isActive ? "Hoạt động" : "Ngừng"}
                       </span>
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="px-4 py-4" onClick={(event) => event.stopPropagation()}>
                       <div className="flex items-center justify-center gap-2">
                         <button
                           onClick={() => handleView(supplier)}

@@ -187,6 +187,69 @@ namespace backend.Repository
                 }).ToListAsync();
         }
 
+        public async Task<(List<OrderDTO> Items, int TotalItems)> GetPagedOrdersAsync(
+            int pageNumber, int pageSize, string? status, DateTime? startDate,
+            DateTime? endDate, string? search, string? orderType)
+        {
+            IQueryable<Order> query = _context.Orders.AsNoTracking()
+                .Include(order => order.Customer)
+                .Include(order => order.User)
+                .Include(order => order.Promotion);
+
+            if (!string.IsNullOrWhiteSpace(status))
+                query = query.Where(order => order.Status == status);
+            if (!string.IsNullOrWhiteSpace(orderType))
+                query = query.Where(order => order.OrderType == orderType);
+            if (startDate.HasValue)
+                query = query.Where(order => order.CreatedAt >= startDate.Value.Date);
+            if (endDate.HasValue)
+            {
+                var endExclusive = endDate.Value.Date.AddDays(1);
+                query = query.Where(order => order.CreatedAt < endExclusive);
+            }
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var keyword = search.Trim();
+                query = query.Where(order => order.OrderNumber.Contains(keyword) ||
+                    (order.Customer != null && order.Customer.FullName.Contains(keyword)) ||
+                    (order.User != null && order.User.FullName.Contains(keyword)));
+            }
+
+            var totalItems = await query.CountAsync();
+            var items = await query
+                .OrderByDescending(order => order.CreatedAt)
+                .ThenByDescending(order => order.Id)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .Select(order => new OrderDTO
+                {
+                    Id = order.Id,
+                    OrderNumber = order.OrderNumber,
+                    CustomerId = order.CustomerId,
+                    UserId = order.UserId,
+                    Status = order.Status,
+                    OrderType = order.OrderType,
+                    IsPosCheckout = order.CheckoutKey != null,
+                    PaymentStatus = order.PaymentStatus,
+                    PaymentMethod = order.PaymentMethod,
+                    Subtotal = order.Subtotal,
+                    Discount = order.Discount,
+                    TotalAmount = order.TotalAmount,
+                    PromotionId = order.PromotionId,
+                    Note = order.Note,
+                    RecipientName = order.RecipientName,
+                    RecipientPhone = order.RecipientPhone,
+                    ShippingAddress = order.ShippingAddress,
+                    CreatedAt = order.CreatedAt,
+                    UpdatedAt = order.UpdatedAt,
+                    CustomerName = order.Customer != null ? order.Customer.FullName : null,
+                    UserName = order.User != null ? order.User.FullName : null,
+                    PromotionCode = order.Promotion != null ? order.Promotion.Code : null
+                }).ToListAsync();
+
+            return (items, totalItems);
+        }
+
 
         /// <summary>
         /// Cập nhật user xử lý đơn hàng theo user_id bạn truyền vào.

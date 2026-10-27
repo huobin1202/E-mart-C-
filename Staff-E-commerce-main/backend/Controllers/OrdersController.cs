@@ -1,9 +1,7 @@
 using backend.DTO;
 using backend.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.SignalR;
 using backend.Models;
-using backend.Hubs;
 
 namespace backend.Controllers
 {
@@ -12,15 +10,15 @@ namespace backend.Controllers
     public class OrdersController : ControllerBase
     {
         private readonly OrderService _orderService;
-        private readonly IHubContext<OrderHub>? _orderHub;
+        private readonly RealtimeNotificationService _realtime;
         private readonly PosCheckoutService _checkout;
         private readonly PaymentService _payments;
         private readonly IConfiguration _config;
 
-        public OrdersController(OrderService orderService, PosCheckoutService checkout, PaymentService payments, IConfiguration config, IHubContext<OrderHub>? orderHub = null)
+        public OrdersController(OrderService orderService, PosCheckoutService checkout, PaymentService payments, IConfiguration config, RealtimeNotificationService realtime)
         {
             _orderService = orderService;
-            _orderHub = orderHub;
+            _realtime = realtime;
             _checkout = checkout;
             _payments = payments;
             _config = config;
@@ -74,6 +72,25 @@ namespace backend.Controllers
 
                 if (savedOrder == null)
                     return StatusCode(500, "Failed to save order");
+
+                await _realtime.BroadcastToWeb("NewOrderPlaced", new
+                {
+                    orderId = savedOrder.Id,
+                    orderNumber = savedOrder.OrderNumber,
+                    orderType = "pos",
+                    customerName = savedOrder.CustomerName,
+                    totalAmount = savedOrder.TotalAmount,
+                    itemCount = savedOrder.Items.Sum(item => item.Quantity),
+                    paymentMethod = savedOrder.PaymentMethod,
+                    createdAt = savedOrder.CreatedAt
+                });
+                await _realtime.BroadcastStock("StockUpdated", new
+                {
+                    productIds = savedOrder.Items.Select(item => item.ProductId).Distinct().ToArray(),
+                    orderId = savedOrder.Id,
+                    source = "pos-checkout",
+                    changedAt = DateTime.UtcNow
+                });
 
                 return Ok(savedOrder);
             }
@@ -157,6 +174,8 @@ namespace backend.Controllers
         {
             if (!string.IsNullOrEmpty(orderType) && orderType != "mobile" && orderType != "pos")
                 return BadRequest(new { message = "Kênh bán không hợp lệ." });
+            pageNumber = Math.Max(pageNumber, 1);
+            pageSize = Math.Clamp(pageSize, 1, 100);
             var result = await _orderService.GetPagedOrdersAsync(
                 pageNumber, pageSize, status, startDate, endDate, search, orderType
             );
@@ -233,11 +252,6 @@ namespace backend.Controllers
                 if (!result)
                     return Conflict(new { message = "Đơn hàng không thể xác nhận (không tồn tại hoặc không ở trạng thái pending)." });
 
-                if (_orderHub != null)
-                {
-                    _ = _orderHub.Clients.All.SendAsync("OrderStatusChanged", new { orderId, status = "processing" });
-                }
-
                 return Ok(new { success = true, message = "Đã xác nhận đơn hàng." });
             }
             catch (Exception ex)
@@ -258,11 +272,6 @@ namespace backend.Controllers
                 if (!result)
                     return Conflict(new { message = "Đơn hàng không thể từ chối (không tồn tại hoặc không ở trạng thái pending/processing)." });
 
-                if (_orderHub != null)
-                {
-                    _ = _orderHub.Clients.All.SendAsync("OrderStatusChanged", new { orderId, status = "cancelled" });
-                }
-
                 return Ok(new { success = true, message = "Đã từ chối đơn hàng." });
             }
             catch (Exception ex)
@@ -282,11 +291,6 @@ namespace backend.Controllers
                 var result = await _orderService.DeliverOnlineOrderAsync(orderId);
                 if (!result)
                     return Conflict(new { message = "Đơn hàng không thể chuyển sang trạng thái giao hàng." });
-
-                if (_orderHub != null)
-                {
-                    _ = _orderHub.Clients.All.SendAsync("OrderStatusChanged", new { orderId, status = "completed" });
-                }
 
                 return Ok(new { success = true, message = "Đã hoàn thành giao hàng." });
             }

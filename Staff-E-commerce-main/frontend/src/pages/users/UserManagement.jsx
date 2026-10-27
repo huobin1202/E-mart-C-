@@ -62,6 +62,7 @@ export default function UserManagement() {
   const [roles, setRoles] = useState([]);
   const [filterRoles, setFilterRoles] = useState([]);
   const [roleFilter, setRoleFilter] = useState("");
+  const [accountGroup, setAccountGroup] = useState("internal");
   const [statusFilter, setStatusFilter] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -116,8 +117,8 @@ export default function UserManagement() {
   async function fetchRoles() {
     try {
       const result = await getRoles();
-      setFilterRoles(result ?? []);
-      setRoles((result ?? []).filter((role) => role.isActive));
+      setFilterRoles((result ?? []).filter((role) => ["admin", "staff"].includes(role.name?.toLowerCase())));
+      setRoles((result ?? []).filter((role) => role.isActive && ["admin", "staff"].includes(role.name?.toLowerCase())));
     } catch (err) {
       setError(err.message || "Không thể tải danh sách vai trò.");
     }
@@ -128,7 +129,28 @@ export default function UserManagement() {
     setLoading(true);
     setError("");
     try {
-      const result = await getUsersPaginated(page, pageSize, { role: roleFilter, status: statusFilter, search });
+      let result;
+      if (accountGroup === "internal" && !roleFilter) {
+        // Query the two supported roles separately so this also works with an
+        // API instance that has not yet been restarted with the internal-group filter.
+        const [admins, staff] = await Promise.all([
+          getUsersPaginated(1, 100, { role: "admin", status: statusFilter, search }),
+          getUsersPaginated(1, 100, { role: "staff", status: statusFilter, search }),
+        ]);
+        const allItems = [...(admins.items ?? []), ...(staff.items ?? [])].sort((a, b) => a.id - b.id);
+        const totalPages = Math.max(1, Math.ceil(allItems.length / pageSize));
+        const currentPage = Math.min(page, totalPages);
+        result = {
+          items: allItems.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+          currentPage,
+          totalPages,
+          totalItems: allItems.length,
+          pageSize,
+        };
+      } else {
+        const selectedRole = roleFilter || "customer";
+        result = await getUsersPaginated(page, pageSize, { role: selectedRole, status: statusFilter, search });
+      }
       if (requestId !== latestRequest.current) return;
       if (result.currentPage && result.currentPage !== page) setPage(result.currentPage);
       setUsers(result.items ?? []);
@@ -147,7 +169,7 @@ export default function UserManagement() {
     } finally {
       if (requestId === latestRequest.current) setLoading(false);
     }
-  }, [page, pageSize, roleFilter, statusFilter, search]);
+  }, [page, pageSize, roleFilter, statusFilter, search, accountGroup]);
 
   useEffect(() => {
     const requests = latestRequest;
@@ -179,7 +201,7 @@ export default function UserManagement() {
   }
 
   function openCreateModal() {
-    setFormData(emptyForm);
+    setFormData({ ...emptyForm, role: accountGroup === "customers" ? "customer" : "staff" });
     setCreateModalOpen(true);
     setAlert(null);
     setFieldErrors({});
@@ -240,6 +262,8 @@ export default function UserManagement() {
         message: `Đã thêm tài khoản ${created.username} với vai trò ${roleLabel(created.role)}.`,
       });
       closeCreateModal();
+      fetchEmployees();
+      fetchCustomers();
       if (page !== 1) {
         setPage(1);
       } else {
@@ -306,6 +330,8 @@ export default function UserManagement() {
       });
       closeEditModal();
       fetchUsers();
+      fetchEmployees();
+      fetchCustomers();
     } catch (err) {
       const msg = err.message || "Cập nhật người dùng thất bại.";
       if (msg.toLowerCase().includes("username")) {
@@ -376,6 +402,7 @@ export default function UserManagement() {
             CRUD tài khoản, active/inactive và phân role admin, nhân viên, khách hàng.
           </p>
         </div>
+        <div className="flex shrink-0 items-center gap-3">
         <button
           className="px-4 py-2 rounded-md bg-primary-600 text-white shadow-sm hover:bg-primary-700"
           onClick={openCreateModal}
@@ -388,6 +415,7 @@ export default function UserManagement() {
         >
           Phân quyền role
         </Link>
+        </div>
       </div>
 
       {alert && (
@@ -409,6 +437,10 @@ export default function UserManagement() {
       )}
 
       <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <div className="mb-4 flex gap-2 border-b pb-3">
+          <button type="button" onClick={() => { setAccountGroup("internal"); setRoleFilter(""); setPage(1); }} className={`rounded-md px-4 py-2 text-sm ${accountGroup === "internal" ? "bg-primary-600 text-white" : "border text-gray-600"}`}>Nhân viên &amp; Admin</button>
+          <button type="button" onClick={() => { setAccountGroup("customers"); setRoleFilter(""); setPage(1); }} className={`rounded-md px-4 py-2 text-sm ${accountGroup === "customers" ? "bg-primary-600 text-white" : "border text-gray-600"}`}>Khách hàng</button>
+        </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="text-sm font-medium text-gray-700">
             Tìm tài khoản
@@ -418,7 +450,7 @@ export default function UserManagement() {
             Vai trò
             <select value={roleFilter} onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 font-normal">
               <option value="">Tất cả vai trò</option>
-              {filterRoles.map((role) => <option key={role.id} value={role.name}>{roleLabel(role.name)}{!role.isActive ? " (ngừng hoạt động)" : ""}</option>)}
+              {(accountGroup === "customers" ? [{ id: "customer", name: "customer", isActive: true }] : filterRoles).map((role) => <option key={role.id} value={role.name}>{roleLabel(role.name)}{!role.isActive ? " (ngừng hoạt động)" : ""}</option>)}
             </select>
           </label>
           <label className="text-sm font-medium text-gray-700">
@@ -467,7 +499,9 @@ export default function UserManagement() {
               users.map((user) => (
                 <tr
                   key={user.id}
-                  className="hover:bg-primary-50/60 transition-colors"
+                  onClick={() => handleViewDetail(user)}
+                  title="Bấm để xem chi tiết"
+                  className="cursor-pointer hover:bg-primary-50/60 transition-colors"
                 >
                   <td className="px-4 py-3">{user.email || "—"}</td>
                   <td className="px-4 py-3 font-medium text-gray-800">
@@ -496,7 +530,7 @@ export default function UserManagement() {
                       {isAccountActive(user) ? "Đang hoạt động" : "Đã khóa"}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
                     <div className="flex items-center justify-end gap-2">
                       <button
                         className="p-2 text-primary-600 hover:bg-primary-50 rounded-lg transition"
@@ -635,8 +669,8 @@ export default function UserManagement() {
                     }))
                   }
                 >
-                  {roles.map((role) => (
-                    <option key={role.id} value={role.name}>
+                  {(accountGroup === "customers" ? [{ name: "customer" }] : roles).map((role) => (
+                    <option key={role.id ?? role.name} value={role.name}>
                       {role.name}
                     </option>
                   ))}
@@ -779,8 +813,8 @@ export default function UserManagement() {
                     }))
                   }
                 >
-                  {roles.map((role) => (
-                    <option key={role.id} value={role.name}>
+                  {(accountGroup === "customers" ? [{ name: "customer" }] : roles).map((role) => (
+                    <option key={role.id ?? role.name} value={role.name}>
                       {role.name}
                     </option>
                   ))}

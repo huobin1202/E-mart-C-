@@ -17,16 +17,17 @@ export const useOrders = () => {
   const latestRequest = useRef(0);
   const detailRequest = useRef(0);
   const invalidDates = selectedStartDate && selectedEndDate && selectedStartDate > selectedEndDate;
-  const loadOrdersAdvanced = useCallback(async () => {
+  const loadOrdersAdvanced = useCallback(async ({ silent = false } = {}) => {
     const sequence = ++latestRequest.current;
-    if (invalidDates) { setLoading(false); return; }
+    if (invalidDates) { if (!silent) setLoading(false); return; }
     const params = new URLSearchParams({ pageNumber: currentPage, pageSize: 10 });
     if (selectedStatus) params.set("status", selectedStatus);
     if (selectedOrderType) params.set("orderType", selectedOrderType);
     if (searchKeyword.trim()) params.set("search", searchKeyword.trim());
     if (selectedStartDate) params.set("startDate", selectedStartDate);
     if (selectedEndDate) params.set("endDate", selectedEndDate);
-    setLoading(true); setError("");
+    if (!silent) setLoading(true);
+    setError("");
     try {
       const result = await request(`/orders/search?${params}`);
       if (sequence !== latestRequest.current) return;

@@ -7,6 +7,7 @@ import {
   setSearchTerm,
   setStatusFilter,
   resetFilters,
+  mergeRealtimeCustomer,
 } from "../../features/customers/customerSlice";
 import Pagination from "../../components/ui/Pagination";
 import CustomerDetailModal from "../../components/customers/CustomerDetailModal";
@@ -23,10 +24,12 @@ import {
   XCircle,
   Trash2,
   Upload,
+  Power,
 } from "lucide-react";
 import ImportModal from "../../components/import/ImportModal";
-import { getCustomers, deleteCustomer } from "../../api/customerApi";
+import { getCustomers, deleteCustomer, toggleCustomerStatus } from "../../api/customerApi";
 import { useAuth } from "../../hook/useAuth";
+import { useRealtimeNotifications } from "../../hooks/useRealtimeNotifications";
 
 const CustomerList = () => {
   const dispatch = useDispatch();
@@ -46,11 +49,45 @@ const CustomerList = () => {
   const [editingCustomerId, setEditingCustomerId] = useState(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [actionNotice, setActionNotice] = useState(null);
   const [stats, setStats] = useState({
     total: 0,
     active: 0,
     inactive: 0,
   });
+
+  useRealtimeNotifications({
+    CustomerCreated: (customer) => {
+      dispatch(mergeRealtimeCustomer(customer));
+      refreshCustomerData();
+    },
+    CustomerUpdated: (customer) => {
+      dispatch(mergeRealtimeCustomer(customer));
+      refreshCustomerData();
+    },
+  });
+
+  function refreshCustomerData() {
+    dispatch(fetchCustomers({
+      page: pagination.currentPage,
+      pageSize: pagination.pageSize,
+      search: filters.search,
+      status: filters.status,
+    }));
+    Promise.all([
+      getCustomers(1, 1, "", "all"),
+      getCustomers(1, 1, "", "active"),
+      getCustomers(1, 1, "", "inactive"),
+    ]).then(([totalData, activeData, inactiveData]) => {
+      setStats({ total: totalData.totalItems || 0, active: activeData.totalItems || 0, inactive: inactiveData.totalItems || 0 });
+    }).catch((error) => console.error("Error refreshing customer stats:", error));
+  }
+
+  useEffect(() => {
+    if (!actionNotice) return undefined;
+    const timer = window.setTimeout(() => setActionNotice(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [actionNotice]);
 
   // Fetch stats (total, active, inactive) on mount
   useEffect(() => {
@@ -71,11 +108,13 @@ const CustomerList = () => {
       }
     };
     fetchStats();
+    const refreshTimer = window.setInterval(fetchStats, 15000);
+    return () => window.clearInterval(refreshTimer);
   }, []);
 
   // Fetch customers when filters or pagination changes
   useEffect(() => {
-    dispatch(
+    const refreshCustomers = () => dispatch(
       fetchCustomers({
         page: pagination.currentPage,
         pageSize: pagination.pageSize,
@@ -83,6 +122,10 @@ const CustomerList = () => {
         status: filters.status,
       })
     );
+    refreshCustomers();
+    // Fallback when the SignalR connection is not available; the list endpoint reads SQL directly.
+    const refreshTimer = window.setInterval(refreshCustomers, 3000);
+    return () => window.clearInterval(refreshTimer);
   }, [
     dispatch,
     pagination.currentPage,
@@ -111,14 +154,44 @@ const CustomerList = () => {
     if (!window.confirm("Xóa hồ sơ khách hàng này?")) return;
     try {
       await deleteCustomer(customerId);
-      await dispatch(fetchCustomers({
+      const result = await dispatch(fetchCustomers({
         page: pagination.currentPage,
         pageSize: pagination.pageSize,
         search: filters.search,
         status: filters.status,
-      }));
+      })).unwrap();
+      if (result.items.length === 0 && pagination.currentPage > 1) {
+        dispatch(setCurrentPage(pagination.currentPage - 1));
+      }
+      const [totalData, activeData, inactiveData] = await Promise.all([
+        getCustomers(1, 1, "", "all"),
+        getCustomers(1, 1, "", "active"),
+        getCustomers(1, 1, "", "inactive"),
+      ]);
+      setStats({ total: totalData.totalItems || 0, active: activeData.totalItems || 0, inactive: inactiveData.totalItems || 0 });
+      setActionNotice({ type: "success", message: "Đã xóa khách hàng." });
     } catch (error) {
-      console.error("Error deleting customer:", error);
+      setActionNotice({ type: "error", message: error.message || "Không thể xóa khách hàng." });
+    }
+  };
+
+  const handleToggleCustomerStatus = async (customer) => {
+    const nextActive = !customer.isActive;
+    const action = nextActive ? "mở khóa" : "khóa";
+    if (!window.confirm(`Bạn có chắc muốn ${action} tài khoản khách hàng ${customer.fullName}?`)) return;
+    try {
+      await toggleCustomerStatus(customer.id, nextActive);
+      const [listResult, totalData, activeData, inactiveData] = await Promise.all([
+        dispatch(fetchCustomers({ page: pagination.currentPage, pageSize: pagination.pageSize, search: filters.search, status: filters.status })).unwrap(),
+        getCustomers(1, 1, "", "all"),
+        getCustomers(1, 1, "", "active"),
+        getCustomers(1, 1, "", "inactive"),
+      ]);
+      if (listResult.items.length === 0 && pagination.currentPage > 1) dispatch(setCurrentPage(pagination.currentPage - 1));
+      setStats({ total: totalData.totalItems || 0, active: activeData.totalItems || 0, inactive: inactiveData.totalItems || 0 });
+      setActionNotice({ type: "success", message: `Đã ${action} khách hàng.` });
+    } catch (error) {
+      setActionNotice({ type: "error", message: error.message || `Không thể ${action} khách hàng.` });
     }
   };
 
@@ -160,6 +233,7 @@ const CustomerList = () => {
           </button>
         </div>
       </div>
+      {actionNotice && <div role={actionNotice.type === "error" ? "alert" : "status"} className={`fixed right-4 top-4 z-50 max-w-md rounded-lg border p-3 shadow-lg ${actionNotice.type === "error" ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>{actionNotice.message}<button type="button" className="ml-3 underline" onClick={() => setActionNotice(null)}>Đóng</button></div>}
 
       {/* Statistics */}
       <div className="mb-6 grid grid-cols-4 gap-4">
@@ -290,7 +364,9 @@ const CustomerList = () => {
                 customers.map((customer) => (
                   <tr
                     key={customer.id}
-                    className="border-b border-gray-200 hover:bg-gray-50"
+                    onClick={() => handleView(customer.id)}
+                    title="Bấm để xem chi tiết"
+                    className="cursor-pointer border-b border-gray-200 hover:bg-primary-50/60"
                   >
                     <td className="px-6 py-3">
                       <div>
@@ -306,6 +382,7 @@ const CustomerList = () => {
                               : "";
                             return formattedDate;
                           })()}
+                          <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${customer.isActive ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>{customer.isActive ? "Đang hoạt động" : "Không hoạt động"}</span>
                         </p>
                       </div>
                     </td>
@@ -321,7 +398,7 @@ const CustomerList = () => {
                     <td className="px-6 py-3 text-sm text-gray-600">
                       {customer.address || "-"}
                     </td>
-                    <td className="px-6 py-3 text-center">
+                    <td className="px-6 py-3 text-center" onClick={(event) => event.stopPropagation()}>
                       <div className="flex items-center justify-center gap-2">
                         <button
                           onClick={() => handleView(customer.id)}
@@ -338,6 +415,13 @@ const CustomerList = () => {
                               title="Sửa"
                             >
                               <Edit2 size={18} />
+                            </button>
+                            <button
+                              onClick={() => handleToggleCustomerStatus(customer)}
+                              className={`p-2 rounded-lg transition ${customer.isActive ? "text-amber-600 hover:bg-amber-50" : "text-emerald-600 hover:bg-emerald-50"}`}
+                              title={customer.isActive ? "Khóa tài khoản" : "Mở khóa tài khoản"}
+                            >
+                              <Power size={18} />
                             </button>
                             <button
                               onClick={() => handleDelete(customer.id)}
@@ -408,6 +492,7 @@ const CustomerList = () => {
               active: activeData.totalItems || 0,
               inactive: inactiveData.totalItems || 0,
             });
+            setActionNotice({ type: "success", message: "Đã cập nhật thông tin khách hàng." });
           }}
         />
       )}
@@ -437,6 +522,7 @@ const CustomerList = () => {
             active: activeData.totalItems || 0,
             inactive: inactiveData.totalItems || 0,
           });
+          setActionNotice({ type: "success", message: "Đã thêm khách hàng." });
         }}
       />
 
@@ -465,6 +551,7 @@ const CustomerList = () => {
             active: activeData.totalItems || 0,
             inactive: inactiveData.totalItems || 0,
           });
+          setActionNotice({ type: "success", message: "Đã nhập danh sách khách hàng." });
         }}
         type="customers"
       />

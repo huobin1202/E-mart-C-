@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { getCategoryById } from "../../api/categoryApi";
 
 export default function CategoryDetailModal({ categoryId, onClose }) {
   const [category, setCategory] = useState(null);
@@ -13,13 +14,7 @@ export default function CategoryDetailModal({ categoryId, onClose }) {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(
-          `http://localhost:5099/api/categories/${categoryId}`
-        );
-        if (!response.ok) {
-          throw new Error("Failed to fetch category details");
-        }
-        const data = await response.json();
+        const data = await getCategoryById(categoryId);
         setCategory(data);
       } catch (err) {
         setError(err.message || "Error loading category details");
