@@ -8,6 +8,8 @@ public class Invoice
 {
     [Key, Column("id")] public int Id { get; set; }
     [Column("order_id")] public int OrderId { get; set; }
+    [Column("employee_id")] public int? EmployeeId { get; set; }
+    [Column("customer_id")] public int? CustomerId { get; set; }
     [Required, StringLength(120), Column("invoice_number")] public string InvoiceNumber { get; set; } = "";
     [StringLength(20), Column("invoice_status")] public string InvoiceStatus { get; set; } = "issued";
     [StringLength(20), Column("payment_status")] public string PaymentStatus { get; set; } = "pending";
@@ -24,15 +26,17 @@ public class Invoice
     [Column("issued_at")] public DateTime IssuedAt { get; set; }
     [Column("updated_at")] public DateTime UpdatedAt { get; set; }
     public Order? Order { get; set; }
+    public Employee? Employee { get; set; }
+    public Customer? Customer { get; set; }
     public ICollection<InvoiceItem> Items { get; set; } = new List<InvoiceItem>();
 }
 
 [Table("invoice_items")]
 public class InvoiceItem
 {
-    [Key, Column("id")] public int Id { get; set; }
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity), Column("id")] public int Id { get; set; }
     [Column("invoice_id")] public int InvoiceId { get; set; }
-    [Column("product_id")] public int? ProductId { get; set; }
+    [Column("product_id")] public int ProductId { get; set; }
     [Required, StringLength(255), Column("product_name")] public string ProductName { get; set; } = "";
     [StringLength(100), Column("sku")] public string? Sku { get; set; }
     [Column("quantity")] public int Quantity { get; set; }

@@ -14,18 +14,15 @@ namespace backend.Services
     {
         private readonly ProductRepository _productRepo;
         private readonly CustomerRepository _customerRepo;
-        private readonly InventoryRepository _inventoryRepo;
         private readonly ImportRepository _importRepository;
 
         public ImportService(
             ProductRepository productRepo,
             CustomerRepository customerRepo,
-            InventoryRepository inventoryRepo,
             ImportRepository importRepository)
         {
             _productRepo = productRepo;
             _customerRepo = customerRepo;
-            _inventoryRepo = inventoryRepo;
             _importRepository = importRepository;
 
             // EPPlus license context (non-commercial use)
@@ -115,16 +112,7 @@ namespace backend.Services
                     {
                         // Create new product
                         var product = MapToProduct(row);
-                        var created = await _productRepo.CreateAsync(product);
-
-                        // Create inventory record
-                        var inventory = new Inventory
-                        {
-                            ProductId = created.Id,
-                            Quantity = 0,
-                            UpdatedAt = DateTime.UtcNow
-                        };
-                        await _inventoryRepo.CreateAsync(inventory);
+                        await _productRepo.CreateAsync(product);
 
                         result.Created++;
                     }
@@ -496,6 +484,7 @@ namespace backend.Services
                 Description = dto.Description,
                 ImageUrl = dto.ImageUrl,
                 IsActive = dto.IsActive,
+                StockQuantity = 0,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };

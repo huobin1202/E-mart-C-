@@ -42,12 +42,12 @@ IF OBJECT_ID(N'ai_conversations', N'U') IS NOT NULL DROP TABLE ai_conversations;
 IF OBJECT_ID(N'activity_logs', N'U') IS NOT NULL DROP TABLE activity_logs;
 IF OBJECT_ID(N'promotion_redemptions', N'U') IS NOT NULL DROP TABLE promotion_redemptions;
 IF OBJECT_ID(N'voucher_promotions', N'U') IS NOT NULL DROP TABLE voucher_promotions;
-IF OBJECT_ID(N'event_promotions', N'U') IS NOT NULL DROP TABLE event_promotions;
+IF OBJECT_ID(N'invoice_promotions', N'U') IS NOT NULL DROP TABLE invoice_promotions;
 IF OBJECT_ID(N'product_promotions', N'U') IS NOT NULL DROP TABLE product_promotions;
 IF OBJECT_ID(N'payments', N'U') IS NOT NULL DROP TABLE payments;
 IF OBJECT_ID(N'order_items', N'U') IS NOT NULL DROP TABLE order_items;
 IF OBJECT_ID(N'[orders]', N'U') IS NOT NULL DROP TABLE [orders];
-IF OBJECT_ID(N'po_details', N'U') IS NOT NULL DROP TABLE po_details;
+IF OBJECT_ID(N'purchase_order_items', N'U') IS NOT NULL DROP TABLE purchase_order_items;
 IF OBJECT_ID(N'purchase_orders', N'U') IS NOT NULL DROP TABLE purchase_orders;
 IF OBJECT_ID(N'inventory_adjustments', N'U') IS NOT NULL DROP TABLE inventory_adjustments;
 IF OBJECT_ID(N'inventory', N'U') IS NOT NULL DROP TABLE inventory;
@@ -111,14 +111,18 @@ GO
 CREATE TABLE employees (
   id INT IDENTITY(1,1) PRIMARY KEY,
   full_name NVARCHAR(255) NOT NULL,
+  family_middle_name NVARCHAR(200),
+  given_name NVARCHAR(100),
   phone VARCHAR(50),
   email VARCHAR(255),
   date_of_birth DATE NULL,
   address NVARCHAR(MAX),
   note NVARCHAR(MAX),
+  base_salary DECIMAL(18,2) NOT NULL DEFAULT 0,
   is_active BIT NOT NULL DEFAULT 1,
   created_at DATETIME NOT NULL DEFAULT GETDATE(),
-  updated_at DATETIME NOT NULL DEFAULT GETDATE()
+  updated_at DATETIME NOT NULL DEFAULT GETDATE(),
+  CONSTRAINT ck_employees_base_salary CHECK (base_salary >= 0)
 );
 CREATE UNIQUE INDEX ux_employees_email ON employees(email) WHERE email IS NOT NULL;
 
@@ -201,22 +205,26 @@ CREATE TABLE promotions (
 -- =========================================================
 
 -- Event details contain only event-specific conditions.
-CREATE TABLE event_promotions (
+CREATE TABLE invoice_promotions (
   id INT IDENTITY(1,1) PRIMARY KEY,
   promotion_id INT NOT NULL UNIQUE,
-  min_order_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
-  CONSTRAINT fk_event_promotions_promotion
+  min_invoice_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+  discount_percent DECIMAL(5,2) NULL,
+  CONSTRAINT fk_invoice_promotions_promotion
     FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE CASCADE,
-  CONSTRAINT ck_event_min_order CHECK (min_order_amount >= 0)
+  CONSTRAINT ck_invoice_promotions_min_invoice_amount CHECK (min_invoice_amount >= 0),
+  CONSTRAINT ck_invoice_promotions_discount_percent CHECK (discount_percent IS NULL OR discount_percent BETWEEN 0 AND 100)
 );
 
 CREATE TABLE voucher_promotions (
   id INT IDENTITY(1,1) PRIMARY KEY,
   promotion_id INT NOT NULL UNIQUE,
   voucher_code VARCHAR(50) NOT NULL UNIQUE,
+  discount_percent DECIMAL(5,2) NULL,
   CONSTRAINT fk_voucher_promotions_promotion
     FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE CASCADE,
-  CONSTRAINT ck_voucher_code CHECK (LEN(voucher_code) > 0)
+  CONSTRAINT ck_voucher_code CHECK (LEN(voucher_code) > 0),
+  CONSTRAINT ck_voucher_discount_percent CHECK (discount_percent IS NULL OR discount_percent BETWEEN 0 AND 100)
 );
 
 CREATE TABLE units (
@@ -237,8 +245,9 @@ CREATE TABLE products (
   barcode VARCHAR(191) DEFAULT NULL,
   category_id INT DEFAULT NULL,
   supplier_id INT DEFAULT NULL,
-  price DECIMAL(12,2) NOT NULL DEFAULT 0,
+  selling_price DECIMAL(12,2) NOT NULL DEFAULT 0,
   cost DECIMAL(12,2) DEFAULT 0,
+  stock_quantity INT NOT NULL DEFAULT 0,
   unit_id INT DEFAULT NULL,
   description NVARCHAR(MAX),
   image_url VARCHAR(1024) DEFAULT NULL,
@@ -247,7 +256,8 @@ CREATE TABLE products (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_products_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT fk_products_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT fk_products_unit FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE SET NULL ON UPDATE CASCADE
+  CONSTRAINT fk_products_unit FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT ck_products_stock_quantity CHECK (stock_quantity >= 0)
 );
 GO
 
@@ -267,28 +277,19 @@ CREATE INDEX idx_products_unit ON products (unit_id);
 
 -- Promotion áp dụng theo từng sản phẩm
 CREATE TABLE product_promotions (
-  id INT IDENTITY(1,1) PRIMARY KEY,
+  id INT IDENTITY(1,1) NOT NULL,
   promotion_id INT NOT NULL,
   product_id INT NOT NULL,
+  discount_percent DECIMAL(5,2) NULL,
+  CONSTRAINT pk_product_promotions PRIMARY KEY (promotion_id, product_id),
   CONSTRAINT fk_product_promotions_promotion
     FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE CASCADE,
   CONSTRAINT fk_product_promotions_product
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
-  CONSTRAINT ux_product_promotions UNIQUE (promotion_id, product_id)
+  CONSTRAINT ck_product_promotions_discount_percent
+    CHECK (discount_percent IS NULL OR discount_percent BETWEEN 0 AND 100)
 );
 
-
--- Inventory: one record per product (normalized). Use product_id unique.
-CREATE TABLE inventory (
-  id INT IDENTITY(1,1) PRIMARY KEY,
-  product_id INT NOT NULL,
-  quantity INT NOT NULL DEFAULT 0,
-  last_checked_at DATETIME DEFAULT NULL,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT ux_inventory_product UNIQUE (product_id),
-  CONSTRAINT fk_inventory_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE ON UPDATE CASCADE
-);
-CREATE INDEX idx_inventory_product ON inventory (product_id);
 
 -- Inventory adjustments log
 CREATE TABLE inventory_adjustments (
@@ -313,6 +314,7 @@ CREATE TABLE purchase_orders (
   po_code VARCHAR(20) NOT NULL UNIQUE,
   supplier_id INT NOT NULL,
   user_id INT NOT NULL,
+  employee_id INT NULL,
   total_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
   note NVARCHAR(MAX),
   status VARCHAR(20) NOT NULL DEFAULT 'pending',
@@ -322,28 +324,31 @@ CREATE TABLE purchase_orders (
     FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE NO ACTION ON UPDATE CASCADE,
   CONSTRAINT fk_purchase_orders_user
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE NO ACTION ON UPDATE CASCADE,
+  CONSTRAINT fk_purchase_orders_employee
+    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE SET NULL,
   CONSTRAINT ck_purchase_orders_status CHECK (status IN ('pending','completed','cancelled'))
 );
 
-CREATE TABLE po_details (
-  id INT IDENTITY(1,1) PRIMARY KEY,
+CREATE TABLE purchase_order_items (
+  id INT IDENTITY(1,1) NOT NULL,
   purchase_order_id INT NOT NULL,
   product_id INT NOT NULL,
   quantity INT NOT NULL,
-  import_price DECIMAL(12,2) NOT NULL,
-  subtotal AS (quantity * import_price) PERSISTED,
-  CONSTRAINT fk_po_details_po
+  unit_cost DECIMAL(12,2) NOT NULL,
+  line_total AS (quantity * unit_cost) PERSISTED,
+  CONSTRAINT pk_purchase_order_items PRIMARY KEY (purchase_order_id, product_id),
+  CONSTRAINT fk_purchase_order_items_order
     FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE,
-  CONSTRAINT fk_po_details_product
+  CONSTRAINT fk_purchase_order_items_product
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE NO ACTION,
-  CONSTRAINT ck_po_details_quantity CHECK (quantity > 0),
-  CONSTRAINT ck_po_details_import_price CHECK (import_price >= 0),
-  CONSTRAINT ux_po_details_product UNIQUE (purchase_order_id, product_id)
+  CONSTRAINT ck_purchase_order_items_quantity CHECK (quantity > 0),
+  CONSTRAINT ck_purchase_order_items_unit_cost CHECK (unit_cost >= 0)
 );
 
 CREATE INDEX idx_purchase_orders_supplier ON purchase_orders(supplier_id);
 CREATE INDEX idx_purchase_orders_user ON purchase_orders(user_id);
-CREATE INDEX idx_po_details_product ON po_details(product_id);
+CREATE INDEX idx_purchase_orders_employee ON purchase_orders(employee_id);
+CREATE INDEX idx_purchase_order_items_product ON purchase_order_items(product_id);
 
 -- Orders and order items
 CREATE TABLE [orders] (
@@ -411,6 +416,8 @@ CREATE INDEX idx_payments_order ON payments (order_id);
 CREATE TABLE invoices (
   id INT IDENTITY(1,1) PRIMARY KEY,
   order_id INT NOT NULL UNIQUE,
+  employee_id INT NULL,
+  customer_id INT NULL,
   invoice_number VARCHAR(120) NOT NULL UNIQUE,
   invoice_status VARCHAR(20) NOT NULL DEFAULT 'issued',
   payment_status VARCHAR(20) NOT NULL DEFAULT 'pending',
@@ -427,22 +434,28 @@ CREATE TABLE invoices (
   issued_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
   updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
   CONSTRAINT fk_invoices_order FOREIGN KEY (order_id) REFERENCES [orders](id) ON DELETE NO ACTION,
+  CONSTRAINT fk_invoices_employee FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE SET NULL,
+  CONSTRAINT fk_invoices_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL,
   CONSTRAINT ck_invoices_status CHECK (invoice_status IN ('issued','paid','voided','refunded')),
   CONSTRAINT ck_invoices_payment_status CHECK (payment_status IN ('pending','paid','failed','refunded')),
   CONSTRAINT ck_invoices_amounts CHECK (subtotal >= 0 AND tax_amount >= 0 AND shipping_fee >= 0 AND discount_amount >= 0 AND total_amount >= 0)
 );
 
+CREATE INDEX idx_invoices_employee ON invoices(employee_id);
+CREATE INDEX idx_invoices_customer ON invoices(customer_id);
+
 CREATE TABLE invoice_items (
-  id INT IDENTITY(1,1) PRIMARY KEY,
+  id INT IDENTITY(1,1) NOT NULL,
   invoice_id INT NOT NULL,
-  product_id INT NULL,
+  product_id INT NOT NULL,
   product_name NVARCHAR(255) NOT NULL,
   sku VARCHAR(100) NULL,
   quantity INT NOT NULL,
   unit_price DECIMAL(12,2) NOT NULL,
   total_price DECIMAL(12,2) NOT NULL,
+  CONSTRAINT pk_invoice_items PRIMARY KEY (invoice_id, product_id),
   CONSTRAINT fk_invoice_items_invoice FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE NO ACTION,
-  CONSTRAINT fk_invoice_items_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL,
+  CONSTRAINT fk_invoice_items_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE NO ACTION,
   CONSTRAINT ck_invoice_items_quantity CHECK (quantity > 0),
   CONSTRAINT ck_invoice_items_amounts CHECK (unit_price >= 0 AND total_price >= 0)
 );
@@ -504,7 +517,7 @@ CREATE INDEX idx_activity_action ON activity_logs (action);
 
 -- Helpful indexes for reporting queries
 CREATE INDEX idx_orders_created_at ON [orders] (created_at);
-CREATE INDEX idx_inventory_quantity ON inventory (quantity);
+CREATE INDEX idx_products_stock_quantity ON products (stock_quantity);
 CREATE INDEX idx_products_created_at ON products (created_at);
 
 -- ===== USERS (ADMIN + EMPLOYEE, role ánh xạ qua khóa ngoại) =====
@@ -605,8 +618,8 @@ INSERT INTO units (code, name, created_at) VALUES
 ('sheet', N'Tờ', GETDATE()),             
 ('bag', N'Túi', GETDATE());             
 
--- ===== PRODUCTS (category_id, supplier_id, product_name, sku, price, unit) =====
-INSERT INTO products (category_id, supplier_id, product_name, sku, price, unit_id, created_at)
+-- ===== PRODUCTS (category_id, supplier_id, product_name, sku, selling_price, unit) =====
+INSERT INTO products (category_id, supplier_id, product_name, sku, selling_price, unit_id, created_at)
 VALUES
 (1, 1, N'Coca Cola lon', '8900000000001', 15000.00, 4, GETDATE()),
 (1, 5, N'Pepsi lon', '8900000000002', 15000.00, 4, GETDATE()),
@@ -689,9 +702,9 @@ VALUES
 (10, 13, N'Mực ống', '8900000000079', 220000.00, 7, GETDATE()),
 (10, 13, N'Cá ngừ đại dương', '8900000000080', 320000.00, 7, GETDATE());
 
--- ===== INVENTORY (product_id, quantity) =====
-INSERT INTO inventory (product_id, quantity, updated_at)
-VALUES
+-- ===== PRODUCT STOCK (product_id, stock_quantity) =====
+MERGE products AS product
+USING (VALUES
 (1, 25, GETDATE()),(2, 169, GETDATE()),(3, 77, GETDATE()),(4, 169, GETDATE()),(5, 90, GETDATE()),
 (6, 105, GETDATE()),(7, 125, GETDATE()),(8, 37, GETDATE()),(9, 74, GETDATE()),(10, 149, GETDATE()),
 (11, 69, GETDATE()),(12, 23, GETDATE()),(13, 46, GETDATE()),(14, 144, GETDATE()),(15, 134, GETDATE()),
@@ -707,7 +720,10 @@ VALUES
 (61, 105, GETDATE()),(62, 114, GETDATE()),(63, 126, GETDATE()),(64, 138, GETDATE()),(65, 147, GETDATE()),
 (66, 155, GETDATE()),(67, 163, GETDATE()),(68, 172, GETDATE()),(69, 181, GETDATE()),(70, 192, GETDATE()),
 (71, 203, GETDATE()),(72, 215, GETDATE()),(73, 224, GETDATE()),(74, 233, GETDATE()),(75, 242, GETDATE()),
-(76, 251, GETDATE()),(77, 263, GETDATE()),(78, 274, GETDATE()),(79, 285, GETDATE()),(80, 296, GETDATE());
+(76, 251, GETDATE()),(77, 263, GETDATE()),(78, 274, GETDATE()),(79, 285, GETDATE()),(80, 296, GETDATE())
+) AS source(product_id, quantity, updated_at)
+ON product.id = source.product_id
+WHEN MATCHED THEN UPDATE SET product.stock_quantity = source.quantity, product.updated_at = source.updated_at;
 
 -- ===== PURCHASE ORDERS =====
 INSERT INTO purchase_orders
@@ -717,8 +733,8 @@ VALUES
 ('PO0002', 8, 3, 8500000, N'Nhập bánh kẹo định kỳ', 'completed', GETDATE()),
 ('PO0003', 4, 2, 6200000, N'Nhập thực phẩm tươi sống', 'pending', GETDATE());
 
-INSERT INTO po_details
-(purchase_order_id, product_id, quantity, import_price)
+INSERT INTO purchase_order_items
+(purchase_order_id, product_id, quantity, unit_cost)
 VALUES
 (1, 1, 200, 10000),
 (1, 2, 200, 10000),
@@ -752,23 +768,23 @@ VALUES
 ('PROD15', N'Giảm 15% Coca/Pepsi', 'product', 'percent', 15, N'Giảm 15% cho một số sản phẩm đồ uống', '2025-01-01', '2025-12-31', 'expired', 100000, 500, 0, GETDATE());
 
 -- Chi tiết event promotion
-INSERT INTO event_promotions (promotion_id, min_order_amount)
+INSERT INTO invoice_promotions (promotion_id, min_invoice_amount, discount_percent)
 VALUES
-(1, 0),
-(2, 300000),
-(4, 50000);
+(1, 0, 10),
+(2, 300000, NULL),
+(4, 50000, 15);
 
 -- Chi tiết voucher promotion
-INSERT INTO voucher_promotions (promotion_id, voucher_code)
+INSERT INTO voucher_promotions (promotion_id, voucher_code, discount_percent)
 VALUES
-(3, 'NEWUSER20'),
-(5, 'VIP100K');
+(3, 'NEWUSER20', 20),
+(5, 'VIP100K', NULL);
 
 -- Khuyến mãi áp dụng trực tiếp cho sản phẩm
-INSERT INTO product_promotions (promotion_id, product_id)
+INSERT INTO product_promotions (promotion_id, product_id, discount_percent)
 VALUES
-(6, 1),
-(6, 2);
+(6, 1, 5),
+(6, 2, 5);
 
 -- ===== ORDERS với giá mới hợp lý =====
 INSERT INTO orders (order_number, customer_id, user_id, order_type, status, subtotal, discount, total_amount, promotion_id, payment_method, payment_status, created_at)
@@ -1008,16 +1024,17 @@ END;
 IF OBJECT_ID(N'dbo.invoice_items', N'U') IS NULL
 BEGIN
   CREATE TABLE dbo.invoice_items (
-    id INT IDENTITY(1,1) NOT NULL CONSTRAINT pk_invoice_items PRIMARY KEY,
+    id INT IDENTITY(1,1) NOT NULL,
     invoice_id INT NOT NULL,
-    product_id INT NULL,
+    product_id INT NOT NULL,
     product_name NVARCHAR(255) NOT NULL,
     sku VARCHAR(100) NULL,
     quantity INT NOT NULL,
     unit_price DECIMAL(12,2) NOT NULL,
     total_price DECIMAL(12,2) NOT NULL,
+    CONSTRAINT pk_invoice_items PRIMARY KEY (invoice_id, product_id),
     CONSTRAINT fk_invoice_items_invoice FOREIGN KEY (invoice_id) REFERENCES dbo.invoices(id) ON DELETE NO ACTION,
-    CONSTRAINT fk_invoice_items_product FOREIGN KEY (product_id) REFERENCES dbo.products(id) ON DELETE SET NULL,
+    CONSTRAINT fk_invoice_items_product FOREIGN KEY (product_id) REFERENCES dbo.products(id) ON DELETE NO ACTION,
     CONSTRAINT ck_invoice_items_quantity CHECK (quantity > 0),
     CONSTRAINT ck_invoice_items_amounts CHECK (unit_price >= 0 AND total_price >= 0)
   );

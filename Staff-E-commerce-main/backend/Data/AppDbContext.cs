@@ -15,7 +15,6 @@ namespace backend.Data
         public DbSet<Invoice> Invoices { get; set; }
         public DbSet<InvoiceItem> InvoiceItems { get; set; }
         public DbSet<InventoryAdjustment> InventoryAdjustments { get; set; }
-        public DbSet<Inventory> Inventory { get; set; }
         public DbSet<Unit> Units { get; set; }
         public DbSet<Product> Products { get; set; }
         public DbSet<Supplier> Suppliers { get; set; }
@@ -106,17 +105,9 @@ namespace backend.Data
                 .HasIndex(p => p.SupplierId)
                 .HasDatabaseName("idx_products_supplier");
 
-            modelBuilder.Entity<Inventory>()
-                .HasIndex(i => i.ProductId)
-                .IsUnique()
-                .HasDatabaseName("ux_inventory_product");
-
-            // Configure one-to-one: Product <-> Inventory
             modelBuilder.Entity<Product>()
-                .HasOne(p => p.Inventory)
-                .WithOne(i => i.Product)
-                .HasForeignKey<Inventory>(i => i.ProductId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .ToTable(table => table.HasCheckConstraint(
+                    "ck_products_stock_quantity", "[stock_quantity] >= 0"));
 
             // Configure Product -> Category (many-to-one)
             modelBuilder.Entity<Product>()
@@ -170,10 +161,19 @@ namespace backend.Data
             modelBuilder.Entity<InvoiceItem>()
                 .ToTable(table => table.UseSqlOutputClause(false));
 
+            modelBuilder.Entity<InvoiceItem>()
+                .HasKey(i => new { i.InvoiceId, i.ProductId });
+            modelBuilder.Entity<InvoiceItem>()
+                .Property(i => i.Id).ValueGeneratedOnAdd();
+
             modelBuilder.Entity<Invoice>().HasIndex(i => i.OrderId).IsUnique();
             modelBuilder.Entity<Invoice>().HasIndex(i => i.InvoiceNumber).IsUnique();
             modelBuilder.Entity<Invoice>().HasOne(i => i.Order).WithOne(o => o.Invoice)
                 .HasForeignKey<Invoice>(i => i.OrderId).OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<Invoice>().HasOne(i => i.Employee).WithMany()
+                .HasForeignKey(i => i.EmployeeId).OnDelete(DeleteBehavior.SetNull);
+            modelBuilder.Entity<Invoice>().HasOne(i => i.Customer).WithMany()
+                .HasForeignKey(i => i.CustomerId).OnDelete(DeleteBehavior.SetNull);
             modelBuilder.Entity<InvoiceItem>().HasOne(i => i.Invoice).WithMany(i => i.Items)
                 .HasForeignKey(i => i.InvoiceId).OnDelete(DeleteBehavior.Restrict);
 
@@ -234,6 +234,18 @@ namespace backend.Data
                 .HasForeignKey(po => po.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            modelBuilder.Entity<PurchaseOrder>()
+                .HasOne(po => po.Employee)
+                .WithMany()
+                .HasForeignKey(po => po.EmployeeId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<PurchaseOrderDetail>()
+                .HasKey(detail => new { detail.PurchaseOrderId, detail.ProductId });
+
+            modelBuilder.Entity<PurchaseOrderDetail>()
+                .Property(detail => detail.Id).ValueGeneratedOnAdd();
+
             modelBuilder.Entity<PurchaseOrderDetail>()
                 .HasOne(detail => detail.PurchaseOrder)
                 .WithMany(po => po.Details)
@@ -256,6 +268,10 @@ namespace backend.Data
                 .HasForeignKey<VoucherPromotion>(d => d.PromotionId).OnDelete(DeleteBehavior.Cascade);
             modelBuilder.Entity<Promotion>().HasMany(p => p.ProductDetails).WithOne(d => d.Promotion)
                 .HasForeignKey(d => d.PromotionId).OnDelete(DeleteBehavior.Cascade);
+            modelBuilder.Entity<ProductPromotion>()
+                .HasKey(link => new { link.PromotionId, link.ProductId });
+            modelBuilder.Entity<ProductPromotion>()
+                .Property(link => link.Id).ValueGeneratedOnAdd();
 
             // Customer -> Orders
             modelBuilder.Entity<Customer>()

@@ -1131,3 +1131,64 @@
 [2026-10-24 23:09:27] [User:2] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"username":"admin","password":"[REDACTED]"}
 [2026-10-24 23:09:51] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#login] [IP:127.0.0.1] {"username":"customer02","password":"[REDACTED]"}
 [2026-10-24 23:10:13] [User:5] [Action:CREATE_Storefront] [Entity:Storefront#orders] [IP:127.0.0.1] {"fullName":"Kh\u00E1ch h\u00E0ng minh","phone":"0909000002","address":"\u0110\u1ECBa ch\u1EC9 2","note":"","paymentMethod":"momo","pointsUsed":0,"items":[{"productId":36,"quantity":1},{"productId":15,"quantity":2}],"promotionCode":null,"eventPromotionId":null}
+[2026-10-28 13:04:28] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:04:37] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:04:40] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:05:44] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:05:44] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:36:21] [User:2] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"username":"admin","password":"[REDACTED]"}
+[2026-10-28 13:36:24] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:36:25] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:36:26] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:36:26] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:36:27] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:36:30] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:36:30] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:37:18] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:37:18] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:40:58] [User:2] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"username":"admin","password":"[REDACTED]"}
+[2026-10-28 13:46:54] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:46:55] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:46:55] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:46:55] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:46:56] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:46:56] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:59:37] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:59:37] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:59:38] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 13:59:59] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:00:03] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:00:10] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:00:10] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:00:11] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:00:11] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:00:34] [User:2] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"username":"admin","password":"[REDACTED]"}
+[2026-10-28 14:01:13] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#login] [IP:127.0.0.1] {"username":"customer02","password":"[REDACTED]"}
+[2026-10-28 14:01:25] [User:5] [Action:CREATE_Storefront] [Entity:Storefront#orders] [IP:127.0.0.1] {"fullName":"Kh\u00E1ch h\u00E0ng minh","phone":"0909000002","address":"\u0110\u1ECBa ch\u1EC9 2","note":"","paymentMethod":"cod","pointsUsed":0,"items":[{"productId":65,"quantity":1}],"promotionCode":null,"eventPromotionId":null}
+[2026-10-28 14:02:10] [User:2] [Action:CREATE_Storefront] [Entity:Storefront#login] [IP:127.0.0.1] {"username":"customer02","password":"[REDACTED]"}
+[2026-10-28 14:02:50] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:02:50] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:02:59] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:03:02] [User:1] [Action:CREATE_Orders] [Entity:Orders#39] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:03:40] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:03:40] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:03:43] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:03:45] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:03:45] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:03:46] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:03:52] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:03:59] [User:1] [Action:CREATE_Orders] [Entity:Orders#39] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:04:02] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:04:06] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:04:06] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:04:11] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:04:31] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:04:51] [User:1] [Action:CREATE_Orders] [Entity:Orders#38] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:04:58] [User:1] [Action:CREATE_Orders] [Entity:Orders#36] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:05:13] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:05:17] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:05:32] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:05:32] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:05:37] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:05:40] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}
+[2026-10-28 14:05:41] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"raw":"[Empty Body]"}

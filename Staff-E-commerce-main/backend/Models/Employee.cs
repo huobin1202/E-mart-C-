@@ -15,6 +15,14 @@ namespace backend.Models
         [Column("full_name")]
         public string FullName { get; set; } = string.Empty;
 
+        [Column("family_middle_name")]
+        [StringLength(200)]
+        public string? FamilyMiddleName { get; set; }
+
+        [Column("given_name")]
+        [StringLength(100)]
+        public string? GivenName { get; set; }
+
         [StringLength(50)]
         public string? Phone { get; set; }
 
@@ -25,6 +33,9 @@ namespace backend.Models
 
         public string? Address { get; set; }
         public string? Note { get; set; }
+
+        [Column("base_salary", TypeName = "decimal(18,2)")]
+        public decimal BaseSalary { get; set; }
 
         [Column("is_active")]
         public bool IsActive { get; set; } = true;

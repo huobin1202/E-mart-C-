@@ -68,13 +68,12 @@ namespace backend.Repository
                 .Where(o => o.CreatedAt >= todayStartUtc && o.CreatedAt < todayEndUtc)
                 .SumAsync(o => o.Discount);
 
-            var lowStockCount = await _context.Inventory
-                .Where(i => i.Quantity < 10)
+            var lowStockCount = await _context.Products
+                .Where(product => product.StockQuantity < 10)
                 .CountAsync();
 
-            var inventoryValue = await _context.Inventory
-                .Include(i => i.Product)
-                .SumAsync(i => i.Quantity * (i.Product!.Cost ?? 0));
+            var inventoryValue = await _context.Products
+                .SumAsync(product => product.StockQuantity * (product.Cost ?? 0));
 
             return new OverviewStatsDTO
             {
@@ -172,18 +171,17 @@ namespace backend.Repository
 
         public async Task<List<ProductInventoryDTO>> GetLowStockProductsAsync(int threshold = 10)
         {
-            return await _context.Inventory
-                .Include(i => i.Product)
-                .Where(i => i.Quantity < threshold)
-                .OrderBy(i => i.Quantity)
-                .Select(i => new ProductInventoryDTO
+            return await _context.Products
+                .Where(product => product.StockQuantity < threshold)
+                .OrderBy(product => product.StockQuantity)
+                .Select(product => new ProductInventoryDTO
                 {
-                    ProductId = i.ProductId,
-                    ProductName = i.Product!.ProductName,
-                    Sku = i.Product.Sku,
-                    Quantity = i.Quantity,
-                    Price = i.Product.Price,
-                    LastCheckedAt = i.LastCheckedAt ?? i.UpdatedAt
+                    ProductId = product.Id,
+                    ProductName = product.ProductName,
+                    Sku = product.Sku,
+                    Quantity = product.StockQuantity,
+                    Price = product.Price,
+                    LastCheckedAt = product.UpdatedAt
                 })
                 .ToListAsync();
         }

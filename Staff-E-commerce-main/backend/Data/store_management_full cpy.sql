@@ -1,3 +1,6 @@
+-- LEGACY COPY: do not execute. Use store_management_full.sql and the
+-- 20261028 two-phase migrations; this file preserves the pre-migration schema.
+
 -- =========================================================
 -- STORE MANAGEMENT - CONVENIENCE STORE
 -- SQL Server / SSMS

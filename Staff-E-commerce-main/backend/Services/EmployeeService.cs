@@ -23,15 +23,20 @@ public sealed class EmployeeService
 
     public async Task<EmployeeDTO> CreateAsync(EmployeeDTO request)
     {
+        if (request.BaseSalary < 0) throw new ArgumentException("Lương cơ bản không được âm.");
+        var (familyMiddleName, givenName) = ResolveNameParts(request);
         var now = DateTime.UtcNow;
         var employee = new Employee
         {
             FullName = request.FullName.Trim(),
+            FamilyMiddleName = familyMiddleName,
+            GivenName = givenName,
             Phone = request.Phone?.Trim(),
             Email = request.Email?.Trim(),
             DateOfBirth = request.DateOfBirth,
             Address = request.Address?.Trim(),
             Note = request.Note?.Trim(),
+            BaseSalary = request.BaseSalary,
             IsActive = request.IsActive,
             CreatedAt = now,
             UpdatedAt = now
@@ -46,13 +51,18 @@ public sealed class EmployeeService
     {
         var employee = await _repository.GetByIdAsync(id);
         if (employee is null) return null;
+        if (request.BaseSalary < 0) throw new ArgumentException("Lương cơ bản không được âm.");
+        var (familyMiddleName, givenName) = ResolveNameParts(request);
 
         employee.FullName = request.FullName.Trim();
+        employee.FamilyMiddleName = familyMiddleName;
+        employee.GivenName = givenName;
         employee.Phone = request.Phone?.Trim();
         employee.Email = request.Email?.Trim();
         employee.DateOfBirth = request.DateOfBirth;
         employee.Address = request.Address?.Trim();
         employee.Note = request.Note?.Trim();
+        employee.BaseSalary = request.BaseSalary;
         employee.IsActive = request.IsActive;
         employee.UpdatedAt = DateTime.UtcNow;
 
@@ -88,13 +98,29 @@ public sealed class EmployeeService
     {
         Id = employee.Id,
         FullName = employee.FullName,
+        FamilyMiddleName = employee.FamilyMiddleName,
+        GivenName = employee.GivenName,
         Phone = employee.Phone,
         Email = employee.Email,
         Address = employee.Address,
         Note = employee.Note,
+        BaseSalary = employee.BaseSalary,
         IsActive = employee.IsActive,
         DateOfBirth = employee.DateOfBirth,
         HasAccount = employee.Account is not null,
         AccountUsername = employee.Account?.Username
     };
+
+    private static (string FamilyMiddleName, string GivenName) ResolveNameParts(EmployeeDTO request)
+    {
+        if (!string.IsNullOrWhiteSpace(request.FamilyMiddleName) || !string.IsNullOrWhiteSpace(request.GivenName))
+            return (request.FamilyMiddleName?.Trim() ?? string.Empty, request.GivenName?.Trim() ?? string.Empty);
+
+        var normalized = string.Join(' ', request.FullName.Split(
+            ' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        var separator = normalized.LastIndexOf(' ');
+        return separator < 0
+            ? (string.Empty, normalized)
+            : (normalized[..separator], normalized[(separator + 1)..]);
+    }
 }

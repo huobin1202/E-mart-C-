@@ -131,11 +131,23 @@ namespace backend.Controllers
                     Description = promotionDto.Description
                 };
                 promotion.VoucherDetails = promotion.Type == "voucher" && !string.IsNullOrWhiteSpace(promotionDto.VoucherCode)
-                    ? new VoucherPromotion { VoucherCode = promotionDto.VoucherCode.Trim().ToUpperInvariant() } : null;
+                    ? new VoucherPromotion
+                    {
+                        VoucherCode = promotionDto.VoucherCode.Trim().ToUpperInvariant(),
+                        DiscountPercent = promotion.DiscountType == "percent" ? promotion.Value : null
+                    } : null;
                 promotion.EventDetails = promotion.Type == "event"
-                    ? new EventPromotion { MinOrderAmount = promotionDto.MinOrderAmount } : null;
+                    ? new EventPromotion
+                    {
+                        MinOrderAmount = promotionDto.MinOrderAmount,
+                        DiscountPercent = promotion.DiscountType == "percent" ? promotion.Value : null
+                    } : null;
                 promotion.ProductDetails = promotion.Type == "product"
-                    ? promotionDto.ProductIds.Distinct().Select(productId => new ProductPromotion { ProductId = productId }).ToList() : null;
+                    ? promotionDto.ProductIds.Distinct().Select(productId => new ProductPromotion
+                    {
+                        ProductId = productId,
+                        DiscountPercent = promotion.DiscountType == "percent" ? promotion.Value : null
+                    }).ToList() : null;
 
                 var created = await _promotionService.CreatePromotionAsync(promotion);
                 return CreatedAtAction(nameof(GetPromotion), new { id = created.Id }, created);
@@ -184,11 +196,23 @@ namespace backend.Controllers
                     Description = promotionDto.Description
                 };
                 promotion.VoucherDetails = promotion.Type == "voucher" && !string.IsNullOrWhiteSpace(promotionDto.VoucherCode)
-                    ? new VoucherPromotion { VoucherCode = promotionDto.VoucherCode.Trim().ToUpperInvariant() } : null;
+                    ? new VoucherPromotion
+                    {
+                        VoucherCode = promotionDto.VoucherCode.Trim().ToUpperInvariant(),
+                        DiscountPercent = promotion.DiscountType == "percent" ? promotion.Value : null
+                    } : null;
                 promotion.EventDetails = promotion.Type == "event"
-                    ? new EventPromotion { MinOrderAmount = promotionDto.MinOrderAmount } : null;
+                    ? new EventPromotion
+                    {
+                        MinOrderAmount = promotionDto.MinOrderAmount,
+                        DiscountPercent = promotion.DiscountType == "percent" ? promotion.Value : null
+                    } : null;
                 promotion.ProductDetails = promotion.Type == "product"
-                    ? promotionDto.ProductIds.Distinct().Select(productId => new ProductPromotion { ProductId = productId }).ToList() : null;
+                    ? promotionDto.ProductIds.Distinct().Select(productId => new ProductPromotion
+                    {
+                        ProductId = productId,
+                        DiscountPercent = promotion.DiscountType == "percent" ? promotion.Value : null
+                    }).ToList() : null;
 
                 var updated = await _promotionService.UpdatePromotionAsync(promotion);
                 return Ok(updated);

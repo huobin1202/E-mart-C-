@@ -34,6 +34,8 @@ public class PurchaseOrderRepository
                 SupplierId = po.SupplierId,
                 SupplierName = po.Supplier != null ? po.Supplier.Name : string.Empty,
                 UserName = po.User != null ? po.User.FullName : string.Empty,
+                EmployeeId = po.EmployeeId,
+                EmployeeName = po.Employee != null ? po.Employee.FullName : null,
                 TotalAmount = po.TotalAmount,
                 ItemCount = po.Details.Count,
                 Status = po.Status,
@@ -42,12 +44,16 @@ public class PurchaseOrderRepository
     }
 
     public Task<PurchaseOrder?> GetByIdAsync(int id) => _context.PurchaseOrders
-        .Include(po => po.Supplier).Include(po => po.User)
+        .Include(po => po.Supplier).Include(po => po.User).Include(po => po.Employee)
         .Include(po => po.Details).ThenInclude(detail => detail.Product)
         .FirstOrDefaultAsync(po => po.Id == id);
 
     public async Task<PurchaseOrder> CreateAsync(PurchaseOrder purchaseOrder)
     {
+        purchaseOrder.EmployeeId = await _context.Users
+            .Where(user => user.Id == purchaseOrder.UserId)
+            .Select(user => user.EmployeeId)
+            .SingleOrDefaultAsync();
         _context.PurchaseOrders.Add(purchaseOrder);
         await _context.SaveChangesAsync();
         return purchaseOrder;
@@ -64,21 +70,16 @@ public class PurchaseOrderRepository
             throw new InvalidOperationException("Chỉ có thể hoàn tất phiếu nhập đang chờ xử lý.");
 
         var productIds = purchaseOrder.Details.Select(detail => detail.ProductId).ToList();
-        var inventories = await _context.Inventory
-            .Where(item => productIds.Contains(item.ProductId))
-            .ToDictionaryAsync(item => item.ProductId);
+        var products = await _context.Products
+            .Where(item => productIds.Contains(item.Id))
+            .ToDictionaryAsync(item => item.Id);
         var now = DateTime.UtcNow;
         foreach (var detail in purchaseOrder.Details)
         {
-            if (!inventories.TryGetValue(detail.ProductId, out var inventory))
-            {
-                inventory = new Inventory { ProductId = detail.ProductId, Quantity = 0, UpdatedAt = now };
-                _context.Inventory.Add(inventory);
-                inventories[detail.ProductId] = inventory;
-            }
-            inventory.Quantity += detail.Quantity;
-            inventory.UpdatedAt = now;
-            inventory.LastCheckedAt = now;
+            if (!products.TryGetValue(detail.ProductId, out var product))
+                throw new InvalidOperationException($"Không tìm thấy sản phẩm ID {detail.ProductId}.");
+            product.StockQuantity += detail.Quantity;
+            product.UpdatedAt = now;
             _context.InventoryAdjustments.Add(new InventoryAdjustment
             {
                 ProductId = detail.ProductId, ChangeAmount = detail.Quantity,

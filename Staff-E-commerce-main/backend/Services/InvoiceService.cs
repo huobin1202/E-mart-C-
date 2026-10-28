@@ -32,6 +32,8 @@ public sealed class InvoiceService
         var invoice = new Invoice
         {
             OrderId = order.Id,
+            EmployeeId = order.User?.EmployeeId,
+            CustomerId = order.CustomerId,
             InvoiceNumber = "HD-" + order.OrderNumber,
             InvoiceStatus = "issued",
             PaymentStatus = order.PaymentStatus,
@@ -45,14 +47,21 @@ public sealed class InvoiceService
             TotalAmount = order.TotalAmount,
             IssuedAt = now,
             UpdatedAt = now,
-            Items = order.OrderItems.Select(i => new InvoiceItem
+            Items = order.OrderItems.GroupBy(item => item.ProductId).Select(group =>
             {
-                ProductId = i.ProductId,
-                ProductName = i.Product?.ProductName ?? "Sản phẩm",
-                Sku = i.Product?.Sku,
-                Quantity = i.Quantity,
-                UnitPrice = i.UnitPrice,
-                TotalPrice = i.TotalPrice
+                var first = group.First();
+                var quantity = group.Sum(item => item.Quantity);
+                var totalPrice = group.Sum(item => item.TotalPrice);
+                return new InvoiceItem
+                {
+                    ProductId = group.Key,
+                    ProductName = first.Product?.ProductName ?? "Sản phẩm",
+                    Sku = first.Product?.Sku,
+                    Quantity = quantity,
+                    UnitPrice = quantity == 0 ? first.UnitPrice
+                        : decimal.Round(totalPrice / quantity, 2, MidpointRounding.AwayFromZero),
+                    TotalPrice = totalPrice
+                };
             }).ToList()
         };
 
@@ -155,6 +164,8 @@ public sealed class InvoiceService
         return new InvoiceDTO
         {
             InvoiceId = invoice.Id,
+            EmployeeId = invoice.EmployeeId,
+            CustomerId = invoice.CustomerId,
             OrderId = invoice.OrderId,
             InvoiceNumber = invoice.InvoiceNumber,
             OrderNumber = invoice.Order?.OrderNumber ?? "",
@@ -189,6 +200,8 @@ public sealed class InvoiceService
     private static InvoiceDTO MapSummary(Invoice invoice, Order order) => new()
     {
         InvoiceId = invoice.Id,
+        EmployeeId = invoice.EmployeeId,
+        CustomerId = invoice.CustomerId,
         OrderId = invoice.OrderId,
         InvoiceNumber = invoice.InvoiceNumber,
         OrderNumber = order.OrderNumber,

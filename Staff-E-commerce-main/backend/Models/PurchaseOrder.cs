@@ -8,6 +8,7 @@ namespace backend.Models;
 [Index(nameof(PoCode), IsUnique = true, Name = "ux_purchase_orders_po_code")]
 [Index(nameof(SupplierId), Name = "idx_purchase_orders_supplier")]
 [Index(nameof(UserId), Name = "idx_purchase_orders_user")]
+[Index(nameof(EmployeeId), Name = "idx_purchase_orders_employee")]
 public class PurchaseOrder
 {
     [Key]
@@ -24,6 +25,9 @@ public class PurchaseOrder
 
     [Column("user_id")]
     public int UserId { get; set; }
+
+    [Column("employee_id")]
+    public int? EmployeeId { get; set; }
 
     [Column("total_amount", TypeName = "decimal(12,2)")]
     public decimal TotalAmount { get; set; }
@@ -46,6 +50,9 @@ public class PurchaseOrder
 
     [ForeignKey(nameof(UserId))]
     public User? User { get; set; }
+
+    [ForeignKey(nameof(EmployeeId))]
+    public Employee? Employee { get; set; }
 
     public ICollection<PurchaseOrderDetail> Details { get; set; } = new List<PurchaseOrderDetail>();
 }

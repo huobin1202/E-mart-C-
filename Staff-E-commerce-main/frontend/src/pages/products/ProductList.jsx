@@ -300,6 +300,7 @@ export default function ProductList() {
           id: productData.id,
           productName: productData.productName,
           price: Number(productData.price ?? 0),
+          stockQuantity: Number(productData.stockQuantity ?? productData.inventory?.quantity ?? 0),
           sku: productData.sku,
           unitId: productData.unitId ? Number(productData.unitId) : null,
           categoryId: productData.categoryId ? Number(productData.categoryId) : null,
@@ -337,7 +338,7 @@ export default function ProductList() {
   const getName = (p) => p.productName ?? p.product_name ?? p.model ?? "—";
   const getPrice = (p) => p.price ?? p.Price ?? 0;
   const getDiscountPrice = (p) => p.discountPrice ?? p.DiscountPrice ?? null;
-  const getQty = (p) => p.inventory?.quantity ?? p.Quantity ?? 0;
+  const getQty = (p) => p.stockQuantity ?? p.inventory?.quantity ?? p.Quantity ?? 0;
   const getQuantityBadge = (quantity) => {
     if (quantity === 0) return <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800">Hết hàng</span>;
     if (quantity < 10) return <span className="px-2 py-1 text-xs rounded-full bg-amber-100 text-amber-800">Sắp hết</span>;

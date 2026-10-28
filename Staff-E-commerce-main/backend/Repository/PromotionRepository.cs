@@ -110,13 +110,37 @@ namespace backend.Repository
                 .FirstOrDefaultAsync(p => p.Id == promotion.Id);
             if (existing == null) throw new InvalidOperationException("Promotion not found");
 
-            if (existing.ProductDetails != null) _context.ProductPromotions.RemoveRange(existing.ProductDetails);
+            var requestedProductDetails = (promotion.ProductDetails ?? Array.Empty<ProductPromotion>())
+                .GroupBy(detail => detail.ProductId)
+                .ToDictionary(group => group.Key, group => group.First());
+            existing.ProductDetails ??= new List<ProductPromotion>();
+
+            foreach (var current in existing.ProductDetails
+                         .Where(detail => !requestedProductDetails.ContainsKey(detail.ProductId)).ToList())
+                _context.ProductPromotions.Remove(current);
+
+            foreach (var requested in requestedProductDetails.Values)
+            {
+                var current = existing.ProductDetails.FirstOrDefault(detail => detail.ProductId == requested.ProductId);
+                if (current is not null)
+                {
+                    current.DiscountPercent = requested.DiscountPercent;
+                    continue;
+                }
+
+                existing.ProductDetails.Add(new ProductPromotion
+                {
+                    PromotionId = existing.Id,
+                    ProductId = requested.ProductId,
+                    DiscountPercent = requested.DiscountPercent
+                });
+            }
+
             if (existing.EventDetails != null) _context.EventPromotions.Remove(existing.EventDetails);
             if (existing.VoucherDetails != null) _context.VoucherPromotions.Remove(existing.VoucherDetails);
             _context.Entry(existing).CurrentValues.SetValues(promotion);
             existing.EventDetails = promotion.EventDetails;
             existing.VoucherDetails = promotion.VoucherDetails;
-            existing.ProductDetails = promotion.ProductDetails;
             promotion.UpdatedAt = DateTimeHelper.UtcNow;
             existing.UpdatedAt = promotion.UpdatedAt;
             await _context.SaveChangesAsync();

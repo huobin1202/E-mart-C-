@@ -5,6 +5,8 @@ public class InvoiceDTO
     public int OrderId { get; set; }
     public string InvoiceNumber { get; set; } = string.Empty;
     public int InvoiceId { get; set; }
+    public int? EmployeeId { get; set; }
+    public int? CustomerId { get; set; }
     public string InvoiceStatus { get; set; } = string.Empty;
     public string OrderNumber { get; set; } = string.Empty;
     public string OrderStatus { get; set; } = string.Empty;

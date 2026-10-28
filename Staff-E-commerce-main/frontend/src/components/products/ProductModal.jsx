@@ -73,6 +73,7 @@ const ProductModal = ({
       setFormData({
         productName: "",
         price: "",
+        stockQuantity: 0,
         discountPrice: null,
         sku: "",
         unitId: "",
@@ -90,6 +91,7 @@ const ProductModal = ({
         id: p.id,
         productName: p.productName || p.product_name || p.name || "",
         price: p.price !== undefined && p.price !== null ? p.price : "",
+        stockQuantity: p.stockQuantity ?? p.inventory?.quantity ?? 0,
         discountPrice: p.discountPrice ?? p.DiscountPrice ?? null,
         sku: p.sku || p.barcode || "",
         unitId: p.unitId || p.unit?.id || p.unit_id || "",
@@ -119,6 +121,7 @@ const ProductModal = ({
               id: detail.id,
               productName: prev.productName || detail.productName || "",
               price: prev.price !== "" && prev.price !== undefined ? prev.price : detail.price,
+              stockQuantity: detail.stockQuantity ?? detail.inventory?.quantity ?? prev.stockQuantity ?? 0,
               discountPrice: detail.discountPrice ?? detail.DiscountPrice ?? null,
               sku: prev.sku || detail.sku || detail.barcode || "",
               unitId: prev.unitId || detail.unitId || detail.unit?.id || "",
@@ -160,6 +163,11 @@ const ProductModal = ({
       : (mode === "edit" ? product?.price : "");
     if (!priceVal || isNaN(priceVal) || Number(priceVal) <= 0) {
       newErrors.price = "Giá phải là số lớn hơn 0";
+    }
+
+    const stockValue = Number(formData.stockQuantity ?? 0);
+    if (!Number.isInteger(stockValue) || stockValue < 0) {
+      newErrors.stockQuantity = "Số lượng tồn phải là số nguyên không âm";
     }
 
     if (mode === "create") {
@@ -238,6 +246,7 @@ const ProductModal = ({
       id: mode === "edit" ? (product?.id || formData.id) : undefined,
       productName: resolvedName,
       price: resolvedPrice,
+      stockQuantity: Number(formData.stockQuantity ?? product?.stockQuantity ?? product?.inventory?.quantity ?? 0),
       sku: resolvedSku,
       unitId: resolvedUnitId,
       categoryId: resolvedCategoryId,
@@ -549,6 +558,27 @@ const ProductModal = ({
                 <p className="mt-1 text-xs text-gray-500">
                   Giá này được tính tự động từ khuyến mãi theo sản phẩm đang hoạt động.
                 </p>
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-600">Số lượng tồn *</label>
+                {isView ? (
+                  <div className="p-2 border rounded bg-gray-50">
+                    {Number(formData.stockQuantity ?? 0).toLocaleString("vi-VN")}
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      className={`w-full border px-2 py-1 rounded ${errors.stockQuantity ? "border-red-500" : ""}`}
+                      value={formData.stockQuantity ?? 0}
+                      onChange={(event) => handleFieldChange("stockQuantity", event.target.value)}
+                    />
+                    {errors.stockQuantity && <p className="text-xs text-red-500 mt-1">{errors.stockQuantity}</p>}
+                  </>
+                )}
               </div>
 
               {/* --- ĐƠN VỊ --- */}

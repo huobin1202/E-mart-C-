@@ -29,6 +29,8 @@ namespace backend.DTO
 
         public decimal? Cost { get; set; }
 
+        public int StockQuantity { get; set; }
+
         public int? UnitId { get; set; }
 
         public string? UnitName { get; set; }
@@ -52,7 +54,7 @@ namespace backend.DTO
         public CategoryDTO? Category { get; set; }
         public SupplierDTO? Supplier { get; set; }
 
-        // Inventory snapshot (optional, filled by query/join)
+        // Kept for API compatibility during the inventory-table retirement.
         public InventoryDTO? Inventory { get; set; }
 
         // Aggregated rating info (optional)
@@ -61,5 +63,21 @@ namespace backend.DTO
 
         [JsonIgnore]
         public int SalesCount { get; set; }
+    }
+
+    public sealed class ProductUpdateDTO
+    {
+        public string ProductName { get; set; } = string.Empty;
+        public string? Sku { get; set; }
+        public string? Barcode { get; set; }
+        public int? CategoryId { get; set; }
+        public int? SupplierId { get; set; }
+        public decimal Price { get; set; }
+        public decimal? Cost { get; set; }
+        public int? StockQuantity { get; set; }
+        public int? UnitId { get; set; }
+        public string? Description { get; set; }
+        public string? ImageUrl { get; set; }
+        public bool IsActive { get; set; } = true;
     }
 }

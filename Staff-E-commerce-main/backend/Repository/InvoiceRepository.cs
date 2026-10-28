@@ -16,6 +16,7 @@ public sealed class InvoiceRepository
 
     public Task<Order?> GetOrderForInvoiceAsync(int orderId) => _context.Orders
         .Include(o => o.Customer)
+        .Include(o => o.User)
         .Include(o => o.OrderItems).ThenInclude(i => i.Product)
         .FirstOrDefaultAsync(o => o.Id == orderId);
 
@@ -39,6 +40,8 @@ public sealed class InvoiceRepository
         .Select(i => new InvoiceDTO
         {
             InvoiceId = i.Id,
+            EmployeeId = i.EmployeeId,
+            CustomerId = i.CustomerId,
             OrderId = i.OrderId,
             InvoiceNumber = i.InvoiceNumber,
             OrderNumber = i.Order != null ? i.Order.OrderNumber : "",

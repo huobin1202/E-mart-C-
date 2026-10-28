@@ -71,11 +71,11 @@ namespace backend.Repository
                     (string.IsNullOrWhiteSpace(order.Note) ? $"Từ chối: {reason}" : $"{order.Note} | Từ chối: {reason}");
                 order.UpdatedAt = now;
                 var productIds = order.OrderItems.Select(i => i.ProductId).Distinct().ToList();
-                var inventories = await _context.Inventory.Where(i => productIds.Contains(i.ProductId)).ToListAsync();
+                var products = await _context.Products.Where(i => productIds.Contains(i.Id)).ToListAsync();
                 foreach (var item in order.OrderItems)
                 {
-                    var inventory = inventories.FirstOrDefault(i => i.ProductId == item.ProductId);
-                    if (inventory != null) { inventory.Quantity += item.Quantity; inventory.UpdatedAt = now; }
+                    var product = products.FirstOrDefault(i => i.Id == item.ProductId);
+                    if (product != null) { product.StockQuantity += item.Quantity; product.UpdatedAt = now; }
                 }
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
@@ -293,18 +293,18 @@ namespace backend.Repository
                 // Lấy danh sách productId cần update để giảm truy vấn
                 var productIds = order.OrderItems.Select(i => i.ProductId).ToList();
 
-                var inventories = await _context.Inventory
-                    .Where(i => productIds.Contains(i.ProductId))
+                var products = await _context.Products
+                    .Where(i => productIds.Contains(i.Id))
                     .ToListAsync();
 
                 // Update tồn kho
                 foreach (var item in order.OrderItems)
                 {
-                    var inv = inventories.FirstOrDefault(i => i.ProductId == item.ProductId);
-                    if (inv != null)
+                    var product = products.FirstOrDefault(i => i.Id == item.ProductId);
+                    if (product != null)
                     {
-                        inv.Quantity += item.Quantity;
-                        inv.UpdatedAt = now;
+                        product.StockQuantity += item.Quantity;
+                        product.UpdatedAt = now;
                     }
                 }
 

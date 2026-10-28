@@ -59,20 +59,18 @@ namespace backend.Repository
 
         public async Task<List<InventoryReportDTO>> GetInventoryReportAsync()
         {
-            var results = await _context.Inventory
-                .Include(i => i.Product)
-                    .ThenInclude(p => p!.Category)
-                .Where(i => i.Product != null)
-                .Select(i => new InventoryReportDTO
+            var results = await _context.Products
+                .Include(product => product.Category)
+                .Select(product => new InventoryReportDTO
                 {
-                    ProductName = i.Product!.ProductName,
-                    Sku = i.Product.Sku,
-                    CategoryName = i.Product.Category != null ? i.Product.Category.Name : null,
-                    Quantity = i.Quantity,
-                    UnitCost = i.Product.Cost ?? 0,
-                    TotalValue = i.Quantity * (i.Product.Cost ?? 0),
-                    UnitPrice = i.Product.Price,
-                    LastUpdated = i.UpdatedAt
+                    ProductName = product.ProductName,
+                    Sku = product.Sku,
+                    CategoryName = product.Category != null ? product.Category.Name : null,
+                    Quantity = product.StockQuantity,
+                    UnitCost = product.Cost ?? 0,
+                    TotalValue = product.StockQuantity * (product.Cost ?? 0),
+                    UnitPrice = product.Price,
+                    LastUpdated = product.UpdatedAt
                 })
                 .OrderByDescending(i => i.TotalValue)
                 .ToListAsync();
@@ -170,16 +168,14 @@ namespace backend.Repository
 
         public async Task<List<HighValueInventoryDTO>> GetHighValueInventoryAsync(int limit = 100)
         {
-            var results = await _context.Inventory
-                .Include(i => i.Product)
-                .Where(i => i.Product != null) 
-                .Select(i => new HighValueInventoryDTO
+            var results = await _context.Products
+                .Select(product => new HighValueInventoryDTO
                 {
-                    ProductId = i.ProductId,
-                    ProductName = i.Product!.ProductName,
-                    Sku = i.Product.Sku,
-                    Quantity = i.Quantity,
-                    TotalValue = i.Quantity * (i.Product.Cost ?? (i.Product.Price > 0 ? i.Product.Price : 0)) // Dùng Price nếu Cost = null, nếu cả 2 = 0 thì = 0
+                    ProductId = product.Id,
+                    ProductName = product.ProductName,
+                    Sku = product.Sku,
+                    Quantity = product.StockQuantity,
+                    TotalValue = product.StockQuantity * (product.Cost ?? (product.Price > 0 ? product.Price : 0))
                 })
                 .OrderByDescending(i => i.TotalValue)
                 .ThenByDescending(i => i.Quantity) // Sắp xếp theo số lượng nếu giá trị bằng nhau

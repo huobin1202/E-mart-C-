@@ -53,9 +53,9 @@ public sealed class PosCheckoutRepository
 
     public async Task<bool> TryReduceInventoryAsync(int productId, int quantity, DateTime updatedAt)
     {
-        var updated = await _context.Inventory.Where(i => i.ProductId == productId && i.Quantity >= quantity)
+        var updated = await _context.Products.Where(i => i.Id == productId && i.StockQuantity >= quantity)
             .ExecuteUpdateAsync(update => update
-                .SetProperty(i => i.Quantity, i => i.Quantity - quantity)
+                .SetProperty(i => i.StockQuantity, i => i.StockQuantity - quantity)
                 .SetProperty(i => i.UpdatedAt, updatedAt));
         return updated == 1;
     }
@@ -84,9 +84,9 @@ public sealed class PosCheckoutRepository
 
     public async Task<bool> RestoreInventoryAsync(int productId, int quantity, DateTime updatedAt)
     {
-        var updated = await _context.Inventory.Where(i => i.ProductId == productId)
+        var updated = await _context.Products.Where(i => i.Id == productId)
             .ExecuteUpdateAsync(update => update
-                .SetProperty(i => i.Quantity, i => i.Quantity + quantity)
+                .SetProperty(i => i.StockQuantity, i => i.StockQuantity + quantity)
                 .SetProperty(i => i.UpdatedAt, updatedAt));
         return updated == 1;
     }

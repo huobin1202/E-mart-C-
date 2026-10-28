@@ -111,13 +111,15 @@ public class PurchaseOrderService
     private static PurchaseOrderListDTO MapList(PurchaseOrder purchaseOrder) => new()
     {
         Id = purchaseOrder.Id, PoCode = purchaseOrder.PoCode, SupplierId = purchaseOrder.SupplierId, SupplierName = purchaseOrder.Supplier?.Name ?? string.Empty,
-        UserName = purchaseOrder.User?.FullName ?? string.Empty, TotalAmount = purchaseOrder.TotalAmount, ItemCount = purchaseOrder.Details.Count, Status = purchaseOrder.Status, CreatedAt = purchaseOrder.CreatedAt
+        UserName = purchaseOrder.User?.FullName ?? string.Empty, EmployeeId = purchaseOrder.EmployeeId, EmployeeName = purchaseOrder.Employee?.FullName,
+        TotalAmount = purchaseOrder.TotalAmount, ItemCount = purchaseOrder.Details.Count, Status = purchaseOrder.Status, CreatedAt = purchaseOrder.CreatedAt
     };
 
     private static PurchaseOrderDetailDTO MapDetail(PurchaseOrder purchaseOrder) => new()
     {
         Id = purchaseOrder.Id, PoCode = purchaseOrder.PoCode, SupplierId = purchaseOrder.SupplierId, SupplierName = purchaseOrder.Supplier?.Name ?? string.Empty,
-        UserName = purchaseOrder.User?.FullName ?? string.Empty, TotalAmount = purchaseOrder.TotalAmount, ItemCount = purchaseOrder.Details.Count, Status = purchaseOrder.Status,
+        UserName = purchaseOrder.User?.FullName ?? string.Empty, EmployeeId = purchaseOrder.EmployeeId, EmployeeName = purchaseOrder.Employee?.FullName,
+        TotalAmount = purchaseOrder.TotalAmount, ItemCount = purchaseOrder.Details.Count, Status = purchaseOrder.Status,
         CreatedAt = purchaseOrder.CreatedAt, UpdatedAt = purchaseOrder.UpdatedAt, Note = purchaseOrder.Note,
         Items = purchaseOrder.Details.Select(detail => new PurchaseOrderItemDTO { ProductId = detail.ProductId, ProductName = detail.Product?.ProductName ?? string.Empty, Sku = detail.Product?.Sku, Quantity = detail.Quantity, ImportPrice = detail.ImportPrice, Subtotal = detail.Quantity * detail.ImportPrice }).ToList()
     };

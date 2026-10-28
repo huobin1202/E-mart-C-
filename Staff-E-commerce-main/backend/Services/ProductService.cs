@@ -60,10 +60,10 @@ namespace backend.Services
             {
                 products = stockStatus.ToLowerInvariant() switch
                 {
-                    "available" => products.Where(product => product.Inventory != null && product.Inventory.Quantity > 0),
-                    "out_of_stock" => products.Where(product => product.Inventory == null || product.Inventory.Quantity == 0),
-                    "low_stock" => products.Where(product => product.Inventory != null && product.Inventory.Quantity > 0 && product.Inventory.Quantity < 10),
-                    "in_stock" => products.Where(product => product.Inventory != null && product.Inventory.Quantity >= 10),
+                    "available" => products.Where(product => product.StockQuantity > 0),
+                    "out_of_stock" => products.Where(product => product.StockQuantity == 0),
+                    "low_stock" => products.Where(product => product.StockQuantity > 0 && product.StockQuantity < 10),
+                    "in_stock" => products.Where(product => product.StockQuantity >= 10),
                     _ => products
                 };
             }
@@ -83,10 +83,10 @@ namespace backend.Services
                 "featured" or "bestsellers" => products.OrderByDescending(product => product.SalesCount),
                 "newest" => products.OrderByDescending(product => product.CreatedAt),
                 "oldest" => products.OrderBy(product => product.CreatedAt),
-                "quantity_asc" => products.OrderBy(product => product.Inventory?.Quantity ?? 0),
-                "quantity_desc" => products.OrderByDescending(product => product.Inventory?.Quantity ?? 0),
-                "updated_at_desc" => products.OrderByDescending(product => product.Inventory?.UpdatedAt ?? product.UpdatedAt),
-                "updated_at_asc" => products.OrderBy(product => product.Inventory?.UpdatedAt ?? product.UpdatedAt),
+                "quantity_asc" => products.OrderBy(product => product.StockQuantity),
+                "quantity_desc" => products.OrderByDescending(product => product.StockQuantity),
+                "updated_at_desc" => products.OrderByDescending(product => product.UpdatedAt),
+                "updated_at_asc" => products.OrderBy(product => product.UpdatedAt),
                 "id_desc" => products.OrderByDescending(product => product.Id),
                 _ => products.OrderBy(product => product.Id)
             };
@@ -136,7 +136,7 @@ namespace backend.Services
             return result;
         }
 
-        public async Task<ProductDTO> UpdateProductAsync(Product product, IFormFile? imageFile = null)
+        public async Task<ProductDTO> UpdateProductAsync(Product product, IFormFile? imageFile = null, int? requestedStockQuantity = null)
         {
             var existing = await _productRepository.GetByIdForUpdateAsync(product.Id);
             if (existing == null)
@@ -144,6 +144,7 @@ namespace backend.Services
 
             // keep createdAt from existing if not provided
             product.CreatedAt = existing.CreatedAt;
+            product.StockQuantity = requestedStockQuantity ?? existing.StockQuantity;
             product.UpdatedAt = DateTime.UtcNow;
 
             var validator = await ValidateProductAsync(product, imageFile, mode: "edit");
@@ -198,12 +199,8 @@ namespace backend.Services
                 ve.AddError(nameof(product.UnitId), "Đơn vị không được để trống.");
             }
 
-            // Inventory checks
-            if (product.Inventory != null)
-            {
-                if (product.Inventory.Quantity < 0)
-                    ve.AddError("Inventory.Quantity", "Số lượng tồn phải >= 0.");
-            }
+            if (product.StockQuantity < 0)
+                ve.AddError(nameof(product.StockQuantity), "Số lượng tồn phải >= 0.");
 
             // Category existence (if provided)
             if (product.CategoryId.HasValue)
@@ -287,14 +284,15 @@ namespace backend.Services
                     Address = p.Supplier.Address,
                     IsActive = p.Supplier.IsActive
                 } : null,
-                Inventory = p.Inventory != null ? new InventoryDTO
+                StockQuantity = p.StockQuantity,
+                Inventory = new InventoryDTO
                 {
-                    Id = p.Inventory.Id,
-                    ProductId = p.Inventory.ProductId,
-                    Quantity = p.Inventory.Quantity,
-                    LastCheckedAt = p.Inventory.LastCheckedAt,
-                    UpdatedAt = p.Inventory.UpdatedAt
-                } : null,
+                    Id = p.Id,
+                    ProductId = p.Id,
+                    Quantity = p.StockQuantity,
+                    LastCheckedAt = null,
+                    UpdatedAt = p.UpdatedAt
+                },
 
                 // If you have rating/review tables, compute them here. For now default to 0.
                 AverageRating = 0.0,
@@ -326,7 +324,7 @@ namespace backend.Services
             if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
             var available = (await GetLiveProductsAsync())
-                .Where(product => product.Inventory?.Quantity > 0)
+                .Where(product => product.StockQuantity > 0)
                 .OrderByDescending(product => product.CreatedAt)
                 .ToList();
             var totalItems = available.Count;

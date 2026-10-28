@@ -137,7 +137,7 @@ public sealed class StorefrontRepository
     public Task<List<StorefrontProductDTO>> GetAvailableProductsAsync()
     {
         return _context.Products.AsNoTracking()
-            .Where(product => product.IsActive && product.Inventory != null && product.Inventory.Quantity > 0)
+            .Where(product => product.IsActive && product.StockQuantity > 0)
             .OrderBy(product => product.ProductName)
             .Select(product => new StorefrontProductDTO
             {
@@ -145,7 +145,7 @@ public sealed class StorefrontRepository
                 CategoryId = product.CategoryId, CategoryName = product.Category != null ? product.Category.Name : null,
                 Price = product.Price, OriginalPrice = product.Price,
                 UnitName = product.Unit != null ? product.Unit.Name : null,
-                StockQuantity = product.Inventory != null ? product.Inventory.Quantity : 0,
+                StockQuantity = product.StockQuantity,
                 ImageUrl = product.ImageUrl
             }).ToListAsync();
     }
@@ -202,13 +202,13 @@ public sealed class StorefrontRepository
 
             foreach (var line in requestedLines)
             {
-                var inventory = await _context.Inventory
-                    .Where(stock => stock.ProductId == line.ProductId && stock.Quantity >= line.Quantity)
-                    .SingleOrDefaultAsync();
-                if (inventory == null)
+                var updated = await _context.Products
+                    .Where(product => product.Id == line.ProductId && product.StockQuantity >= line.Quantity)
+                    .ExecuteUpdateAsync(update => update
+                        .SetProperty(product => product.StockQuantity, product => product.StockQuantity - line.Quantity)
+                        .SetProperty(product => product.UpdatedAt, DateTime.UtcNow));
+                if (updated != 1)
                     throw new InvalidOperationException($"Sản phẩm {productNames[line.ProductId]} vừa hết hàng hoặc không đủ số lượng.");
-                inventory.Quantity -= line.Quantity;
-                inventory.UpdatedAt = DateTime.UtcNow;
             }
 
             await _context.SaveChangesAsync();

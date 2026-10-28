@@ -37,11 +37,14 @@ namespace backend.Models
         [Column("supplier_id")]
         public int? SupplierId { get; set; }
 
-        [Column("price", TypeName = "decimal(12,2)")]
+        [Column("selling_price", TypeName = "decimal(12,2)")]
         public decimal Price { get; set; } = 0m;
 
         [Column("cost", TypeName = "decimal(12,2)")]
         public decimal? Cost { get; set; }
+
+        [Column("stock_quantity")]
+        public int StockQuantity { get; set; }
 
         [Column("unit_id")]
         public int? UnitId { get; set; }
@@ -71,9 +74,6 @@ namespace backend.Models
 
         [ForeignKey(nameof(UnitId))]
         public virtual Unit? Unit { get; set; }
-
-        // 1 product có 1 inventory record (theo schema)
-        public virtual Inventory? Inventory { get; set; }
 
         // 1 product có thể xuất hiện trong nhiều order_items
         public virtual ICollection<OrderItem> OrderItems { get; set; } = new List<OrderItem>();

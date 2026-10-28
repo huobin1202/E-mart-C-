@@ -10,14 +10,14 @@ namespace backend.Services
     {
         private readonly InventoryRepository _inventoryRepo;
         private readonly IHttpContextAccessor _httpContextAccessor;
-        private readonly BusMemoryCache<Inventory> _inventoryCache;
+        private readonly BusMemoryCache<Product> _inventoryCache;
         private readonly BusMemoryCache<InventoryAdjustmentDTO> _adjustmentCache;
         private readonly RealtimeNotificationService _realtime;
 
         public InventoryService(
             InventoryRepository inventoryRepo,
             IHttpContextAccessor httpContextAccessor,
-            BusMemoryCache<Inventory> inventoryCache,
+            BusMemoryCache<Product> inventoryCache,
             BusMemoryCache<InventoryAdjustmentDTO> adjustmentCache,
             RealtimeNotificationService realtime)
         {
@@ -64,12 +64,12 @@ namespace backend.Services
             foreach (var requested in requestedQuantities)
             {
                 _inventoryCache.UpdateWhere(
-                    inventory => inventory.ProductId == requested.ProductId,
-                    inventory =>
+                    product => product.Id == requested.ProductId,
+                    product =>
                     {
-                        inventory.Quantity -= requested.Quantity;
-                        inventory.UpdatedAt = DateTime.UtcNow;
-                        return inventory;
+                        product.StockQuantity -= requested.Quantity;
+                        product.UpdatedAt = DateTime.UtcNow;
+                        return product;
                     });
             }
             await _realtime.BroadcastStock("StockUpdated", new
@@ -89,24 +89,24 @@ namespace backend.Services
             string? stockStatus = null)
         {
             var liveInventory = await _inventoryRepo.GetAllForCacheAsync();
-            IEnumerable<Inventory> filtered = liveInventory;
+            IEnumerable<Product> filtered = liveInventory;
 
             if (!string.IsNullOrWhiteSpace(search))
             {
                 var keyword = search.Trim();
                 filtered = filtered.Where(i =>
-                    (i.Product?.ProductName?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                    (i.Product?.Sku?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false));
+                    i.ProductName.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                    (i.Sku?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false));
             }
 
             filtered = (sortBy ?? "id").ToLowerInvariant() switch
             {
-                "quantity_asc" => filtered.OrderBy(i => i.Quantity),
-                "quantity_desc" => filtered.OrderByDescending(i => i.Quantity),
-                "product_name_asc" => filtered.OrderBy(i => i.Product?.ProductName ?? ""),
-                "product_name_desc" => filtered.OrderByDescending(i => i.Product?.ProductName ?? ""),
-                "price_asc" => filtered.OrderBy(i => i.Product?.Price ?? 0),
-                "price_desc" => filtered.OrderByDescending(i => i.Product?.Price ?? 0),
+                "quantity_asc" => filtered.OrderBy(i => i.StockQuantity),
+                "quantity_desc" => filtered.OrderByDescending(i => i.StockQuantity),
+                "product_name_asc" => filtered.OrderBy(i => i.ProductName),
+                "product_name_desc" => filtered.OrderByDescending(i => i.ProductName),
+                "price_asc" => filtered.OrderBy(i => i.Price),
+                "price_desc" => filtered.OrderByDescending(i => i.Price),
                 "updated_at_asc" => filtered.OrderBy(i => i.UpdatedAt),
                 "updated_at_desc" => filtered.OrderByDescending(i => i.UpdatedAt),
                 "id_desc" => filtered.OrderByDescending(i => i.Id),
@@ -117,9 +117,9 @@ namespace backend.Services
             {
                 filtered = (stockStatus ?? "").ToLowerInvariant() switch
                 {
-                    "out_of_stock" => filtered.Where(i => i.Quantity == 0),
-                    "low_stock" => filtered.Where(i => i.Quantity > 0 && i.Quantity < 10),
-                    "in_stock" => filtered.Where(i => i.Quantity >= 10),
+                    "out_of_stock" => filtered.Where(i => i.StockQuantity == 0),
+                    "low_stock" => filtered.Where(i => i.StockQuantity > 0 && i.StockQuantity < 10),
+                    "in_stock" => filtered.Where(i => i.StockQuantity >= 10),
                     _ => filtered
                 };
             }
@@ -128,7 +128,7 @@ namespace backend.Services
             var totalItems = allItems.Count;
             var totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
             var items = allItems.Skip((page - 1) * pageSize).Take(pageSize).ToList();
-            var result = new PaginationResult<Inventory>
+            var result = new PaginationResult<Product>
             {
                 Items = items,
                 TotalItems = totalItems,
@@ -142,16 +142,16 @@ namespace backend.Services
             var dtoItems = result.Items.Select(i => new InventoryListDTO
             {
                 Id = i.Id,
-                ProductId = i.ProductId,
-                ProductName = i.Product?.ProductName ?? "",
-                Sku = i.Product?.Sku,
-                ImageUrl = i.Product?.ImageUrl,
-                Quantity = i.Quantity,
-                LastCheckedAt = i.LastCheckedAt,
+                ProductId = i.Id,
+                ProductName = i.ProductName,
+                Sku = i.Sku,
+                ImageUrl = i.ImageUrl,
+                Quantity = i.StockQuantity,
+                LastCheckedAt = null,
                 UpdatedAt = i.UpdatedAt,
-                CategoryName = i.Product?.Category?.Name,
-                Price = i.Product?.Price,
-                Unit = i.Product?.Unit?.Name ?? i.Product?.Unit?.Code ?? "—"
+                CategoryName = i.Category?.Name,
+                Price = i.Price,
+                Unit = i.Unit?.Name ?? i.Unit?.Code ?? "—"
             }).ToList();
 
             return new PaginationResult<InventoryListDTO>
@@ -168,24 +168,23 @@ namespace backend.Services
 
         public async Task<InventoryListDTO> AdjustInventoryAsync(AdjustInventoryDTO dto)
         {
-            var inventory = await _inventoryRepo.GetByIdAsync(dto.InventoryId);
-            if (inventory == null)
-                throw new ArgumentException($"Không tìm thấy inventory với ID {dto.InventoryId}");
+            var product = await _inventoryRepo.GetByIdAsync(dto.InventoryId);
+            if (product == null)
+                throw new ArgumentException($"Không tìm thấy sản phẩm với ID {dto.InventoryId}");
 
-            int oldQuantity = inventory.Quantity;
+            int oldQuantity = product.StockQuantity;
             int changeAmount = dto.NewQuantity - oldQuantity;
 
-            inventory.Quantity = dto.NewQuantity;
-            inventory.UpdatedAt = DateTime.UtcNow;
-            inventory.LastCheckedAt = DateTime.UtcNow;
+            product.StockQuantity = dto.NewQuantity;
+            product.UpdatedAt = DateTime.UtcNow;
 
-            await _inventoryRepo.UpdateAsync(inventory);
-            _inventoryCache.AddOrUpdate(inventory, item => item.Id);
+            await _inventoryRepo.UpdateAsync(product);
+            _inventoryCache.AddOrUpdate(product, item => item.Id);
 
             // Ghi lịch sử điều chỉnh
             var adjustment = new InventoryAdjustment
             {
-                ProductId = inventory.ProductId,
+                ProductId = product.Id,
                 ChangeAmount = changeAmount,
                 Reason = string.IsNullOrWhiteSpace(dto.Reason) ? null : dto.Reason.Trim(),
                 UserId = TryGetCurrentUserId(),
@@ -195,24 +194,24 @@ namespace backend.Services
             _adjustmentCache.Clear();
             await _realtime.BroadcastStock("StockUpdated", new
             {
-                productIds = new[] { inventory.ProductId },
+                productIds = new[] { product.Id },
                 source = "inventory-adjustment",
                 changedAt = DateTime.UtcNow
             });
 
             return new InventoryListDTO
             {
-                Id = inventory.Id,
-                ProductId = inventory.ProductId,
-                ProductName = inventory.Product?.ProductName ?? "",
-                Sku = inventory.Product?.Sku,
-                ImageUrl = inventory.Product?.ImageUrl,
-                Quantity = inventory.Quantity,
-                LastCheckedAt = inventory.LastCheckedAt,
-                UpdatedAt = inventory.UpdatedAt,
-                CategoryName = inventory.Product?.Category?.Name,
-                Price = inventory.Product?.Price,
-                Unit = inventory.Product?.Unit?.Name ?? inventory.Product?.Unit?.Code ?? "—"
+                Id = product.Id,
+                ProductId = product.Id,
+                ProductName = product.ProductName,
+                Sku = product.Sku,
+                ImageUrl = product.ImageUrl,
+                Quantity = product.StockQuantity,
+                LastCheckedAt = null,
+                UpdatedAt = product.UpdatedAt,
+                CategoryName = product.Category?.Name,
+                Price = product.Price,
+                Unit = product.Unit?.Name ?? product.Unit?.Code ?? "—"
             };
         }
 
@@ -271,9 +270,9 @@ namespace backend.Services
             return new InventoryStatsDTO
             {
                 Total = items.Count,
-                OutOfStock = items.Count(item => item.Quantity == 0),
-                LowStock = items.Count(item => item.Quantity > 0 && item.Quantity < 10),
-                InStock = items.Count(item => item.Quantity >= 10)
+                OutOfStock = items.Count(item => item.StockQuantity == 0),
+                LowStock = items.Count(item => item.StockQuantity > 0 && item.StockQuantity < 10),
+                InStock = items.Count(item => item.StockQuantity >= 10)
             };
         }
     }

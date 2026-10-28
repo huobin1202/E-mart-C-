@@ -4,11 +4,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace backend.Models;
 
-[Table("po_details")]
-[Index(nameof(ProductId), Name = "idx_po_details_product")]
+[Table("purchase_order_items")]
+[Index(nameof(ProductId), Name = "idx_purchase_order_items_product")]
 public class PurchaseOrderDetail
 {
-    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     [Column("id")]
     public int Id { get; set; }
 
@@ -21,11 +21,11 @@ public class PurchaseOrderDetail
     [Column("quantity")]
     public int Quantity { get; set; }
 
-    [Column("import_price", TypeName = "decimal(12,2)")]
+    [Column("unit_cost", TypeName = "decimal(12,2)")]
     public decimal ImportPrice { get; set; }
 
     [DatabaseGenerated(DatabaseGeneratedOption.Computed)]
-    [Column("subtotal", TypeName = "decimal(12,2)")]
+    [Column("line_total", TypeName = "decimal(12,2)")]
     public decimal Subtotal { get; private set; }
 
     [ForeignKey(nameof(PurchaseOrderId))]
