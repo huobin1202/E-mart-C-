@@ -29,6 +29,7 @@ public static class StoreServiceRegistration
         services.AddScoped<CategoryRepository>();
         services.AddScoped<SupplierRepository>();
         services.AddScoped<ReportsRepository>();
+        services.AddScoped<RevenueAnalyticsRepository>();
         services.AddScoped<UnitRepository>();
         services.AddScoped<PurchaseOrderRepository>();
         services.AddScoped<EmployeeRepository>();
@@ -58,6 +59,7 @@ public static class StoreServiceRegistration
         services.AddScoped<ImportService>();
         services.AddScoped<SupplierService>();
         services.AddScoped<ReportsService>();
+        services.AddScoped<RevenueAnalyticsService>();
         services.AddScoped<JwtService>();
         services.AddScoped<UnitService>();
         services.AddScoped<PurchaseOrderService>();

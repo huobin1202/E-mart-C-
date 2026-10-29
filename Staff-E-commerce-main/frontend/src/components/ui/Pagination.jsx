@@ -13,7 +13,7 @@ export default function Pagination({ meta, onPageChange }) {
   for (let p = start; p <= end; p++) pages.push(p);
 
   return (
-    <nav className="flex items-center justify-between px-4 sm:px-0">
+    <nav className="flex min-w-0 flex-wrap items-center justify-between gap-3 px-1">
       <div className="flex justify-between flex-1 sm:hidden">
         <button
           onClick={() => onPageChange(currentPage - 1)}
@@ -30,7 +30,7 @@ export default function Pagination({ meta, onPageChange }) {
           Sau
         </button>
       </div>
-      <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+      <div className="hidden min-w-0 flex-1 items-center justify-between gap-4 sm:flex">
         <div>
           <p className="text-sm text-gray-700">
             Hiển thị trang <span className="font-medium">{currentPage}</span>{" "}
@@ -39,7 +39,7 @@ export default function Pagination({ meta, onPageChange }) {
         </div>
         <div>
           <nav
-            className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
+            className="relative z-0 inline-flex max-w-full flex-wrap rounded-md shadow-sm"
             aria-label="Pagination"
           >
             <button

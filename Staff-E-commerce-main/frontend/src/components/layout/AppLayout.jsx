@@ -33,11 +33,11 @@ export default function AppLayout() {
       {sidebarEl}
 
       {/* Page content */}
-      <div className="flex-1 md:ml-64 flex flex-col min-h-0">
+      <div className="flex-1 min-w-0 md:ml-64 flex flex-col min-h-0">
         {topbarEl}
 
         {/* main area: Outlet is where router will render the active route content */}
-        <main className="p-4 overflow-auto">
+        <main className="min-w-0 p-4 overflow-auto">
           <Outlet />
         </main>
       </div>
