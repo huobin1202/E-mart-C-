@@ -1,5 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import ProductDescription from "./components/ProductDescription";
+import {
+  checkoutDefinitelyRejected,
+  checkoutStorageKey,
+  createCheckoutRequestId,
+  parsePendingCheckout,
+  preparePendingCheckout,
+} from "./utils/storefrontCheckoutSession";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState,
@@ -515,6 +522,7 @@ function CustomerInvoice({ order, token, onClose }) {
 }
 
 export default function App() {
+  const checkoutRequestLock = useRef(false);
   const { width: windowWidth } = useWindowDimensions();
   const isDesktop = windowWidth >= 768;
   const isWide = windowWidth >= 1024;
@@ -550,6 +558,7 @@ export default function App() {
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [orderError, setOrderError] = useState("");
   const [completedOrder, setCompletedOrder] = useState(null);
+  const [pendingCheckout, setPendingCheckout] = useState(null);
 
   const [customerOrders, setCustomerOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
@@ -595,8 +604,53 @@ export default function App() {
   const [vouchersLoading, setVouchersLoading] = useState(false);
 
   const [paymentMethod, setPaymentMethod] = useState("cod");
+  const [paymentOptions, setPaymentOptions] = useState({ cod: true, momo: false, bank: false, bankDetails: null });
   const [useRewardPoints, setUseRewardPoints] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch(`${API_URL}/storefront/payment-options`)
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("payment options unavailable")))
+      .then((options) => {
+        if (!active) return;
+        setPaymentOptions(options);
+        setPaymentMethod((current) => options[current] ? current : "cod");
+      })
+      .catch(() => { if (active) setPaymentOptions({ cod: true, momo: false, bank: false, bankDetails: null }); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (!customer?.id || !customerToken) {
+      setPendingCheckout(null);
+      return () => { active = false; };
+    }
+
+    AsyncStorage.getItem(checkoutStorageKey(customer.id))
+      .then((raw) => parsePendingCheckout(raw, customer.id))
+      .then((pending) => {
+        if (!active || !pending) return;
+        setPendingCheckout(pending);
+        setCart(pending.cart);
+        setCheckoutForm({
+          fullName: pending.payload.fullName || "",
+          phone: pending.payload.phone || "",
+          address: pending.payload.address || "",
+          note: pending.payload.note || "",
+        });
+        setPaymentMethod(pending.payload.paymentMethod || "cod");
+        setUseRewardPoints((pending.payload.pointsUsed || 0) > 0);
+        setAppliedVoucher(pending.voucher || null);
+        setOrderError("Có một yêu cầu đặt hàng chưa xác định kết quả. Hãy kiểm tra thông tin và gửi lại để nhận đúng kết quả, không tạo đơn trùng.");
+      })
+      .catch(() => {
+        if (active) setOrderError("Không đọc được yêu cầu đặt hàng đã lưu. Vui lòng liên hệ nhân viên trước khi đặt đơn khác.");
+      });
+
+    return () => { active = false; };
+  }, [customer?.id, customerToken]);
 
   // Auto scroll banner
   useEffect(() => {
@@ -701,7 +755,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!cartLoaded || loading || loadError) return;
+    if (!cartLoaded || loading || loadError || pendingCheckout) return;
     setCart((current) => {
       const adjusted = current.map((item) => ({
         ...item,
@@ -709,7 +763,7 @@ export default function App() {
       })).filter((item) => item.quantity > 0);
       return adjusted.length === current.length && adjusted.every((item, index) => item.quantity === current[index].quantity) ? current : adjusted;
     });
-  }, [products, cartLoaded, loading, loadError]);
+  }, [products, cartLoaded, loading, loadError, pendingCheckout]);
 
   useEffect(() => {
     let active = true;
@@ -991,6 +1045,7 @@ export default function App() {
     setDatePickerOpen(false);
     setCheckoutOpen(false);
     setCheckoutForm({ fullName: "", phone: "", address: "", note: "" });
+    setPendingCheckout(null);
 
     if (storageError) Alert.alert("Đăng xuất", "Đã thoát tài khoản trong ứng dụng nhưng thiết bị chưa xóa được phiên đã lưu.");
   };
@@ -1077,6 +1132,7 @@ export default function App() {
   const payable = Math.max(0, afterVoucher - pointsDiscount);
 
   const openVouchers = async () => {
+    if (pendingCheckout) return;
     setDraftVoucher(appliedVoucher);
     setVoucherOpen(true);
     setVoucherMessage("");
@@ -1152,6 +1208,7 @@ export default function App() {
 
   const addToCart = useCallback((product, event) => {
     if (!requireAuthenticatedCustomer()) return;
+    if (pendingCheckout) return;
     if (loading || loadError) return;
     const available = stockLimit(products.find((item) => item.id === product.id));
     if (available === 0) return;
@@ -1179,9 +1236,10 @@ export default function App() {
         quantity: 1,
       }];
     });
-  }, [requireAuthenticatedCustomer, loading, loadError, products, flyProductToCart]);
+  }, [requireAuthenticatedCustomer, pendingCheckout, loading, loadError, products, flyProductToCart]);
 
   const changeQuantity = useCallback((id, amount) => {
+    if (pendingCheckout) return;
     if (amount > 0 && !requireAuthenticatedCustomer()) return;
     if (amount > 0 && (loading || loadError)) return;
     const available = stockLimit(products.find((product) => product.id === id));
@@ -1196,9 +1254,10 @@ export default function App() {
       next[index] = { ...item, quantity };
       return next;
     });
-  }, [requireAuthenticatedCustomer, loading, loadError, products]);
+  }, [requireAuthenticatedCustomer, pendingCheckout, loading, loadError, products]);
 
   const setProductQuantity = useCallback((id, quantity) => {
+    if (pendingCheckout) return;
     if (!requireAuthenticatedCustomer() || loading || loadError) return;
     if (!Number.isSafeInteger(quantity) || quantity < 1) return;
     const available = Math.min(1000, stockLimit(products.find((product) => product.id === id)));
@@ -1211,7 +1270,7 @@ export default function App() {
       next[index] = { ...current[index], quantity: nextQuantity };
       return next;
     });
-  }, [requireAuthenticatedCustomer, loading, loadError, products]);
+  }, [requireAuthenticatedCustomer, pendingCheckout, loading, loadError, products]);
 
   const getCartQuantity = (productId) => cart.find((item) => item.id === productId)?.quantity || 0;
 
@@ -1243,56 +1302,77 @@ export default function App() {
       setCheckoutOpen(false);
       return;
     }
-    if (!checkoutForm.fullName.trim() || !checkoutForm.phone.trim() || !checkoutForm.address.trim()) {
+    const formToValidate = pendingCheckout?.payload || checkoutForm;
+    if (!formToValidate.fullName?.trim() || !formToValidate.phone?.trim() || !formToValidate.address?.trim()) {
       setOrderError("Nhập họ tên, số điện thoại và địa chỉ nhận hàng.");
       return;
     }
-    if (!/^(0|\+84)[35789]\d{8}$/.test(checkoutForm.phone.trim())) {
+    if (!/^(0|\+84)[35789]\d{8}$/.test(formToValidate.phone.trim())) {
       setOrderError("Số điện thoại Việt Nam chưa đúng định dạng.");
       return;
     }
-    if (!cart.length) return;
+    if (!(pendingCheckout?.cart?.length || cart.length) || checkoutRequestLock.current) return;
+    checkoutRequestLock.current = true;
     setOrderSubmitting(true);
     setOrderError("");
     try {
+      const storageKey = checkoutStorageKey(customer.id);
+      const pending = await preparePendingCheckout(AsyncStorage, customer.id, () => ({
+        owner: customer.id,
+        cart,
+        voucher: appliedVoucher,
+        payload: {
+          ...checkoutForm,
+          fullName: checkoutForm.fullName.trim(),
+          phone: checkoutForm.phone.trim(),
+          requestId: createCheckoutRequestId(),
+          expectedTotal: payable,
+          paymentMethod,
+          pointsUsed: useRewardPoints ? maxPointsUsable : 0,
+          items: cart.map((item) => ({ productId: item.id, quantity: item.quantity })),
+          promotionCode: appliedVoucher?.code || null,
+          eventPromotionId: appliedVoucher?.eventPromotionId || null,
+        },
+      }));
+      setPendingCheckout(pending);
       const response = await fetch(`${API_URL}/storefront/orders`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${customerToken}`,
         },
-        body: JSON.stringify({
-          ...checkoutForm,
-          fullName: checkoutForm.fullName.trim(),
-          phone: checkoutForm.phone.trim(),
-          paymentMethod,
-          pointsUsed: useRewardPoints ? maxPointsUsable : 0,
-          items: cart.map((item) => ({ productId: item.id, quantity: item.quantity })),
-          promotionCode: appliedVoucher?.code || null,
-          eventPromotionId: appliedVoucher?.eventPromotionId || null,
-        }),
+        body: JSON.stringify(pending.payload),
       });
-      if (!response.ok) throw new Error(await readError(response));
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (checkoutDefinitelyRejected(response.status, result)) {
+          await AsyncStorage.removeItem(storageKey);
+          setPendingCheckout(null);
+        }
+        throw new Error(result.message || result.title || "Chưa xác định được kết quả đặt hàng. Hãy thử lại yêu cầu đã lưu.");
+      }
+      await AsyncStorage.removeItem(storageKey);
+      setPendingCheckout(null);
       setCompletedOrder({
         ...result,
-        paymentMethod,
-        pointsDiscount,
-        vietQrUrl: result.vietQrUrl || (paymentMethod === "bank" ? `https://img.vietqr.io/image/MB-0987654321-compact2.png?amount=${result.totalAmount}&addInfo=EMART_${result.orderNumber}&accountName=EMART%20STORE` : null)
+        paymentMethod: result.paymentMethod || pending.payload.paymentMethod,
+        pointsDiscount: (result.pointsUsed ?? pending.payload.pointsUsed) * 1000,
+        vietQrUrl: result.vietQrUrl || null,
       });
-      if (customer && useRewardPoints && maxPointsUsable > 0) {
-        setCustomer((prev) => prev ? ({ ...prev, rewardPoints: Math.max(0, (prev.rewardPoints || 0) - maxPointsUsable) }) : null);
-      }
+      fetch(`${API_URL}/storefront/account`, { headers: { Authorization: `Bearer ${customerToken}` } })
+        .then((accountResponse) => accountResponse.ok ? accountResponse.json() : null)
+        .then((profile) => { if (profile) setCustomer(profile); })
+        .catch(() => {});
       const placedOrder = {
         ...result,
-        paymentMethod,
-        recipientName: result.recipientName || checkoutForm.fullName.trim(),
-        recipientPhone: result.recipientPhone || checkoutForm.phone.trim(),
-        shippingAddress: result.shippingAddress || checkoutForm.address.trim(),
-        note: result.note ?? (checkoutForm.note.trim() || null),
-        paymentStatus: "pending",
+        paymentMethod: result.paymentMethod || pending.payload.paymentMethod,
+        recipientName: result.recipientName || pending.payload.fullName,
+        recipientPhone: result.recipientPhone || pending.payload.phone,
+        shippingAddress: result.shippingAddress || pending.payload.address,
+        note: result.note ?? (pending.payload.note?.trim() || null),
+        paymentStatus: result.paymentStatus || "pending",
         orderType: "mobile",
-        items: cart.map((item) => ({
+        items: pending.cart.map((item) => ({
           productId: item.id,
           productName: item.name,
           imageUrl: item.image,
@@ -1308,6 +1388,7 @@ export default function App() {
     } catch (error) {
       setOrderError(error.message || "Không thể gửi đơn hàng. Kiểm tra kết nối rồi thử lại.");
     } finally {
+      checkoutRequestLock.current = false;
       setOrderSubmitting(false);
     }
   };
@@ -1495,7 +1576,7 @@ export default function App() {
                 <Text style={styles.freeShipping}>Miễn phí (0đ)</Text>
               </View>
 
-              <Pressable style={styles.voucherRow} onPress={openVouchers}>
+              <Pressable disabled={Boolean(pendingCheckout)} style={styles.voucherRow} onPress={openVouchers}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                   <IconStar size={16} color={BHX_ORANGE} />
                   <Text style={styles.voucherLabel}>Phiếu giảm giá (Voucher)</Text>
@@ -1505,7 +1586,7 @@ export default function App() {
                 </Text>
               </Pressable>
               {appliedVoucher && (
-                <Pressable onPress={() => setAppliedVoucher(null)}>
+                <Pressable disabled={Boolean(pendingCheckout)} onPress={() => setAppliedVoucher(null)}>
                   <Text style={styles.voucherRemove}>✕ Bỏ phiếu mua hàng</Text>
                 </Pressable>
               )}
@@ -1519,6 +1600,7 @@ export default function App() {
               <AppButton
                 title="Xóa hết giỏ hàng"
                 secondary
+                disabled={Boolean(pendingCheckout)}
                 onPress={() => Alert.alert("Xóa giỏ hàng", "Bạn có chắc muốn xóa tất cả sản phẩm khỏi giỏ?", [
                   { text: "Hủy", style: "cancel" },
                   { text: "Xóa hết", style: "destructive", onPress: () => { setCart([]); setAppliedVoucher(null); } }
@@ -1811,7 +1893,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor={BHX_GREEN} />
+      <StatusBar barStyle="light-content" />
 
       {/* 1. TOP HEADER PHONG CÁCH BÁCH HÓA XANH (TÁCH 2 TẦNG TRÊN MOBILE ĐẢM BẢO KHÔNG BỊ TRÀN) */}
       <View style={styles.header}>
@@ -2131,9 +2213,9 @@ export default function App() {
                       <Image source={{ uri: completedOrder.vietQrUrl }} style={styles.vietQrImage} resizeMode="contain" />
                     )}
                     <View style={styles.bankDetailCard}>
-                      <Text style={styles.bankDetailLine}>• Ngân hàng: <Text style={styles.bankBold}>MBBank (Quân Đội)</Text></Text>
-                      <Text style={styles.bankDetailLine}>• Số tài khoản: <Text style={styles.bankBold}>0987654321</Text></Text>
-                      <Text style={styles.bankDetailLine}>• Chủ tài khoản: <Text style={styles.bankBold}>EMART STORE</Text></Text>
+                      <Text style={styles.bankDetailLine}>• Ngân hàng: <Text style={styles.bankBold}>{completedOrder.bankDetails?.bankCode || paymentOptions.bankDetails?.bankCode || "—"}</Text></Text>
+                      <Text style={styles.bankDetailLine}>• Số tài khoản: <Text style={styles.bankBold}>{completedOrder.bankDetails?.accountNumber || paymentOptions.bankDetails?.accountNumber || "—"}</Text></Text>
+                      <Text style={styles.bankDetailLine}>• Chủ tài khoản: <Text style={styles.bankBold}>{completedOrder.bankDetails?.accountName || paymentOptions.bankDetails?.accountName || "—"}</Text></Text>
                       <Text style={styles.bankDetailLine}>• Số tiền: <Text style={styles.bankMoney}>{money(completedOrder.totalAmount)}</Text></Text>
                       <Text style={styles.bankDetailLine}>• Nội dung: <Text style={styles.bankContent}>EMART_{completedOrder.orderNumber}</Text></Text>
                     </View>
@@ -2157,6 +2239,7 @@ export default function App() {
                 <Text style={styles.inputLabel}>HỌ VÀ TÊN</Text>
                 <TextInput
                   value={checkoutForm.fullName}
+                  editable={!pendingCheckout}
                   onChangeText={(value) => setCheckoutForm((form) => ({ ...form, fullName: value }))}
                   placeholder="Ví dụ: Nguyễn Văn An"
                   style={styles.formInput}
@@ -2167,6 +2250,7 @@ export default function App() {
                 <Text style={styles.inputLabel}>SỐ ĐIỆN THOẠI</Text>
                 <TextInput
                   value={checkoutForm.phone}
+                  editable={!pendingCheckout}
                   onChangeText={(value) => setCheckoutForm((form) => ({ ...form, phone: value }))}
                   placeholder="Ví dụ: 0912345678"
                   style={styles.formInput}
@@ -2178,6 +2262,7 @@ export default function App() {
                 <Text style={{ color: TEXT_MUTED, fontSize: 12, marginBottom: 6 }}>Bạn có thể nhập địa chỉ khác. Địa chỉ mặc định đã lưu sẽ không thay đổi.</Text>
                 <TextInput
                   value={checkoutForm.address}
+                  editable={!pendingCheckout}
                   onChangeText={(value) => setCheckoutForm((form) => ({ ...form, address: value }))}
                   placeholder="Số nhà, tên đường, phường/xã, quận/huyện..."
                   style={[styles.formInput, styles.addressInput]}
@@ -2188,6 +2273,7 @@ export default function App() {
                 <Text style={styles.inputLabel}>GHI CHÚ GIAO HÀNG (NẾU CÓ)</Text>
                 <TextInput
                   value={checkoutForm.note}
+                  editable={!pendingCheckout}
                   onChangeText={(value) => setCheckoutForm((form) => ({ ...form, note: value }))}
                   placeholder="Ví dụ: Gọi trước khi đến 15 phút..."
                   style={[styles.formInput, styles.noteInput]}
@@ -2202,9 +2288,10 @@ export default function App() {
                     { key: "cod", label: "Tiền mặt khi nhận hàng (COD)", desc: "Nhận hàng kiểm tra rồi trả tiền mặt" },
                     { key: "momo", label: "Ví điện tử MoMo", desc: "Thanh toán online qua ứng dụng MoMo" },
                     { key: "bank", label: "Chuyển khoản QR ngân hàng", desc: "Quét mã VietQR chuyển khoản siêu tốc" },
-                  ].map((m) => (
+                  ].filter((method) => paymentOptions[method.key]).map((m) => (
                     <Pressable
                       key={m.key}
+                      disabled={Boolean(pendingCheckout)}
                       onPress={() => setPaymentMethod(m.key)}
                       style={[styles.paymentMethodOption, paymentMethod === m.key && styles.paymentMethodOptionActive]}
                     >
@@ -2224,6 +2311,7 @@ export default function App() {
                 {/* ĐIỂM THƯỞNG KHÁCH HÀNG */}
                 {customer && (customer.rewardPoints || 0) > 0 && maxPointsUsable > 0 && (
                   <Pressable
+                    disabled={Boolean(pendingCheckout)}
                     onPress={() => setUseRewardPoints(!useRewardPoints)}
                     style={[styles.rewardPointsCard, useRewardPoints && styles.rewardPointsCardActive]}
                   >

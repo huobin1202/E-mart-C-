@@ -91,8 +91,10 @@ namespace backend.Services
         }
 
         // Create promotion
-        public async Task<PromotionDTO> CreatePromotionAsync(Promotion promotion)
+        public async Task<PromotionDTO> CreatePromotionAsync(PromotionDTO request)
         {
+            var promotion = BuildPromotion(request);
+            promotion.Code = $"PROMO-{Guid.NewGuid():N}".ToUpperInvariant();
             // Validation
             if (string.IsNullOrWhiteSpace(promotion.Name))
                 throw new ArgumentException("Name is required", nameof(promotion.Name));
@@ -137,8 +139,10 @@ namespace backend.Services
         }
 
         // Update promotion
-        public async Task<PromotionDTO> UpdatePromotionAsync(Promotion promotion)
+        public async Task<PromotionDTO> UpdatePromotionAsync(int id, PromotionDTO request)
         {
+            var promotion = BuildPromotion(request);
+            promotion.Id = id;
             var existing = await _promotionRepository.GetByIdAsync(promotion.Id);
             if (existing == null)
                 throw new ArgumentException("Promotion not found", nameof(promotion.Id));
@@ -176,6 +180,7 @@ namespace backend.Services
             }
 
             promotion.CreatedAt = existing.CreatedAt;
+            promotion.UsedCount = existing.UsedCount;
             promotion.UpdatedAt = DateTimeHelper.UtcNow;
             promotion.Name = string.IsNullOrWhiteSpace(promotion.Name) ? existing.Name : promotion.Name;
             promotion.StartDate ??= existing.StartDate;
@@ -186,6 +191,47 @@ namespace backend.Services
             var updated = await _promotionRepository.UpdateAsync(promotion);
             _cache.Clear();
             return MapToDTO(updated);
+        }
+
+        private static Promotion BuildPromotion(PromotionDTO request)
+        {
+            var promotion = new Promotion
+            {
+                Name = request.Name,
+                Type = request.Type,
+                DiscountType = request.DiscountType,
+                Value = request.Value,
+                MinOrderAmount = request.MinOrderAmount,
+                MaxDiscount = request.MaxDiscount,
+                StartDate = request.StartDate,
+                EndDate = request.EndDate,
+                UsageLimit = request.UsageLimit,
+                Active = request.Active,
+                Status = request.Status ?? (request.Active ? "active" : "disabled"),
+                Description = request.Description
+            };
+            promotion.VoucherDetails = promotion.Type == "voucher" && !string.IsNullOrWhiteSpace(request.VoucherCode)
+                ? new VoucherPromotion
+                {
+                    VoucherCode = request.VoucherCode.Trim().ToUpperInvariant(),
+                    DiscountPercent = promotion.DiscountType == "percent" ? promotion.Value : null
+                }
+                : null;
+            promotion.EventDetails = promotion.Type == "event"
+                ? new EventPromotion
+                {
+                    MinOrderAmount = request.MinOrderAmount,
+                    DiscountPercent = promotion.DiscountType == "percent" ? promotion.Value : null
+                }
+                : null;
+            promotion.ProductDetails = promotion.Type == "product"
+                ? request.ProductIds.Distinct().Select(productId => new ProductPromotion
+                {
+                    ProductId = productId,
+                    DiscountPercent = promotion.DiscountType == "percent" ? promotion.Value : null
+                }).ToList()
+                : null;
+            return promotion;
         }
 
         // Delete promotion
@@ -353,20 +399,7 @@ namespace backend.Services
         // Apply promotion to order
         public async Task<bool> ApplyPromotionByIdsAsync(int promotionId, int orderId, int? customerId)
         {
-            var promotion = await _promotionRepository.GetByIdAsync(promotionId);
-            if (promotion == null) return false;
-
-            await _promotionRepository.IncrementUsedCountAsync(promotionId);
-
-            // Add redemption record
-            await _promotionRepository.AddRedemptionAsync(new PromotionRedemption
-            {
-                PromotionId = promotionId,
-                OrderId = orderId,
-                CustomerId = customerId
-            });
-
-            return true;
+            return await ApplyPromotionRedemptionAsync(promotionId, orderId, customerId);
         }
 
 
@@ -474,29 +507,49 @@ namespace backend.Services
 
 
 
-        /// <summary>
-        /// Áp dụng khuyến mãi cho đơn hàng đã tạo
-        /// </summary>
-        public async Task ApplyPromotionAsync(Order order)
-        {
-            if (!order.PromotionId.HasValue) return; // không có khuyến mãi thì thôi
-
-            try
-            {
-                await _promotionRepository.ApplyPromotionAsync(order);
-            }
-            catch (Exception ex)
-            {
-                // có thể log lỗi nếu muốn
-                throw new Exception($"Áp dụng khuyến mãi thất bại: {ex.Message}");
-            }
-        }
-
         public async Task<bool> ApplyPromotionToOrderAsync(int orderId)
         {
             var order = await _promotionRepository.GetOrderByIdAsync(orderId);
             if (order is null) return false;
-            await ApplyPromotionAsync(order);
+            if (!order.PromotionId.HasValue)
+                throw new InvalidOperationException("Đơn hàng không có chương trình khuyến mãi.");
+            await ApplyPromotionRedemptionAsync(order.PromotionId.Value, order.Id, order.CustomerId);
+            return true;
+        }
+
+        private async Task<bool> ApplyPromotionRedemptionAsync(int promotionId, int orderId, int? requestedCustomerId)
+        {
+            await using var transaction = await _promotionRepository.BeginSerializableTransactionAsync();
+            var order = await _promotionRepository.GetOrderForUpdateAsync(orderId);
+            if (order == null) return false;
+
+            if (order.PromotionId != promotionId)
+                throw new InvalidOperationException("Khuyến mãi không khớp với khuyến mãi của đơn hàng.");
+            if (requestedCustomerId.HasValue && requestedCustomerId != order.CustomerId)
+                throw new InvalidOperationException("Khách hàng không khớp với khách hàng của đơn hàng.");
+            if (await _promotionRepository.HasRedemptionAsync(promotionId, orderId))
+            {
+                await transaction.CommitAsync();
+                return true;
+            }
+
+            var promotion = await _promotionRepository.GetForUpdateAsync(promotionId)
+                ?? throw new InvalidOperationException("Khuyến mãi không tồn tại.");
+            if (promotion.UsageLimit.HasValue && promotion.UsedCount >= promotion.UsageLimit.Value)
+                throw new InvalidOperationException("Khuyến mãi đã hết lượt sử dụng.");
+
+            promotion.UsedCount++;
+            promotion.UpdatedAt = DateTimeHelper.UtcNow;
+            _promotionRepository.AddRedemption(new PromotionRedemption
+            {
+                PromotionId = promotionId,
+                OrderId = orderId,
+                CustomerId = order.CustomerId,
+                RedeemedAt = DateTimeHelper.UtcNow
+            });
+            await _promotionRepository.SaveChangesAsync();
+            await transaction.CommitAsync();
+            _cache.Clear();
             return true;
         }
     }

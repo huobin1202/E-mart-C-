@@ -1,61 +1,65 @@
-using backend.Controllers;
 using backend.DTO;
 using backend.Helpers;
-using backend.Models;
 using backend.Repository;
 
 namespace backend.Services;
 
 public sealed class StorefrontService(
     StorefrontRepository repository,
-    BusMemoryCache<StorefrontCategoryResponse> categoryCache)
+    BusMemoryCache<StorefrontCategoryDTO> categoryCache)
 {
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
-
-    public Task<bool> UsernameExistsAsync(string username) => repository.UsernameExistsAsync(username);
-    public Task<Customer?> GetCustomerByPhoneAsync(string phone, string internationalPhone) => repository.GetCustomerByPhoneAsync(phone, internationalPhone);
-    public Task<bool> CustomerHasAccountAsync(int customerId) => repository.CustomerHasAccountAsync(customerId);
-    public Task<Role?> GetActiveCustomerRoleAsync() => repository.GetActiveCustomerRoleAsync();
-    public Task<User?> GetCustomerLoginAsync(string identifier, string normalizedPhone) => repository.GetCustomerLoginAsync(identifier, normalizedPhone);
-    public Task SaveRegistrationAsync(Customer customer, User user) => repository.SaveRegistrationAsync(customer, user);
-    public Task UpdateLastLoginAsync(int userId, DateTime lastLogin) => repository.UpdateLastLoginAsync(userId, lastLogin);
-    public Task<bool> EmailUsedByOtherAsync(int customerId, string email) => repository.EmailUsedByOtherAsync(customerId, email);
-    public Task<bool> UserEmailExistsAsync(string email) => repository.UserEmailExistsAsync(email);
-    public Task<User?> GetUserByCustomerIdAsync(int customerId) => repository.GetUserByCustomerIdAsync(customerId);
-    public Task SaveAccountAsync(Customer customer, User? account) => repository.SaveAccountAsync(customer, account);
-    public Task SaveCustomerAsync(Customer customer) => repository.SaveCustomerAsync(customer);
-    public Task<Customer?> GetActiveCustomerAsync(int customerId) => repository.GetActiveCustomerAsync(customerId);
-
-    public Task<Order?> GetOrderForPaymentStatusAsync(int orderId) => repository.GetOrderForPaymentStatusAsync(orderId);
 
     public Task<(bool Exists, string? Status)> GetCustomerOrderStatusAsync(int orderId, int customerId)
         => repository.GetCustomerOrderStatusAsync(orderId, customerId);
 
-    public Task<List<StorefrontCustomerOrderDTO>> GetCustomerOrdersAsync(int customerId)
-        => repository.GetCustomerOrdersAsync(customerId);
-
-    public Task<Dictionary<int, Product>> GetActiveProductsByIdsAsync(List<int> productIds)
-        => repository.GetActiveProductsByIdsAsync(productIds);
-
-    public Task<List<StorefrontProductPromotionDTO>> GetActiveProductPromotionsAsync(List<int> productIds, DateTime today)
-        => repository.GetActiveProductPromotionsAsync(productIds, today);
-
-    public Task<Promotion?> GetPromotionAsync(int promotionId) => repository.GetPromotionAsync(promotionId);
-
-    public Task<Customer> AddCustomerAsync(Customer customer) => repository.AddCustomerAsync(customer);
-
-    public async Task SaveOrderAndReduceInventoryAsync(
-        Order order,
-        Promotion? appliedPromotion,
-        List<(int ProductId, int Quantity)> requestedLines,
-        IReadOnlyDictionary<int, string> productNames)
+    public async Task<List<StorefrontCustomerOrderDTO>> GetCustomerOrdersAsync(int customerId)
     {
-        await repository.SaveOrderAndReduceInventoryAsync(order, appliedPromotion, requestedLines, productNames);
+        var orders = await repository.GetCustomerOrdersAsync(customerId);
+        return orders.Select(order => new StorefrontCustomerOrderDTO
+        {
+            Id = order.Id,
+            OrderNumber = order.OrderNumber,
+            OrderType = order.OrderNumber.StartsWith("WEB-", StringComparison.Ordinal) ? "mobile" : order.OrderType,
+            Status = order.Status,
+            PaymentStatus = order.PaymentStatus,
+            PaymentMethod = order.PaymentMethod,
+            Subtotal = order.Subtotal,
+            Discount = order.Discount,
+            TotalAmount = order.TotalAmount,
+            Note = order.Note,
+            RecipientName = order.RecipientName,
+            RecipientPhone = order.RecipientPhone,
+            ShippingAddress = order.ShippingAddress,
+            CreatedAt = order.CreatedAt,
+            Items = order.OrderItems.Select(line => new StorefrontCustomerOrderItemDTO
+            {
+                ProductId = line.ProductId,
+                ProductName = line.Product?.ProductName ?? "Sản phẩm",
+                ImageUrl = line.Product?.ImageUrl,
+                Quantity = line.Quantity,
+                UnitPrice = line.UnitPrice,
+                TotalPrice = line.TotalPrice
+            }).ToList()
+        }).ToList();
     }
 
     public async Task<List<StorefrontProductDTO>> GetAvailableProductsAsync()
     {
-        var products = await repository.GetAvailableProductsAsync();
+        var entities = await repository.GetAvailableProductsAsync();
+        var products = entities.Select(product => new StorefrontProductDTO
+        {
+            Id = product.Id,
+            ProductName = product.ProductName,
+            Description = product.Description,
+            CategoryId = product.CategoryId,
+            CategoryName = product.Category?.Name,
+            Price = SalePricing.Price(product.Price),
+            OriginalPrice = SalePricing.Price(product.Price),
+            UnitName = product.Unit?.Name,
+            StockQuantity = product.StockQuantity,
+            ImageUrl = product.ImageUrl
+        }).ToList();
         var promotions = await repository.GetActiveProductPromotionsAsync(
             products.Select(product => product.Id).ToList(), DateTimeHelper.VietnamToday);
         foreach (var product in products)
@@ -64,33 +68,26 @@ public sealed class StorefrontService(
                 .Select(promotion => new
                 {
                     Promotion = promotion,
-                    Discount = CalculateProductDiscount(product.OriginalPrice, promotion.DiscountType, promotion.Value, promotion.MaxDiscount)
+                    Discount = promotion.Promotion == null ? 0 : SalePricing.Discount(promotion.Promotion, product.OriginalPrice)
                 })
                 .OrderByDescending(item => item.Discount)
                 .FirstOrDefault();
             if (best == null || best.Discount <= 0) continue;
             product.Price = Math.Max(0, product.OriginalPrice - best.Discount);
-            product.PromotionName = best.Promotion.Name;
+            product.PromotionName = best.Promotion.Promotion?.Name;
             product.DiscountAmount = best.Discount;
             product.DiscountPercent = product.OriginalPrice == 0 ? 0 : Math.Round(best.Discount / product.OriginalPrice * 100, 0);
-            product.PromotionEndsAt = best.Promotion.EndDate;
+            product.PromotionEndsAt = best.Promotion.Promotion?.EndDate;
         }
         return products;
     }
 
-    private static decimal CalculateProductDiscount(decimal price, string discountType, decimal value, decimal? maxDiscount)
-    {
-        var discount = discountType == "percent" ? price * value / 100m : value;
-        if (maxDiscount.HasValue) discount = Math.Min(discount, maxDiscount.Value);
-        return Math.Min(price, discount);
-    }
-
-    public async Task<List<StorefrontCategoryResponse>> GetActiveCategoriesAsync()
+    public async Task<List<StorefrontCategoryDTO>> GetActiveCategoriesAsync()
     {
         var (categories, _) = await categoryCache.GetOrCreateAsync(async () =>
         {
             var loaded = await repository.GetActiveCategoriesAsync();
-            return loaded.Select(category => new StorefrontCategoryResponse { Id = category.Id, Name = category.Name }).ToList();
+            return loaded.Select(category => new StorefrontCategoryDTO { Id = category.Id, Name = category.Name }).ToList();
         }, CacheTtl);
         return categories.ToList();
     }

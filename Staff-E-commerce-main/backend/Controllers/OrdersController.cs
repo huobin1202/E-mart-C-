@@ -302,11 +302,16 @@ namespace backend.Controllers
         }
 
         [HttpPost("{orderId}/refund")]
-        public async Task<IActionResult> MarkOrderRefunded(int orderId)
+        public async Task<IActionResult> MarkOrderRefunded(int orderId, [FromBody] PosPaymentConfirmation request)
         {
-            var result = await _orderService.MarkOrderRefundedAsync(orderId);
-            return result ? Ok(new { success = true, message = "Đơn hàng và hóa đơn đã được đánh dấu hoàn tiền." })
-                : Conflict(new { message = "Chỉ đơn đã thanh toán mới có thể đánh dấu hoàn tiền." });
+            try
+            {
+                var result = await _orderService.MarkOrderRefundedAsync(orderId, request.Amount, request.Reference);
+                return result ? Ok(new { success = true, message = "Đơn hàng và hóa đơn đã được đánh dấu hoàn tiền." })
+                    : Conflict(new { message = "Số tiền không khớp hoặc đơn chưa đủ điều kiện hoàn tiền." });
+            }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
         }
 
         [HttpGet("{orderId}/items")]

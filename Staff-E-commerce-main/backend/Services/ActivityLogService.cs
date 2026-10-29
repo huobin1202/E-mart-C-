@@ -30,7 +30,7 @@ namespace backend.Services
         }
 
         public async Task LogAsync(
-            int userId,
+            int? userId,
             string action,
             string entityType,
             string entityId,

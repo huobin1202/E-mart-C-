@@ -39,7 +39,7 @@ public static class PosCheckoutRegression
         Check(recovered.GetProperty("id").GetInt32() == paid.Id, "Lost-response lookup returns the existing order");
         await Db(async db =>
         {
-            Check((await db.Inventory.SingleAsync(i => i.ProductId == productId)).Quantity == 18, "Stock debited once");
+            Check((await db.Products.FindAsync(productId))!.StockQuantity == 18, "Stock debited once");
             Check((await db.Customers.FindAsync(customerId))!.RewardPoints == 28, "Points deducted and earned once");
             Check(await db.Payments.CountAsync(p => p.OrderId == paid.Id) == 1, "Single cash payment");
             Check(await db.Invoices.CountAsync(i => i.OrderId == paid.Id) == 1, "Single invoice");
@@ -58,13 +58,13 @@ public static class PosCheckoutRegression
         await Send("/api/orders/create", new { orderNumber = "unsafe", status = "completed", subtotal = 1 }, HttpStatusCode.BadRequest);
 
         int count = 0, beforeStock = 0;
-        await Db(async db => { count = await db.Orders.CountAsync(); beforeStock = (await db.Inventory.SingleAsync(i => i.ProductId == productId)).Quantity; });
+        await Db(async db => { count = await db.Orders.CountAsync(); beforeStock = (await db.Products.FindAsync(productId))!.StockQuantity; });
         var mixed = Bill("cash", 1, 100000); mixed.Items.Add(new PosCheckoutLine { ProductId = emptyId, Quantity = 1 });
         await Send("/api/orders/checkout", mixed, HttpStatusCode.Conflict);
         await Db(async db =>
         {
             Check(await db.Orders.CountAsync() == count, "Out-of-stock rolls back order");
-            Check((await db.Inventory.SingleAsync(i => i.ProductId == productId)).Quantity == beforeStock, "Out-of-stock rolls back other debits");
+            Check((await db.Products.FindAsync(productId))!.StockQuantity == beforeStock, "Out-of-stock rolls back other debits");
         });
 
         // Separate pending payment from a paid receipt.
@@ -85,19 +85,19 @@ public static class PosCheckoutRegression
 
         // Cancelling a reserved bill restores stock and points exactly once.
         int beforePoints = 0;
-        await Db(async db => { beforeStock = (await db.Inventory.SingleAsync(i => i.ProductId == productId)).Quantity; beforePoints = (await db.Customers.FindAsync(customerId))!.RewardPoints; });
+        await Db(async db => { beforeStock = (await db.Products.FindAsync(productId))!.StockQuantity; beforePoints = (await db.Customers.FindAsync(customerId))!.RewardPoints; });
         var cancel = await Send("/api/orders/checkout", Bill("e_wallet", 1, null, points: 2));
         await Send($"/api/orders/{cancel.Id}/cancel", new { });
         await Send($"/api/orders/{cancel.Id}/cancel", new { });
         await Db(async db =>
         {
-            Check((await db.Inventory.SingleAsync(i => i.ProductId == productId)).Quantity == beforeStock, "Cancellation restores stock once");
+            Check((await db.Products.FindAsync(productId))!.StockQuantity == beforeStock, "Cancellation restores stock once");
             Check((await db.Customers.FindAsync(customerId))!.RewardPoints == beforePoints, "Cancellation restores points once");
         });
         await Send($"/api/orders/{cancel.Id}/confirm-payment", new { amount = cancel.TotalAmount, reference = "CANCELLED" }, HttpStatusCode.BadRequest);
 
         // A cancellation racing payment may win either way, but the ledger must match the winner.
-        await Db(async db => { beforeStock = (await db.Inventory.SingleAsync(i => i.ProductId == productId)).Quantity; beforePoints = (await db.Customers.FindAsync(customerId))!.RewardPoints; });
+        await Db(async db => { beforeStock = (await db.Products.FindAsync(productId))!.StockQuantity; beforePoints = (await db.Customers.FindAsync(customerId))!.RewardPoints; });
         var race = await LegacyCard(1);
         await Task.WhenAll(Raw($"/api/orders/{race.Id}/cancel", new { }), Raw($"/api/orders/{race.Id}/confirm-payment", new { amount = race.TotalAmount, reference = "RACE" }));
         await Db(async db =>
@@ -105,7 +105,7 @@ public static class PosCheckoutRegression
             var winner = (await db.Orders.FindAsync(race.Id))!;
             var settled = winner.PaymentStatus == "paid";
             Check(winner.Status == (settled ? "completed" : "cancelled"), "Cancel/payment race has one final state");
-            Check((await db.Inventory.SingleAsync(i => i.ProductId == productId)).Quantity == beforeStock - (settled ? 1 : 0), "Cancel/payment stock matches winner");
+            Check((await db.Products.FindAsync(productId))!.StockQuantity == beforeStock - (settled ? 1 : 0), "Cancel/payment stock matches winner");
             Check((await db.Customers.FindAsync(customerId))!.RewardPoints == beforePoints - (settled ? 1 : 0), "Cancel/payment points match winner");
             Check(await db.Payments.CountAsync(p => p.OrderId == race.Id) == (settled ? 1 : 0), "Cancel/payment ledger matches winner");
         });
@@ -191,7 +191,7 @@ public static class PosCheckoutRegression
             Check(lookupResponse.StatusCode == HttpStatusCode.NotFound, "Recovery keys do not reveal another cashier's request");
         }
         await Send($"/api/orders/{legacy.Id}/confirm-cash", new { cashReceived = 1 }, HttpStatusCode.BadRequest);
-        await Db(async db => { beforeStock = (await db.Inventory.SingleAsync(i => i.ProductId == productId)).Quantity; beforePoints = (await db.Customers.FindAsync(customerId))!.RewardPoints; count = await db.Orders.CountAsync(); });
+        await Db(async db => { beforeStock = (await db.Products.FindAsync(productId))!.StockQuantity; beforePoints = (await db.Customers.FindAsync(customerId))!.RewardPoints; count = await db.Orders.CountAsync(); });
         var settledLegacy = await Send($"/api/orders/{legacy.Id}/confirm-cash", new { cashReceived = 20000 });
         Check(settledLegacy.Id == legacy.Id && settledLegacy.PaymentStatus == "paid" && settledLegacy.ChangeDue == 10000, "Settle original legacy bill with change");
         await Send($"/api/orders/{legacy.Id}/confirm-cash", new { cashReceived = 20000 });
@@ -199,7 +199,7 @@ public static class PosCheckoutRegression
         await Db(async db =>
         {
             Check(await db.Orders.CountAsync() == count, "Legacy settlement creates no duplicate order");
-            Check((await db.Inventory.SingleAsync(i => i.ProductId == productId)).Quantity == beforeStock, "Legacy settlement does not debit reserved stock again");
+            Check((await db.Products.FindAsync(productId))!.StockQuantity == beforeStock, "Legacy settlement does not debit reserved stock again");
             Check((await db.Customers.FindAsync(customerId))!.RewardPoints == beforePoints + 1, "Legacy settlement earns points once");
             Check(await db.Payments.CountAsync(p => p.OrderId == legacy.Id && p.Status == "completed") == 1, "Legacy payment recorded once");
             Check(await db.Invoices.CountAsync(i => i.OrderId == legacy.Id) == 1, "Legacy invoice recorded once");
@@ -278,7 +278,7 @@ public static class PosCheckoutRegression
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private static Product Product(string name, decimal price, int stock) => new() { ProductName = name, Price = price, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow, Inventory = new Inventory { Quantity = stock, UpdatedAt = DateTime.UtcNow } };
+    private static Product Product(string name, decimal price, int stock) => new() { ProductName = name, Price = price, StockQuantity = stock, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
     private static Promotion Promotion(string code) => new() { Code = code, Name = code, Type = "event", Status = "active", DiscountType = "percent", Value = 10, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
     private static MomoIpnCallbackDTO Callback(string reference, long amount)
     {

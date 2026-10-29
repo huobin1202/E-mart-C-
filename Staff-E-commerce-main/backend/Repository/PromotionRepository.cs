@@ -3,6 +3,8 @@ using backend.DTO;
 using backend.Models;
 using backend.Helpers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using System.Data;
 
 namespace backend.Repository
 {
@@ -14,6 +16,23 @@ namespace backend.Repository
         {
             _context = context;
         }
+
+        public Task<IDbContextTransaction> BeginSerializableTransactionAsync() =>
+            _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+
+        public Task<Promotion?> GetForUpdateAsync(int id) => _context.Promotions
+            .FirstOrDefaultAsync(p => p.Id == id && !p.IsDeleted);
+
+        public Task<Order?> GetOrderForUpdateAsync(int orderId) => _context.Orders
+            .FirstOrDefaultAsync(o => o.Id == orderId);
+
+        public Task<bool> HasRedemptionAsync(int promotionId, int orderId) =>
+            _context.PromotionRedemptions.AnyAsync(r => r.PromotionId == promotionId && r.OrderId == orderId);
+
+        public void AddRedemption(PromotionRedemption redemption) =>
+            _context.PromotionRedemptions.Add(redemption);
+
+        public Task SaveChangesAsync() => _context.SaveChangesAsync();
 
         public Task<Order?> GetOrderByIdAsync(int orderId) => _context.Orders
             .Include(o => o.OrderItems).ThenInclude(i => i.Product)
@@ -210,66 +229,5 @@ namespace backend.Repository
                 .ToListAsync();
         }
 
-        // Increment used count
-        public async Task<bool> IncrementUsedCountAsync(int promotionId)
-        {
-            var promotion = await _context.Promotions.FindAsync(promotionId);
-            if (promotion == null) return false;
-
-            promotion.UsedCount++;
-            promotion.UpdatedAt = DateTimeHelper.UtcNow;
-
-            await _context.SaveChangesAsync();
-            return true;
-        }
-
-        // Add redemption record
-        public async Task<PromotionRedemption> AddRedemptionAsync(PromotionRedemption redemption)
-        {
-            redemption.RedeemedAt = DateTimeHelper.UtcNow;
-            _context.PromotionRedemptions.Add(redemption);
-            await _context.SaveChangesAsync();
-            return redemption;
-        }
-
-        /// <summary>
-        /// Áp dụng khuyến mãi cho một đơn hàng đã tạo (alternative method for POS)
-        /// </summary>
-        public async Task ApplyPromotionAsync(Order order)
-        {
-            if (!order.PromotionId.HasValue) return;
-
-            using var transaction = await _context.Database.BeginTransactionAsync();
-
-            try
-            {
-                var promo = await GetByIdAsync(order.PromotionId.Value);
-                if (promo == null)
-                    throw new Exception("Khuyến mãi không tồn tại");
-
-                if (promo.UsageLimit.HasValue && promo.UsedCount >= promo.UsageLimit.Value)
-                    throw new Exception("Khuyến mãi đã hết lượt sử dụng");
-
-                promo.UsedCount += 1;
-                _context.Promotions.Update(promo);
-
-                var redemption = new PromotionRedemption
-                {
-                    PromotionId = promo.Id,
-                    CustomerId = order.CustomerId,
-                    OrderId = order.Id,
-                    RedeemedAt = DateTimeHelper.UtcNow
-                };
-                await _context.PromotionRedemptions.AddAsync(redemption);
-
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
-            }
-            catch
-            {
-                await transaction.RollbackAsync();
-                throw;
-            }
-        }
     }
 }

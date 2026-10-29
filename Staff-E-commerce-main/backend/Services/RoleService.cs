@@ -2,6 +2,7 @@ using backend.DTO;
 using backend.Models;
 using backend.Repository;
 using backend.Security;
+using System.Security.Claims;
 
 namespace backend.Services;
 
@@ -10,10 +11,12 @@ public sealed class RoleService
     private readonly RoleRepository _repository;
     private readonly BusMemoryCache<RoleDTO> _cache;
     private readonly BusMemoryCache<Permission> _permissionCache;
+    private readonly IHttpContextAccessor _httpContextAccessor;
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
 
-    public RoleService(RoleRepository repository, BusMemoryCache<RoleDTO> cache, BusMemoryCache<Permission> permissionCache)
-    { _repository = repository; _cache = cache; _permissionCache = permissionCache; }
+    public RoleService(RoleRepository repository, BusMemoryCache<RoleDTO> cache, BusMemoryCache<Permission> permissionCache,
+        IHttpContextAccessor httpContextAccessor)
+    { _repository = repository; _cache = cache; _permissionCache = permissionCache; _httpContextAccessor = httpContextAccessor; }
 
     public async Task<IReadOnlyList<RoleDTO>> GetRolesAsync()
     {
@@ -33,6 +36,8 @@ public sealed class RoleService
         if (await _repository.ExistsByNameAsync(request.Name)) return (null, "Role already exists.", 409);
         var permissions = await _repository.GetPermissionsByIdsAsync(request.PermissionIds);
         if (permissions.Count != request.PermissionIds.Distinct().Count()) return (null, "One or more permissions do not exist.", 400);
+        if (!IsAdminActor() && permissions.Any(permission => PermissionCatalog.AdministrationPermissions.Contains(permission.Code)))
+            return (null, "Chỉ quản trị viên được tạo vai trò có quyền quản trị tài khoản.", 403);
         var role = new Role { Name = request.Name, Description = request.Description?.Trim(), IsActive = request.IsActive };
         role.RolePermissions = permissions.Select(p => new RolePermission { Permission = p }).ToList();
         _repository.Add(role);
@@ -45,6 +50,8 @@ public sealed class RoleService
     {
         var role = await _repository.GetByIdAsync(id);
         if (role is null) return (null, null, 404);
+        if (role.Name == "admin" && !IsAdminActor())
+            return (null, "Chỉ quản trị viên được thay đổi vai trò admin.", 403);
         if (role.Name == "customer") return (null, "Quyền khách hàng được áp dụng cố định, không cấu hình trong phân quyền nội bộ.", 409);
         request.Name = request.Name.Trim().ToLowerInvariant();
         if (await _repository.ExistsByNameAsync(request.Name, id)) return (null, "Role already exists.", 409);
@@ -61,6 +68,11 @@ public sealed class RoleService
         var result = Map(saved); _cache.AddOrUpdate(result, item => item.Id);
         return (result, null, 200);
     }
+
+    private bool IsAdminActor() => string.Equals(
+        _httpContextAccessor.HttpContext?.User.FindFirst(ClaimTypes.Role)?.Value,
+        "admin",
+        StringComparison.OrdinalIgnoreCase);
 
     private static RoleDTO Map(Role role) => new()
     {

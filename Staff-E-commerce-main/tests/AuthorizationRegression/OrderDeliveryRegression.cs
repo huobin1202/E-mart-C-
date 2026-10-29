@@ -29,8 +29,7 @@ public static class OrderDeliveryRegression
             var buyer = new Customer { FullName = "Chủ tài khoản", Phone = "0988888811", Address = "Địa chỉ hồ sơ cũ", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
             var user = new User { Username = "delivery_buyer", FullName = buyer.FullName, PasswordHash = "unused", Customer = buyer,
                 RoleEntity = await db.Roles.SingleAsync(r => r.Name == "customer"), IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
-            var product = new Product { ProductName = "Delivery item", Price = 20000, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
-                Inventory = new Inventory { Quantity = 10, UpdatedAt = DateTime.UtcNow } };
+            var product = new Product { ProductName = "Delivery item", Price = 20000, StockQuantity = 10, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
             db.Users.Add(user); db.Products.Add(product);
             await db.SaveChangesAsync();
             (legacyId, noNoteId, malformedId, counterId, structuredId, buyerId, productId) = (old.Id, noNote.Id, malformed.Id, counter.Id, structured.Id, buyer.Id, product.Id);

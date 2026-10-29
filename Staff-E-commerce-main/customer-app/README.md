@@ -4,6 +4,8 @@ This is the native React Native customer app. It is a separate Expo project; the
 
 ## Run on Android
 
+On Windows, double-click `Start-Customer.cmd` at the repository root (or run `.\Start-Customer.cmd` in PowerShell there). It selects this project and starts Expo Go with an ngrok tunnel without requiring Expo login. Keep the terminal open and scan its QR code. From this directory, the equivalent command is `npm.cmd run start:tunnel`.
+
 Start the backend in one PowerShell terminal:
 
 ```powershell
@@ -16,10 +18,14 @@ Start Expo in another terminal:
 ```powershell
 cd D:\E-mart-C-\Staff-E-commerce-main\customer-app
 npm.cmd install
-npm.cmd start
+npm.cmd start -- --go --clear
 ```
 
-Install Expo Go on an Android phone and scan the QR code. Keep the phone and computer on the same Wi-Fi. The Expo Go app connects to the backend using the computer's LAN address; create a local `.env` file with:
+This project uses Expo SDK 58. Install an Expo Go version that supports SDK 58 on your Android phone and scan the QR code. Keep the phone and computer on the same Wi-Fi. The `--go` option targets Expo Go, and `--clear` clears the Metro cache after the SDK upgrade. Stop any old Expo server before starting this command.
+
+If your network blocks the QR connection, try `npm.cmd start -- --go --tunnel ngrok --clear`. SDK 58 defaults to an Expo tunnel that requires Expo login; explicitly selecting `ngrok` avoids that Expo login requirement. The tunnel exposes the Expo development server; your phone still needs network access to the backend URL below.
+
+The Expo Go app connects to the backend using the computer's LAN address; create a local `.env` file with:
 
 ```text
 EXPO_PUBLIC_API_URL=http://YOUR_COMPUTER_LAN_IP:5099/api

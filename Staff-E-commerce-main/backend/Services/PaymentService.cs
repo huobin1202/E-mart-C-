@@ -15,6 +15,7 @@ namespace backend.Services
         private readonly IConfiguration _config;
         private readonly InvoiceService _invoiceService;
         private readonly PosCheckoutService _checkout;
+        private readonly RealtimeNotificationService _realtime;
 
         // Hàm lưu một payment nếu là thanh toán trực tiếp 
         // Lưu Payment (Cash, Card, ECard,...)
@@ -30,7 +31,9 @@ namespace backend.Services
             return await _paymentRepo.AddPaymentAsync(payment);
         }
 
-        public PaymentService(PaymentRepository paymentRepo, OrderRepository orderRepo, ActivityLogService logService, IConfiguration config, InvoiceService invoiceService, PosCheckoutService checkout)
+        public PaymentService(PaymentRepository paymentRepo, OrderRepository orderRepo, ActivityLogService logService,
+            IConfiguration config, InvoiceService invoiceService, PosCheckoutService checkout,
+            RealtimeNotificationService realtime)
         {
             _paymentRepo = paymentRepo;
             _orderRepo = orderRepo;
@@ -38,6 +41,7 @@ namespace backend.Services
             _config = config;
             _invoiceService = invoiceService;
             _checkout = checkout;
+            _realtime = realtime;
         }
 
         private string SignSHA256(string message, string key)
@@ -132,8 +136,11 @@ namespace backend.Services
 
         public async Task<bool> HandleMomoCallbackAsync(MomoIpnCallbackDTO callback)
         {
-            string accessKey = _config["Momo:AccessKey"];
-            string secretKey = _config["Momo:SecretKey"];
+            var accessKey = _config["Momo:AccessKey"];
+            var secretKey = _config["Momo:SecretKey"];
+            if (string.IsNullOrWhiteSpace(accessKey) || string.IsNullOrWhiteSpace(secretKey) ||
+                string.IsNullOrWhiteSpace(callback.OrderId) || callback.Amount is not long receivedAmount)
+                return false;
 
             // Signature kiểm tra callback
             string rawSignature =
@@ -151,51 +158,69 @@ namespace backend.Services
                 $"&resultCode={callback.ResultCode}" +
                 $"&transId={callback.TransId}";
 
-            string expected = SignSHA256(rawSignature, secretKey);
-            if (callback.Signature != expected)
-            {
-                return false;
-            }
+            var expected = SignSHA256(rawSignature, secretKey);
+            if (string.IsNullOrWhiteSpace(callback.Signature)) return false;
+            var actualBytes = Encoding.UTF8.GetBytes(callback.Signature.ToLowerInvariant());
+            var expectedBytes = Encoding.UTF8.GetBytes(expected);
+            if (actualBytes.Length != expectedBytes.Length ||
+                !CryptographicOperations.FixedTimeEquals(actualBytes, expectedBytes)) return false;
+            if (!string.IsNullOrWhiteSpace(_config["Momo:PartnerCode"]) &&
+                !string.Equals(callback.PartnerCode, _config["Momo:PartnerCode"], StringComparison.Ordinal)) return false;
 
-            if (callback.ResultCode == 0)
+            var snapshot = await _paymentRepo.GetByTransactionRefAsync(callback.OrderId);
+            if (snapshot == null || snapshot.Amount != receivedAmount) return false;
+            var orderSnapshot = await _paymentRepo.GetOrderSnapshotAsync(snapshot.OrderId);
+            if (orderSnapshot == null || orderSnapshot.TotalAmount != receivedAmount) return false;
+
+            if (orderSnapshot.OrderType == "pos" && callback.ResultCode == 0)
             {
-                // Cập nhật payment + order
-                var payment = await _paymentRepo.GetByTransactionRefAsync(callback.OrderId);
-                if (payment != null)
+                try
                 {
-                    var pendingOrder = await _paymentRepo.GetOrderSnapshotAsync(payment.OrderId)
-                        ?? throw new InvalidOperationException("Không tìm thấy đơn hàng thanh toán.");
-                    if (!decimal.TryParse(callback.Amount.ToString(), out var received) || received != payment.Amount || received != pendingOrder.TotalAmount)
-                        return false;
-                    if (pendingOrder.OrderType == "pos")
-                    {
-                        try { await _checkout.ConfirmAsync(payment.OrderId, received, callback.OrderId!, momo: true); return true; }
-                        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { return false; }
-                    }
-                    if (pendingOrder.Status is "cancelled" or "refunded") return false;
-                    if (payment.Status == "completed") return true;
-                    payment.Status = "completed";
-                    await _paymentRepo.UpdatePaymentAsync(payment);
-
-                    var order = await _orderRepo.GetByIdAsync(payment.OrderId);
-                    if (order != null)
-                    {
-                        var newStatus = order.OrderType == "pos" ? "completed" : (order.Status == "pending" ? "processing" : order.Status);
-                        await _orderRepo.UpdateOrderPaymentAsync(order.Id, "paid", newStatus);
-                        await _invoiceService.SyncOrderLifecycleAsync(order.Id);
-                    }
-
-                    await _logService.LogAsync(
-                        pendingOrder.UserId ?? 0,
-                        "PAYMENT_SUCCESS",
-                        "Payment",
-                        payment.Id.ToString(),
-                        null,
-                        "system");
+                    await _checkout.ConfirmAsync(orderSnapshot.Id, receivedAmount, callback.OrderId, momo: true);
+                    await _realtime.BroadcastToWeb("OrderStatusChanged", new { orderId = orderSnapshot.Id, paymentStatus = "paid" });
+                    return true;
                 }
-                else return false;
+                catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+                {
+                    return false;
+                }
             }
 
+            await using var transaction = await _paymentRepo.BeginSerializableTransactionAsync();
+            await _paymentRepo.LockTransactionAsync(callback.OrderId);
+            var payment = await _paymentRepo.GetForCallbackAsync(callback.OrderId);
+            if (payment?.Order == null || payment.Amount != receivedAmount || payment.Order.TotalAmount != receivedAmount)
+                return false;
+            if (callback.ResultCode != 0)
+            {
+                if (payment.Status == "pending") payment.Status = "failed";
+                await _paymentRepo.SaveChangesAsync();
+                await transaction.CommitAsync();
+                return true;
+            }
+            if (payment.Order.Status is "cancelled" or "refunded") return false;
+            if (payment.Status == "completed" && payment.Order.PaymentStatus == "paid")
+            {
+                await transaction.CommitAsync();
+                return true;
+            }
+            if (payment.Status != "pending" || payment.Order.PaymentStatus != "pending") return false;
+
+            payment.Status = "completed";
+            payment.Order.PaymentStatus = "paid";
+            if (payment.Order.Status == "pending") payment.Order.Status = "processing";
+            payment.Order.UpdatedAt = DateTime.UtcNow;
+            await _paymentRepo.SaveChangesAsync();
+            await _invoiceService.SyncOrderLifecycleAsync(payment.Order.Id);
+            await transaction.CommitAsync();
+
+            await _logService.LogAsync(payment.Order.UserId, "PAYMENT_SUCCESS", "Payment", payment.Id.ToString(), null, "system");
+            await _realtime.BroadcastToWeb("OrderStatusChanged", new
+            {
+                orderId = payment.Order.Id,
+                status = payment.Order.Status,
+                paymentStatus = "paid"
+            });
             return true;
         }
 

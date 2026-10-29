@@ -8,8 +8,13 @@ npm run dev
 # app
 COPY PATH CUSTOMER APP 
 cd PATH 
-npx expo start --tunnel
+npx expo start --tunnel ngrok
+npm.cmd run start:tunnel
 (nếu ch có expo thì npx install expo)
+
+npm.cmd run start:tunnel
+
+`start:tunnel` uses `expo start --go --tunnel ngrok --clear` to avoid the Expo account login required by the default SDK 58 tunnel. You can also run `Start-Customer.cmd` from the repository root.
 
 ## Quản lý tài khoản và phân quyền
 

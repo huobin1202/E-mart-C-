@@ -15,7 +15,13 @@ public sealed class PermissionFilter(AppDbContext db) : IAsyncAuthorizationFilte
         if (context.ActionDescriptor.EndpointMetadata.OfType<IAllowAnonymous>().Any()) return;
         if (context.ActionDescriptor is not ControllerActionDescriptor action) return;
         var permission = PermissionCatalog.ForRequest(action.ControllerName, action.ActionName, context.HttpContext.Request.Method);
-        if (permission == null) return;
+        if (permission == null)
+        {
+            // These controllers intentionally rely on ownership/role checks instead of staff permissions.
+            if (action.ControllerName is "Storefront" or "Me" or "Secret") return;
+            context.Result = new ObjectResult(new { message = "Endpoint chưa được ánh xạ quyền truy cập." }) { StatusCode = 403 };
+            return;
+        }
         var user = context.HttpContext.User;
         if (user.Identity?.IsAuthenticated != true)
         {

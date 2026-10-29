@@ -1,7 +1,8 @@
 using backend.Data;
-using backend.DTO;
 using backend.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using System.Data;
 
 namespace backend.Repository;
 
@@ -61,12 +62,6 @@ public sealed class StorefrontRepository
 
     public async Task SaveAccountAsync(Customer customer, User? account)
     {
-        if (account != null)
-        {
-            account.FullName = customer.FullName;
-            account.Email = customer.Email;
-            account.UpdatedAt = DateTime.UtcNow;
-        }
         await _context.SaveChangesAsync();
     }
 
@@ -82,38 +77,14 @@ public sealed class StorefrontRepository
         return GetCustomerOrderStatusInternalAsync(orderId, customerId);
     }
 
-    public Task<List<StorefrontCustomerOrderDTO>> GetCustomerOrdersAsync(int customerId)
+    public Task<List<Order>> GetCustomerOrdersAsync(int customerId)
     {
         return _context.Orders.AsNoTracking()
+            .Include(order => order.OrderItems)
+                .ThenInclude(line => line.Product)
             .Where(order => order.CustomerId == customerId)
             .OrderByDescending(order => order.CreatedAt)
             .ThenByDescending(order => order.Id)
-            .Select(order => new StorefrontCustomerOrderDTO
-            {
-                Id = order.Id,
-                OrderNumber = order.OrderNumber,
-                OrderType = order.OrderNumber.StartsWith("WEB-") ? "mobile" : order.OrderType,
-                Status = order.Status,
-                PaymentStatus = order.PaymentStatus,
-                PaymentMethod = order.PaymentMethod,
-                Subtotal = order.Subtotal,
-                Discount = order.Discount,
-                TotalAmount = order.TotalAmount,
-                Note = order.Note,
-                RecipientName = order.RecipientName,
-                RecipientPhone = order.RecipientPhone,
-                ShippingAddress = order.ShippingAddress,
-                CreatedAt = order.CreatedAt,
-                Items = order.OrderItems.Select(line => new StorefrontCustomerOrderItemDTO
-                {
-                    ProductId = line.ProductId,
-                    ProductName = line.Product != null ? line.Product.ProductName : "Sản phẩm",
-                    ImageUrl = line.Product != null ? line.Product.ImageUrl : null,
-                    Quantity = line.Quantity,
-                    UnitPrice = line.UnitPrice,
-                    TotalPrice = line.TotalPrice
-                }).ToList()
-            })
             .ToListAsync();
     }
 
@@ -134,36 +105,27 @@ public sealed class StorefrontRepository
             .ToListAsync();
     }
 
-    public Task<List<StorefrontProductDTO>> GetAvailableProductsAsync()
+    public Task<List<Product>> GetAvailableProductsAsync()
     {
         return _context.Products.AsNoTracking()
+            .Include(product => product.Category)
+            .Include(product => product.Unit)
             .Where(product => product.IsActive && product.StockQuantity > 0)
             .OrderBy(product => product.ProductName)
-            .Select(product => new StorefrontProductDTO
-            {
-                Id = product.Id, ProductName = product.ProductName, Description = product.Description,
-                CategoryId = product.CategoryId, CategoryName = product.Category != null ? product.Category.Name : null,
-                Price = product.Price, OriginalPrice = product.Price,
-                UnitName = product.Unit != null ? product.Unit.Name : null,
-                StockQuantity = product.StockQuantity,
-                ImageUrl = product.ImageUrl
-            }).ToListAsync();
+            .ToListAsync();
     }
 
-    public Task<List<StorefrontProductPromotionDTO>> GetActiveProductPromotionsAsync(List<int> productIds, DateTime today)
+    public Task<List<ProductPromotion>> GetActiveProductPromotionsAsync(List<int> productIds, DateTime today)
     {
-        return (from link in _context.ProductPromotions.AsNoTracking()
-                join promotion in _context.Promotions.AsNoTracking() on link.PromotionId equals promotion.Id
-                where productIds.Contains(link.ProductId) && !promotion.IsDeleted && promotion.Status == "active" &&
-                      promotion.Type == "product" &&
-                      (!promotion.StartDate.HasValue || promotion.StartDate.Value.Date <= today) &&
-                      (!promotion.EndDate.HasValue || promotion.EndDate.Value.Date >= today) &&
-                      (!promotion.UsageLimit.HasValue || promotion.UsedCount < promotion.UsageLimit)
-                select new StorefrontProductPromotionDTO
-                {
-                    ProductId = link.ProductId, Name = promotion.Name, DiscountType = promotion.DiscountType,
-                    Value = promotion.Value, MaxDiscount = promotion.MaxDiscount, EndDate = promotion.EndDate
-                }).ToListAsync();
+        return _context.ProductPromotions.AsNoTracking()
+            .Include(link => link.Promotion)
+            .Where(link => productIds.Contains(link.ProductId) && link.Promotion != null &&
+                !link.Promotion.IsDeleted && link.Promotion.Status == "active" &&
+                link.Promotion.Type == "product" &&
+                (!link.Promotion.StartDate.HasValue || link.Promotion.StartDate.Value.Date <= today) &&
+                (!link.Promotion.EndDate.HasValue || link.Promotion.EndDate.Value.Date >= today) &&
+                (!link.Promotion.UsageLimit.HasValue || link.Promotion.UsedCount < link.Promotion.UsageLimit))
+            .ToListAsync();
     }
 
     public async Task<Dictionary<int, Product>> GetActiveProductsByIdsAsync(List<int> productIds)
@@ -179,45 +141,44 @@ public sealed class StorefrontRepository
             .SingleOrDefaultAsync(promotion => promotion.Id == promotionId);
     }
 
-    public async Task<Customer> AddCustomerAsync(Customer customer)
+    public Task<IDbContextTransaction> BeginSerializableTransactionAsync() =>
+        _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+
+    public Task LockCheckoutAsync() => _context.Database.ExecuteSqlRawAsync("""
+        DECLARE @result INT;
+        EXEC @result = sys.sp_getapplock @Resource = 'storefront-checkout', @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 10000;
+        IF @result < 0 THROW 51000, 'Checkout is busy. Please retry.', 1;
+        """);
+
+    public Task LockRegistrationAsync() => _context.Database.ExecuteSqlRawAsync("""
+        DECLARE @result INT;
+        EXEC @result = sys.sp_getapplock @Resource = 'storefront-registration', @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 10000;
+        IF @result < 0 THROW 51000, 'Registration is busy. Please retry.', 1;
+        """);
+
+    public Task<Order?> GetByCheckoutKeyAsync(string key) =>
+        _context.Orders.FirstOrDefaultAsync(order => order.CheckoutKey == key);
+
+    public Task<Dictionary<int, Product>> GetTrackedActiveProductsByIdsAsync(List<int> productIds) =>
+        _context.Products.Where(product => productIds.Contains(product.Id) && product.IsActive)
+            .ToDictionaryAsync(product => product.Id);
+
+    public Task<List<ProductPromotion>> GetTrackedProductPromotionsAsync(List<int> productIds) =>
+        _context.ProductPromotions.Include(link => link.Promotion)
+            .Where(link => productIds.Contains(link.ProductId)).ToListAsync();
+
+    public void AddOrder(Order order) => _context.Orders.Add(order);
+    public void AddInventoryAdjustment(InventoryAdjustment adjustment) => _context.InventoryAdjustments.Add(adjustment);
+    public void AddPromotionRedemption(PromotionRedemption redemption) => _context.PromotionRedemptions.Add(redemption);
+    public Task SaveChangesAsync() => _context.SaveChangesAsync();
+
+    public async Task<bool> TryReduceStockAsync(int productId, int quantity, DateTime updatedAt)
     {
-        _context.Customers.Add(customer);
-        await _context.SaveChangesAsync();
-        return customer;
-    }
-
-    public async Task SaveOrderAndReduceInventoryAsync(
-        Order order,
-        Promotion? appliedPromotion,
-        List<(int ProductId, int Quantity)> requestedLines,
-        IReadOnlyDictionary<int, string> productNames)
-    {
-        await using var transaction = await _context.Database.BeginTransactionAsync();
-        try
-        {
-            _context.Orders.Add(order);
-            if (appliedPromotion != null)
-                appliedPromotion.UsedCount++;
-            await _context.SaveChangesAsync();
-
-            foreach (var line in requestedLines)
-            {
-                var updated = await _context.Products
-                    .Where(product => product.Id == line.ProductId && product.StockQuantity >= line.Quantity)
-                    .ExecuteUpdateAsync(update => update
-                        .SetProperty(product => product.StockQuantity, product => product.StockQuantity - line.Quantity)
-                        .SetProperty(product => product.UpdatedAt, DateTime.UtcNow));
-                if (updated != 1)
-                    throw new InvalidOperationException($"Sản phẩm {productNames[line.ProductId]} vừa hết hàng hoặc không đủ số lượng.");
-            }
-
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
-        }
-        catch
-        {
-            await transaction.RollbackAsync();
-            throw;
-        }
+        var updated = await _context.Products
+            .Where(product => product.Id == productId && product.StockQuantity >= quantity)
+            .ExecuteUpdateAsync(update => update
+                .SetProperty(product => product.StockQuantity, product => product.StockQuantity - quantity)
+                .SetProperty(product => product.UpdatedAt, updatedAt));
+        return updated == 1;
     }
 }

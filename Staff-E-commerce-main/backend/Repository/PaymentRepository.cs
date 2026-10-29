@@ -1,6 +1,8 @@
 using backend.Data;
 using backend.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using System.Data;
 
 namespace backend.Repository
 {
@@ -86,6 +88,25 @@ namespace backend.Repository
         {
             return _context.Payments.FirstOrDefaultAsync(p => p.TransactionRef == transactionRef);
         }
+
+        public Task<IDbContextTransaction> BeginSerializableTransactionAsync() =>
+            _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+
+        public Task LockTransactionAsync(string transactionReference)
+        {
+            var resource = $"payment-{transactionReference}";
+            return _context.Database.ExecuteSqlInterpolatedAsync($"""
+                DECLARE @result INT;
+                EXEC @result = sys.sp_getapplock @Resource = {resource}, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 10000;
+                IF @result < 0 THROW 51000, 'Payment is busy. Please retry.', 1;
+                """);
+        }
+
+        public Task<Payment?> GetForCallbackAsync(string transactionReference) => _context.Payments
+            .Include(payment => payment.Order)
+            .FirstOrDefaultAsync(payment => payment.TransactionRef == transactionReference);
+
+        public Task SaveChangesAsync() => _context.SaveChangesAsync();
 
         public async Task MarkPendingPaymentFailedAsync(int paymentId)
         {

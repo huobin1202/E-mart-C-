@@ -1,237 +1,169 @@
-using backend.Services;
-using backend.Models;
-using backend.Data;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
-using System;
-using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using System.Collections.Generic;
+using backend.Services;
 
-namespace backend.Middlewares
+namespace backend.Middlewares;
+
+public sealed class RequestLoggingMiddleware(RequestDelegate next, IServiceProvider serviceProvider)
 {
-    public class RequestLoggingMiddleware
+    private const int MaxPayloadLength = 1000;
+
+    public async Task InvokeAsync(HttpContext context)
     {
-        private readonly RequestDelegate _next;
-        private readonly IServiceProvider _serviceProvider;
-        private const int MaxPayloadLength = 1000; // giới hạn ký tự payload
-
-        public RequestLoggingMiddleware(RequestDelegate next, IServiceProvider serviceProvider)
+        var method = context.Request.Method.ToUpperInvariant();
+        if (method is not ("POST" or "PUT" or "PATCH" or "DELETE"))
         {
-            _next = next;
-            _serviceProvider = serviceProvider;
+            await next(context);
+            return;
         }
 
-        public async Task InvokeAsync(HttpContext context)
+        var path = context.Request.Path.ToString();
+        var payload = IsAuthenticationEndpoint(path)
+            ? "[Authentication payload omitted]"
+            : await ReadAndSanitizePayloadAsync(context.Request);
+
+        Exception? requestFailure = null;
+        try
         {
-            try
-            {
-                var request = context.Request;
-                string method = request.Method.ToUpper();
-
-                if (method == "POST" || method == "PUT" || method == "DELETE")
-                {
-                    string bodyText = "[Empty Body]";
-                    if (request.ContentLength > 0)
-                    {
-                        try
-                        {
-                            request.EnableBuffering();
-                            using var reader = new StreamReader(request.Body, Encoding.UTF8, leaveOpen: true);
-                            bodyText = await reader.ReadToEndAsync();
-                            request.Body.Position = 0;
-                        }
-                        catch
-                        {
-                            bodyText = "[Unreadable Body]";
-                        }
-                    }
-
-                    string path = request.Path.ToString();
-                    string entityName = NormalizeEntityName(ExtractEntityName(path));
-                    string entityId = ExtractEntityId(path);
-                    string action = method switch
-                    {
-                        "POST" => $"CREATE_{entityName}",
-                        "PUT" => $"UPDATE_{entityName}",
-                        "DELETE" => $"DELETE_{entityName}",
-                        _ => $"HTTP_{method}_{entityName}"
-                    };
-
-                    string ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-                    int? userId = GetUserId(context);
-                    string userName = context.User?.Identity?.Name ?? "anonymous";
-
-                    // Serialize và lọc payload
-                    string payload = PreparePayload(bodyText);
-
-                    Console.WriteLine($"[RequestLoggingMiddleware] Logging {action} for {entityName}#{entityId}");
-
-                    // Ghi log vào DB
-                    try
-                    {
-                        using var scope = _serviceProvider.CreateScope();
-                        var logService = scope.ServiceProvider.GetRequiredService<ActivityLogService>();
-                        await logService.LogAsync(
-                            userId ?? 2, 
-                            action ?? "UnknownAction",
-                            entityName ?? "UnknownEntity",
-                            entityId ?? "0",
-                            payload ?? "{}",
-                            ip ?? "unknown"
-                        );
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"[RequestLoggingMiddleware] LogAsync failed: {ex}");
-                    }
-
-                    // 🔹 Ghi log ra file
-                    try
-                    {
-                        var logLine = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} | User:{userName} | Action:{action} | Entity:{entityName}#{entityId} | IP:{ip} | Payload:{payload}";
-                        await File.AppendAllTextAsync("request_log.txt", logLine + Environment.NewLine);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"[RequestLoggingMiddleware] File log failed: {ex}");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[RequestLoggingMiddleware] Unexpected error: {ex}");
-            }
-
-            await _next(context);
+            await next(context);
         }
-
-        #region Helper Methods
-
-        private string NormalizeEntityName(string entityName)
+        catch (Exception exception)
         {
-            return entityName switch
+            requestFailure = exception;
+            throw;
+        }
+        finally
+        {
+            await WriteLogSafelyAsync(context, method, path, payload, requestFailure);
+        }
+    }
+
+    private async Task WriteLogSafelyAsync(
+        HttpContext context, string method, string path, string payload, Exception? requestFailure)
+    {
+        try
+        {
+            var entityName = NormalizeEntityName(ExtractEntityName(path));
+            var entityId = ExtractEntityId(path);
+            var action = method switch
             {
-                "Inventoryadjustment" => "Inventory_Adjustment",
-                _ => entityName
+                "POST" => $"CREATE_{entityName}",
+                "PUT" or "PATCH" => $"UPDATE_{entityName}",
+                "DELETE" => $"DELETE_{entityName}",
+                _ => $"HTTP_{method}_{entityName}"
             };
-        }
+            var auditPayload = JsonSerializer.Serialize(new
+            {
+                statusCode = context.Response.StatusCode,
+                succeeded = requestFailure == null && context.Response.StatusCode < 400,
+                body = payload
+            });
+            if (auditPayload.Length > MaxPayloadLength)
+                auditPayload = auditPayload[..MaxPayloadLength] + "...[truncated]";
 
-        private string ExtractEntityName(string path)
+            using var scope = serviceProvider.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<ActivityLogService>();
+            await service.LogAsync(
+                GetAuthenticatedUserId(context),
+                action,
+                entityName,
+                entityId,
+                auditPayload,
+                context.Connection.RemoteIpAddress?.ToString() ?? "unknown");
+        }
+        catch (Exception exception)
         {
-            try
-            {
-                var match = Regex.Match(path, @"^/api/([^/]+)");
-                if (!match.Success || string.IsNullOrEmpty(match.Groups[1].Value))
-                    return "Unknown";
-                string name = match.Groups[1].Value;
-                return char.ToUpper(name[0]) + (name.Length > 1 ? name.Substring(1).ToLower() : "");
-            }
-            catch
-            {
-                return "Unknown";
-            }
+            // Audit failure must not change the result of the business request.
+            Console.Error.WriteLine($"[RequestLoggingMiddleware] Audit failed: {exception.Message}");
         }
+    }
 
-        private string ExtractEntityId(string path)
+    private static async Task<string> ReadAndSanitizePayloadAsync(HttpRequest request)
+    {
+        if (request.ContentLength is null or 0) return "[Empty Body]";
+        try
         {
-            try
-            {
-                var match = Regex.Match(path, @"^/api/[^/]+/([^/?]+)");
-                return match.Success && !string.IsNullOrEmpty(match.Groups[1].Value) ? match.Groups[1].Value : "0";
-            }
-            catch
-            {
-                return "0";
-            }
+            request.EnableBuffering();
+            using var reader = new StreamReader(request.Body, Encoding.UTF8, leaveOpen: true);
+            var body = await reader.ReadToEndAsync();
+            request.Body.Position = 0;
+            return SanitizeJson(body);
         }
-
-        // private int? GetUserId(HttpContext context)
-        // {
-        //     if (context.User.Identity != null && context.User.Identity.IsAuthenticated)
-        //     {
-        //         // Lấy claim uid từ token
-        //         var claim = context.User.FindFirst("uid") 
-        //                     ?? context.User.FindFirst("userId") 
-        //                     ?? context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
-
-        //         if (claim != null && int.TryParse(claim.Value, out int id))
-        //             return id;
-        //     }
-        //     return null; 
-        // }
-        private int? GetUserId(HttpContext context)
+        catch
         {
-            try
-            {
-                // 1. Nếu token hợp lệ: context.User đã được gán claims
-                var uidClaim = context.User.FindFirst("uid");
-                if (uidClaim != null && int.TryParse(uidClaim.Value, out int jwtUserId))
-                    return jwtUserId;
-
-                // 2. Fallback (trong TH bạn muốn dùng X-User-Id)
-                if (context.Request.Headers.TryGetValue("X-User-Id", out var headerUserId))
-                {
-                    if (int.TryParse(headerUserId.ToString(), out int headerId))
-                        return headerId;
-                }
-            }
-            catch {}
-
-            return null; // middleware sẽ dùng default 2
+            return "[Unreadable Body]";
         }
+    }
 
-
-
-        private string PreparePayload(string text)
+    private static string SanitizeJson(string text)
+    {
+        try
         {
-            object parsed = TryParseJson(text);
-            string json = System.Text.Json.JsonSerializer.Serialize(parsed);
-
-            // Lọc các field nhạy cảm
-            json = FilterSensitiveFields(json);
-
-            // Giới hạn độ dài
-            if (json.Length > MaxPayloadLength)
-                json = json.Substring(0, MaxPayloadLength) + "...[truncated]";
-
-            return json;
+            var node = JsonNode.Parse(text);
+            Redact(node);
+            var sanitized = node?.ToJsonString() ?? "null";
+            return sanitized.Length <= MaxPayloadLength
+                ? sanitized
+                : sanitized[..MaxPayloadLength] + "...[truncated]";
         }
-
-        private object TryParseJson(string text)
+        catch (JsonException)
         {
-            try
-            {
-                return System.Text.Json.JsonSerializer.Deserialize<object>(text) ?? new { raw = text };
-            }
-            catch
-            {
-                return new { raw = text };
-            }
+            return "[Payload omitted: not JSON]";
         }
+    }
 
-        private string FilterSensitiveFields(string json)
+    private static void Redact(JsonNode? node)
+    {
+        if (node is JsonObject obj)
         {
-            if (string.IsNullOrEmpty(json)) return json;
-
-            // Replace common sensitive fields
-            var sensitiveKeys = new[] { "password", "token", "creditCard" };
-            foreach (var key in sensitiveKeys)
+            foreach (var key in obj.Select(pair => pair.Key).ToArray())
             {
-                json = System.Text.RegularExpressions.Regex.Replace(
-                    json,
-                    $"\"{key}\"\\s*:\\s*\".*?\"",
-                    $"\"{key}\":\"[REDACTED]\"",
-                    RegexOptions.IgnoreCase
-                );
+                var normalized = key.Replace("_", "").Replace("-", "").ToLowerInvariant();
+                if (normalized.Contains("password") || normalized.Contains("token") ||
+                    normalized.Contains("secret") || normalized.Contains("creditcard") ||
+                    normalized is "authorization" or "apikey")
+                    obj[key] = "[REDACTED]";
+                else
+                    Redact(obj[key]);
             }
-
-            return json;
         }
+        else if (node is JsonArray array)
+        {
+            foreach (var child in array) Redact(child);
+        }
+    }
 
-        #endregion
+    private static int? GetAuthenticatedUserId(HttpContext context)
+    {
+        if (context.User.Identity?.IsAuthenticated != true) return null;
+        return int.TryParse(context.User.FindFirst("uid")?.Value, out var userId) ? userId : null;
+    }
+
+    private static bool IsAuthenticationEndpoint(string path) =>
+        path.StartsWith("/api/auth/", StringComparison.OrdinalIgnoreCase) ||
+        path.Equals("/api/me/change-password", StringComparison.OrdinalIgnoreCase) ||
+        path.Equals("/api/storefront/login", StringComparison.OrdinalIgnoreCase) ||
+        path.Equals("/api/storefront/register", StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeEntityName(string entityName) => entityName switch
+    {
+        "Inventoryadjustment" => "Inventory_Adjustment",
+        _ => entityName
+    };
+
+    private static string ExtractEntityName(string path)
+    {
+        var match = Regex.Match(path, @"^/api/([^/]+)");
+        if (!match.Success || string.IsNullOrEmpty(match.Groups[1].Value)) return "Unknown";
+        var name = match.Groups[1].Value;
+        return char.ToUpperInvariant(name[0]) + (name.Length > 1 ? name[1..].ToLowerInvariant() : string.Empty);
+    }
+
+    private static string ExtractEntityId(string path)
+    {
+        var match = Regex.Match(path, @"^/api/[^/]+/([^/?]+)");
+        return match.Success && !string.IsNullOrEmpty(match.Groups[1].Value) ? match.Groups[1].Value : "0";
     }
 }

@@ -114,42 +114,7 @@ namespace backend.Controllers
 
             try
             {
-                var promotion = new Promotion
-                {
-                    Code = $"PROMO-{Guid.NewGuid():N}".ToUpperInvariant(),
-                    Name = promotionDto.Name,
-                    Type = promotionDto.Type,
-                    DiscountType = promotionDto.DiscountType,
-                    Value = promotionDto.Value,
-                    MinOrderAmount = promotionDto.MinOrderAmount,
-                    MaxDiscount = promotionDto.MaxDiscount,
-                    StartDate = promotionDto.StartDate,
-                    EndDate = promotionDto.EndDate,
-                    UsageLimit = promotionDto.UsageLimit,
-                    Active = promotionDto.Active,
-                    Status = promotionDto.Status ?? (promotionDto.Active ? "active" : "disabled"),
-                    Description = promotionDto.Description
-                };
-                promotion.VoucherDetails = promotion.Type == "voucher" && !string.IsNullOrWhiteSpace(promotionDto.VoucherCode)
-                    ? new VoucherPromotion
-                    {
-                        VoucherCode = promotionDto.VoucherCode.Trim().ToUpperInvariant(),
-                        DiscountPercent = promotion.DiscountType == "percent" ? promotion.Value : null
-                    } : null;
-                promotion.EventDetails = promotion.Type == "event"
-                    ? new EventPromotion
-                    {
-                        MinOrderAmount = promotionDto.MinOrderAmount,
-                        DiscountPercent = promotion.DiscountType == "percent" ? promotion.Value : null
-                    } : null;
-                promotion.ProductDetails = promotion.Type == "product"
-                    ? promotionDto.ProductIds.Distinct().Select(productId => new ProductPromotion
-                    {
-                        ProductId = productId,
-                        DiscountPercent = promotion.DiscountType == "percent" ? promotion.Value : null
-                    }).ToList() : null;
-
-                var created = await _promotionService.CreatePromotionAsync(promotion);
+                var created = await _promotionService.CreatePromotionAsync(promotionDto);
                 return CreatedAtAction(nameof(GetPromotion), new { id = created.Id }, created);
             }
             catch (ArgumentException ex)
@@ -177,44 +142,7 @@ namespace backend.Controllers
 
             try
             {
-                var promotion = new Promotion
-                {
-                    Id = promotionDto.Id,
-                    Code = promotionDto.Code?.ToUpperInvariant() ?? string.Empty,
-                    Name = promotionDto.Name,
-                    Type = promotionDto.Type,
-                    DiscountType = promotionDto.DiscountType,
-                    Value = promotionDto.Value,
-                    MinOrderAmount = promotionDto.MinOrderAmount,
-                    MaxDiscount = promotionDto.MaxDiscount,
-                    StartDate = promotionDto.StartDate,
-                    EndDate = promotionDto.EndDate,
-                    UsageLimit = promotionDto.UsageLimit,
-                    UsedCount = promotionDto.UsedCount,
-                    Active = promotionDto.Active,
-                    Status = promotionDto.Status ?? (promotionDto.Active ? "active" : "disabled"),
-                    Description = promotionDto.Description
-                };
-                promotion.VoucherDetails = promotion.Type == "voucher" && !string.IsNullOrWhiteSpace(promotionDto.VoucherCode)
-                    ? new VoucherPromotion
-                    {
-                        VoucherCode = promotionDto.VoucherCode.Trim().ToUpperInvariant(),
-                        DiscountPercent = promotion.DiscountType == "percent" ? promotion.Value : null
-                    } : null;
-                promotion.EventDetails = promotion.Type == "event"
-                    ? new EventPromotion
-                    {
-                        MinOrderAmount = promotionDto.MinOrderAmount,
-                        DiscountPercent = promotion.DiscountType == "percent" ? promotion.Value : null
-                    } : null;
-                promotion.ProductDetails = promotion.Type == "product"
-                    ? promotionDto.ProductIds.Distinct().Select(productId => new ProductPromotion
-                    {
-                        ProductId = productId,
-                        DiscountPercent = promotion.DiscountType == "percent" ? promotion.Value : null
-                    }).ToList() : null;
-
-                var updated = await _promotionService.UpdatePromotionAsync(promotion);
+                var updated = await _promotionService.UpdatePromotionAsync(id, promotionDto);
                 return Ok(updated);
             }
             catch (ArgumentException ex)

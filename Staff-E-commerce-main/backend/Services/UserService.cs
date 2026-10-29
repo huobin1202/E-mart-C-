@@ -1,6 +1,7 @@
 using backend.DTO;
 using backend.Models;
 using backend.Repository;
+using System.Security.Claims;
 
 namespace backend.Services
 {
@@ -15,12 +16,14 @@ namespace backend.Services
 
         private readonly UserRepository _userRepository;
         private readonly BusMemoryCache<UserDTO> _cache;
+        private readonly IHttpContextAccessor _httpContextAccessor;
         private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
 
-        public UserService(UserRepository userRepository, BusMemoryCache<UserDTO> cache)
+        public UserService(UserRepository userRepository, BusMemoryCache<UserDTO> cache, IHttpContextAccessor httpContextAccessor)
         {
             _userRepository = userRepository;
             _cache = cache;
+            _httpContextAccessor = httpContextAccessor;
         }
 
         public async Task<List<UserDTO>> GetAllUsersAsync()
@@ -43,7 +46,7 @@ namespace backend.Services
             else if (!string.IsNullOrWhiteSpace(role))
                 filtered = filtered.Where(user => string.Equals(user.Role, role.Trim(), StringComparison.OrdinalIgnoreCase));
             if (isActive.HasValue)
-                filtered = filtered.Where(user => user.IsActive == isActive.Value && user.IsLocked != isActive.Value);
+                filtered = filtered.Where(user => (user.IsActive && !user.IsLocked) == isActive.Value);
             if (!string.IsNullOrWhiteSpace(search))
             {
                 var keyword = search.Trim();
@@ -103,6 +106,7 @@ namespace backend.Services
 
             await ValidateAccountAsync(request);
             var roleName = NormalizeRole(request.Role);
+            EnsureAdminActorForAdminAccount(roleName);
             var role = await _userRepository.GetRoleByNameAsync(roleName);
             if (role == null || !role.IsActive)
                 throw new ArgumentException($"Role '{roleName}' does not exist or is inactive.", nameof(request.Role));
@@ -158,7 +162,9 @@ namespace backend.Services
             await ValidateAccountAsync(request, id);
 
             existingUser.Username = request.Username.Trim();
-            var role = await _userRepository.GetRoleByNameAsync(NormalizeRole(request.Role));
+            var requestedRole = NormalizeRole(request.Role);
+            EnsureAdminActorForAdminAccount(existingUser.RoleEntity.Name, requestedRole);
+            var role = await _userRepository.GetRoleByNameAsync(requestedRole);
             if (role == null || !role.IsActive)
                 throw new ArgumentException($"Role '{request.Role}' does not exist or is inactive.", nameof(request.Role));
 
@@ -203,6 +209,7 @@ namespace backend.Services
         {
             var existingUser = await _userRepository.GetByIdAsync(id);
             if (existingUser == null) return null;
+            EnsureAdminActorForAdminAccount(existingUser.RoleEntity.Name);
 
             existingUser.Username = request.Username.Trim();
             existingUser.Email = request.Email?.Trim();
@@ -263,10 +270,21 @@ namespace backend.Services
 
         public async Task<bool> DeleteUserAsync(int id)
         {
+            var existing = await _userRepository.GetByIdAsync(id);
+            if (existing == null) return false;
+            EnsureAdminActorForAdminAccount(existing.RoleEntity.Name);
             // The repository rejects deletion once the account has activity.
             var deleted = await _userRepository.DeleteAsync(id);
             if (deleted) _cache.Clear();
             return deleted;
+        }
+
+        private void EnsureAdminActorForAdminAccount(params string?[] roles)
+        {
+            if (roles.All(role => !string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase))) return;
+            var actorRole = _httpContextAccessor.HttpContext?.User.FindFirst(ClaimTypes.Role)?.Value;
+            if (!string.Equals(actorRole, "admin", StringComparison.OrdinalIgnoreCase))
+                throw new UnauthorizedAccessException("Chỉ quản trị viên được tạo hoặc thay đổi tài khoản admin.");
         }
 
         private async Task ValidateAccountAsync(UserDTO request, int? excludeId = null)

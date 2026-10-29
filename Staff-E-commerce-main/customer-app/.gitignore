@@ -5,3 +5,4 @@ android/
 ios/
 dist/
 web-build/
+.tmp-export/

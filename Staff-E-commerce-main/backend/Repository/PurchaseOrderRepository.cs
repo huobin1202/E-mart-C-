@@ -2,6 +2,7 @@ using backend.Data;
 using backend.DTO;
 using backend.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using System.Data;
 
 namespace backend.Repository;
@@ -23,24 +24,13 @@ public class PurchaseOrderRepository
         return _context.Products.CountAsync(product => ids.Contains(product.Id) && product.IsActive);
     }
 
-    public Task<List<PurchaseOrderListDTO>> GetAllForCacheAsync()
+    public Task<List<PurchaseOrder>> GetAllForCacheAsync()
     {
         return _context.PurchaseOrders.AsNoTracking()
+            .Include(po => po.Supplier).Include(po => po.User).Include(po => po.Employee)
+            .Include(po => po.Details)
             .OrderByDescending(po => po.CreatedAt).ThenByDescending(po => po.Id)
-            .Select(po => new PurchaseOrderListDTO
-            {
-                Id = po.Id,
-                PoCode = po.PoCode,
-                SupplierId = po.SupplierId,
-                SupplierName = po.Supplier != null ? po.Supplier.Name : string.Empty,
-                UserName = po.User != null ? po.User.FullName : string.Empty,
-                EmployeeId = po.EmployeeId,
-                EmployeeName = po.Employee != null ? po.Employee.FullName : null,
-                TotalAmount = po.TotalAmount,
-                ItemCount = po.Details.Count,
-                Status = po.Status,
-                CreatedAt = po.CreatedAt
-            }).ToListAsync();
+            .ToListAsync();
     }
 
     public Task<PurchaseOrder?> GetByIdAsync(int id) => _context.PurchaseOrders
@@ -50,67 +40,37 @@ public class PurchaseOrderRepository
 
     public async Task<PurchaseOrder> CreateAsync(PurchaseOrder purchaseOrder)
     {
-        purchaseOrder.EmployeeId = await _context.Users
-            .Where(user => user.Id == purchaseOrder.UserId)
-            .Select(user => user.EmployeeId)
-            .SingleOrDefaultAsync();
         _context.PurchaseOrders.Add(purchaseOrder);
         await _context.SaveChangesAsync();
         return purchaseOrder;
     }
 
-    public async Task CompleteAsync(int id, int userId)
+    public Task<int?> GetEmployeeIdForUserAsync(int userId) => _context.Users
+        .Where(user => user.Id == userId).Select(user => user.EmployeeId).SingleOrDefaultAsync();
+
+    public Task<IDbContextTransaction> BeginSerializableTransactionAsync() =>
+        _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+
+    public Task LockAsync(int id)
     {
-        await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
-        var purchaseOrder = await _context.PurchaseOrders
-            .Include(po => po.Details)
-            .FirstOrDefaultAsync(po => po.Id == id);
-        if (purchaseOrder == null) throw new KeyNotFoundException("Không tìm thấy phiếu nhập.");
-        if (!string.Equals(purchaseOrder.Status, "pending", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Chỉ có thể hoàn tất phiếu nhập đang chờ xử lý.");
-
-        var productIds = purchaseOrder.Details.Select(detail => detail.ProductId).ToList();
-        var products = await _context.Products
-            .Where(item => productIds.Contains(item.Id))
-            .ToDictionaryAsync(item => item.Id);
-        var now = DateTime.UtcNow;
-        foreach (var detail in purchaseOrder.Details)
-        {
-            if (!products.TryGetValue(detail.ProductId, out var product))
-                throw new InvalidOperationException($"Không tìm thấy sản phẩm ID {detail.ProductId}.");
-            product.StockQuantity += detail.Quantity;
-            product.UpdatedAt = now;
-            _context.InventoryAdjustments.Add(new InventoryAdjustment
-            {
-                ProductId = detail.ProductId, ChangeAmount = detail.Quantity,
-                Reason = $"Nhập hàng {purchaseOrder.PoCode}", UserId = userId, CreatedAt = now
-            });
-        }
-
-        purchaseOrder.Status = "completed";
-        purchaseOrder.UpdatedAt = now;
-        _context.ActivityLogs.Add(new ActivityLog
-        {
-            UserId = userId, Action = "complete_purchase_order", EntityType = "purchase_orders",
-            EntityId = purchaseOrder.Id.ToString(), Payload = purchaseOrder.PoCode, CreatedAt = now
-        });
-        await _context.SaveChangesAsync();
-        await transaction.CommitAsync();
+        var resource = $"purchase-order-{id}";
+        return _context.Database.ExecuteSqlInterpolatedAsync($"""
+            DECLARE @result INT;
+            EXEC @result = sys.sp_getapplock @Resource = {resource}, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 10000;
+            IF @result < 0 THROW 51000, 'Purchase order is busy. Please retry.', 1;
+            """);
     }
 
-    public async Task CancelAsync(int id, int userId)
+    public Task<PurchaseOrder?> GetForUpdateAsync(int id) => _context.PurchaseOrders
+        .Include(po => po.Details).FirstOrDefaultAsync(po => po.Id == id);
+
+    public Task<Dictionary<int, Product>> GetProductsForUpdateAsync(IEnumerable<int> productIds)
     {
-        var purchaseOrder = await _context.PurchaseOrders.FindAsync(id);
-        if (purchaseOrder == null) throw new KeyNotFoundException("Không tìm thấy phiếu nhập.");
-        if (!string.Equals(purchaseOrder.Status, "pending", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Chỉ có thể hủy phiếu nhập đang chờ xử lý.");
-        purchaseOrder.Status = "cancelled";
-        purchaseOrder.UpdatedAt = DateTime.UtcNow;
-        _context.ActivityLogs.Add(new ActivityLog
-        {
-            UserId = userId, Action = "cancel_purchase_order", EntityType = "purchase_orders",
-            EntityId = purchaseOrder.Id.ToString(), Payload = purchaseOrder.PoCode, CreatedAt = DateTime.UtcNow
-        });
-        await _context.SaveChangesAsync();
+        var ids = productIds.Distinct().ToList();
+        return _context.Products.Where(product => ids.Contains(product.Id)).ToDictionaryAsync(product => product.Id);
     }
+
+    public void AddInventoryAdjustment(InventoryAdjustment adjustment) => _context.InventoryAdjustments.Add(adjustment);
+    public void AddActivityLog(ActivityLog activityLog) => _context.ActivityLogs.Add(activityLog);
+    public Task SaveChangesAsync() => _context.SaveChangesAsync();
 }

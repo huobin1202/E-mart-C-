@@ -34,17 +34,28 @@ builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
     ["Jwt:Issuer"] = "test", ["Jwt:Audience"] = "test"
 });
 builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlServer(connection.ConnectionString));
+builder.Services.AddSingleton(typeof(BusMemoryCache<>));
+builder.Services.AddSignalR();
 builder.Services.AddScoped<UserRepository>();
 builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<OrderRepository>();
 builder.Services.AddScoped<CustomerRepository>();
+builder.Services.AddScoped<CustomerService>();
 builder.Services.AddScoped<PaymentRepository>();
 builder.Services.AddScoped<ActivityLogRepository>();
 builder.Services.AddScoped<ActivityLogService>();
 builder.Services.AddScoped<InvoiceService>();
+builder.Services.AddScoped<InvoiceRepository>();
+builder.Services.AddScoped<PosCheckoutRepository>();
+builder.Services.AddScoped<StorefrontRepository>();
 builder.Services.AddScoped<PosCheckoutService>();
+builder.Services.AddScoped<StorefrontService>();
+builder.Services.AddScoped<StorefrontAccountService>();
+builder.Services.AddScoped<StorefrontCheckoutService>();
+builder.Services.AddScoped<BankTransferService>();
+builder.Services.AddScoped<RealtimeNotificationService>();
 builder.Services.AddScoped<OrderService>();
 builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<OrderItemRepository>();
@@ -54,10 +65,13 @@ builder.Services.AddScoped<PromotionService>();
 builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Momo:AccessKey"] = "test-access", ["Momo:SecretKey"] = "test-secret" });
 builder.Services.AddScoped<PermissionFilter>();
 builder.Services.AddScoped<AccountMutationFilter>();
+builder.Services.AddScoped<ReadCacheInvalidationService>();
+builder.Services.AddScoped<ReadCacheInvalidationFilter>();
 builder.Services.AddControllers(o =>
 {
     o.Filters.AddService<PermissionFilter>();
     o.Filters.AddService<AccountMutationFilter>();
+    o.Filters.AddService<ReadCacheInvalidationFilter>();
 }).AddApplicationPart(typeof(UsersController).Assembly);
 builder.Services.AddAuthorization(o => o.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(o =>
@@ -121,6 +135,7 @@ try
         user!.IsLocked = true;
         await db.SaveChangesAsync();
     });
+    app.Services.GetRequiredService<BusMemoryCache<UserDTO>>().Clear();
     await CheckUserFilter("role=staff&isActive=false", 1, staffId);
     await CheckUserFilter("role=staff&isActive=true", 0);
     await WithDb(async db =>
@@ -129,6 +144,7 @@ try
         user!.IsLocked = false;
         await db.SaveChangesAsync();
     });
+    app.Services.GetRequiredService<BusMemoryCache<UserDTO>>().Clear();
 
     await Expect(HttpMethod.Get, "/api/users/getalluser", staffToken, null, HttpStatusCode.Forbidden);
     await Expect(HttpMethod.Get, "/api/users/getalluser", customerToken, null, HttpStatusCode.Forbidden);
@@ -271,8 +287,9 @@ try
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/users/paginated?" + query);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
         using var response = await client.SendAsync(request);
-        Check(response.IsSuccessStatusCode, "Filtered users endpoint succeeds");
-        using var data = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var responseText = await response.Content.ReadAsStringAsync();
+        Check(response.IsSuccessStatusCode, $"Filtered users endpoint succeeds: {(int)response.StatusCode} {responseText}");
+        using var data = JsonDocument.Parse(responseText);
         var root = data.RootElement;
         Check(root.GetProperty("totalItems").GetInt32() == expectedTotal, "Filtered count: " + query);
         if (expectedId.HasValue)

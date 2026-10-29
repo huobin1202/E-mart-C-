@@ -31,7 +31,7 @@ public sealed class AccountMutationFilter(AppDbContext db) : IAsyncActionFilter
             var result = await next();
             if (result.Exception != null && !result.ExceptionHandled)
             {
-                if (result.Exception is ArgumentException or InvalidOperationException or DbUpdateException)
+                if (result.Exception is ArgumentException or InvalidOperationException or UnauthorizedAccessException or DbUpdateException)
                 {
                     result.ExceptionHandled = true;
                     result.Result = Error(result.Exception);
@@ -46,7 +46,7 @@ public sealed class AccountMutationFilter(AppDbContext db) : IAsyncActionFilter
             }
             await transaction.CommitAsync();
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or DbUpdateException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or UnauthorizedAccessException or DbUpdateException)
         {
             context.Result = Error(ex);
         }
@@ -59,5 +59,5 @@ public sealed class AccountMutationFilter(AppDbContext db) : IAsyncActionFilter
     private static ObjectResult Error(Exception ex) => new(new
     {
         message = ex is DbUpdateException ? "Dữ liệu bị trùng hoặc đang được sử dụng. Vui lòng tải lại và thử lại." : ex.Message
-    }) { StatusCode = ex is ArgumentException ? 400 : 409 };
+    }) { StatusCode = ex is UnauthorizedAccessException ? 403 : ex is ArgumentException ? 400 : 409 };
 }

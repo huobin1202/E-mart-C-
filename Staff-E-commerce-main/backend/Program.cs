@@ -33,10 +33,13 @@ builder.Services.AddDataProtection()
 // -------------------------
 builder.Services.AddScoped<PermissionFilter>();
 builder.Services.AddScoped<AccountMutationFilter>();
+builder.Services.AddScoped<ReadCacheInvalidationFilter>();
+builder.Services.AddScoped<ReadCacheInvalidationService>();
 builder.Services.AddControllers(options =>
     {
         options.Filters.AddService<PermissionFilter>();
         options.Filters.AddService<AccountMutationFilter>();
+        options.Filters.AddService<ReadCacheInvalidationFilter>();
     })
     .AddJsonOptions(options =>
     {
@@ -104,6 +107,9 @@ builder.Services.AddScoped<OrderService>();
 builder.Services.AddScoped<InvoiceService>();
 builder.Services.AddScoped<PosCheckoutService>();
 builder.Services.AddScoped<StorefrontService>();
+builder.Services.AddScoped<StorefrontAccountService>();
+builder.Services.AddScoped<StorefrontCheckoutService>();
+builder.Services.AddScoped<BankTransferService>();
 builder.Services.AddScoped<RealtimeNotificationService>();
 builder.Services.AddScoped<ActivityLogService>();
 builder.Services.AddScoped<CustomerService>();

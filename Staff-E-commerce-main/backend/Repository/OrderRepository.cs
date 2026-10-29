@@ -2,6 +2,8 @@ using backend.Data;
 using backend.DTO;
 using backend.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using System.Data;
 
 namespace backend.Repository
 {
@@ -44,76 +46,53 @@ namespace backend.Repository
                 .ToListAsync();
         }
 
-        public async Task<bool> ConfirmOnlineOrderAsync(int orderId, int userId)
+        public Task<IDbContextTransaction> BeginSerializableTransactionAsync() =>
+            _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+
+        public Task LockOrderAsync(int orderId)
         {
-            var updated = await _context.Orders
-                .Where(o => o.Id == orderId && o.Status == "pending" && o.OrderType == "mobile" && o.CheckoutKey == null)
-                .ExecuteUpdateAsync(u => u
-                    .SetProperty(o => o.Status, "processing")
-                    .SetProperty(o => o.UserId, (int?)userId)
-                    .SetProperty(o => o.UpdatedAt, DateTime.UtcNow));
+            var resource = $"order-lifecycle-{orderId}";
+            return _context.Database.ExecuteSqlInterpolatedAsync($"""
+                DECLARE @result INT;
+                EXEC @result = sys.sp_getapplock @Resource = {resource}, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 10000;
+                IF @result < 0 THROW 51000, 'Order is busy. Please retry.', 1;
+                """);
+        }
+
+        public Task<Order?> GetOnlineOrderForLifecycleAsync(int orderId) => _context.Orders
+            .Include(order => order.OrderItems)
+            .Include(order => order.Customer)
+            .Include(order => order.Payments)
+            .FirstOrDefaultAsync(order => order.Id == orderId && order.OrderType == "mobile");
+
+        public Task<Order?> GetOrderForLifecycleAsync(int orderId) => _context.Orders
+            .Include(order => order.OrderItems)
+            .Include(order => order.Customer)
+            .Include(order => order.Payments)
+            .FirstOrDefaultAsync(order => order.Id == orderId);
+
+        public Task<List<PromotionRedemption>> GetPromotionRedemptionsAsync(int orderId) =>
+            _context.PromotionRedemptions.Include(redemption => redemption.Promotion)
+                .Where(redemption => redemption.OrderId == orderId).ToListAsync();
+
+        public void RemovePromotionRedemptions(IEnumerable<PromotionRedemption> redemptions) =>
+            _context.PromotionRedemptions.RemoveRange(redemptions);
+
+        public void AddPayment(Payment payment) => _context.Payments.Add(payment);
+        public void AddInventoryAdjustment(InventoryAdjustment adjustment) => _context.InventoryAdjustments.Add(adjustment);
+        public Task SaveChangesAsync() => _context.SaveChangesAsync();
+
+        public async Task<bool> RestoreStockAsync(int productId, int quantity, DateTime updatedAt)
+        {
+            var updated = await _context.Products.Where(product => product.Id == productId)
+                .ExecuteUpdateAsync(update => update
+                    .SetProperty(product => product.StockQuantity, product => product.StockQuantity + quantity)
+                    .SetProperty(product => product.UpdatedAt, updatedAt));
             return updated == 1;
         }
 
-        public async Task<bool> RejectOnlineOrderAsync(int orderId, string? reason)
-        {
-            var order = await _context.Orders.Include(o => o.OrderItems)
-                .FirstOrDefaultAsync(o => o.Id == orderId);
-            if (order == null || order.OrderType != "mobile" || order.CheckoutKey != null ||
-                (order.Status != "pending" && order.Status != "processing")) return false;
-
-            await using var transaction = await _context.Database.BeginTransactionAsync();
-            try
-            {
-                var now = DateTime.UtcNow;
-                order.Status = "cancelled";
-                order.Note = string.IsNullOrWhiteSpace(reason) ? order.Note :
-                    (string.IsNullOrWhiteSpace(order.Note) ? $"Từ chối: {reason}" : $"{order.Note} | Từ chối: {reason}");
-                order.UpdatedAt = now;
-                var productIds = order.OrderItems.Select(i => i.ProductId).Distinct().ToList();
-                var products = await _context.Products.Where(i => productIds.Contains(i.Id)).ToListAsync();
-                foreach (var item in order.OrderItems)
-                {
-                    var product = products.FirstOrDefault(i => i.Id == item.ProductId);
-                    if (product != null) { product.StockQuantity += item.Quantity; product.UpdatedAt = now; }
-                }
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
-                return true;
-            }
-            catch { await transaction.RollbackAsync(); throw; }
-        }
-
-        public async Task<bool> DeliverOnlineOrderAsync(int orderId, int userId)
-        {
-            var order = await _context.Orders.Include(o => o.Customer)
-                .FirstOrDefaultAsync(o => o.Id == orderId && o.Status == "processing" && o.OrderType == "mobile" && o.CheckoutKey == null);
-            if (order == null) return false;
-            if (order.PaymentMethod != "cash" && order.PaymentStatus != "paid")
-                throw new InvalidOperationException("Chờ xác nhận thanh toán trước khi hoàn tất giao hàng.");
-            var now = DateTime.UtcNow;
-            order.Status = "completed"; order.PaymentStatus = "paid"; order.UserId = userId; order.UpdatedAt = now;
-            if (order.CustomerId.HasValue)
-            {
-                var customer = await _context.Customers.FindAsync(order.CustomerId.Value);
-                if (customer != null)
-                {
-                    var points = (int)(order.TotalAmount / 10000m);
-                    customer.RewardPoints += points; customer.UpdatedAt = now;
-                }
-            }
-            await _context.SaveChangesAsync();
-            return true;
-        }
-
-        public async Task<bool> MarkOrderRefundedAsync(int orderId)
-        {
-            var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
-            if (order == null || order.PaymentStatus != "paid" || order.Status == "cancelled") return false;
-            order.Status = "refunded"; order.PaymentStatus = "refunded"; order.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-            return true;
-        }
+        public Task<bool> TransactionReferenceExistsAsync(string reference) =>
+            _context.Payments.AnyAsync(payment => payment.TransactionRef == reference);
 
         public async Task<List<OnlineOrderItemDTO>> GetOrderItemsAsync(int orderId)
         {
@@ -249,89 +228,6 @@ namespace backend.Repository
 
             return (items, totalItems);
         }
-
-
-        /// <summary>
-        /// Cập nhật user xử lý đơn hàng theo user_id bạn truyền vào.
-        /// </summary>
-        public async Task<bool> UpdateOrderUserAsync(int orderId, int? newUserId)
-        {
-            var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
-            if (order == null)
-                return false;
-
-            order.UserId = newUserId;
-            order.UpdatedAt = DateTime.UtcNow;
-
-            await _context.SaveChangesAsync();
-            return true;
-        }
-
-        // HỦY ĐƠN
-        public async Task<bool> CancelOrderAsync(int orderId)
-        {
-            // Lấy Order + Items + Payment (nếu cần) bằng Include
-            var order = await _context.Orders
-                .Include(o => o.OrderItems)
-                .FirstOrDefaultAsync(o => o.Id == orderId);
-
-            if (order == null)
-                return false;
-
-            if (!order.Status.Equals("pending", StringComparison.OrdinalIgnoreCase))
-                return false;
-
-            using var transaction = await _context.Database.BeginTransactionAsync();
-            try
-            {
-                var now = DateTime.UtcNow;
-
-                // Hủy đơn
-                order.Status = "cancelled";
-                order.UpdatedAt = now;
-
-                // Lấy danh sách productId cần update để giảm truy vấn
-                var productIds = order.OrderItems.Select(i => i.ProductId).ToList();
-
-                var products = await _context.Products
-                    .Where(i => productIds.Contains(i.Id))
-                    .ToListAsync();
-
-                // Update tồn kho
-                foreach (var item in order.OrderItems)
-                {
-                    var product = products.FirstOrDefault(i => i.Id == item.ProductId);
-                    if (product != null)
-                    {
-                        product.StockQuantity += item.Quantity;
-                        product.UpdatedAt = now;
-                    }
-                }
-
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
-                return true;
-            }
-            catch
-            {
-                await transaction.RollbackAsync();
-                throw;
-            }
-        }
-
-        public async Task<bool> CompletePendingOrderAsync(int orderId, int userId)
-        {
-            var now = DateTime.UtcNow;
-            var updated = await _context.Orders
-                .Where(order => order.Id == orderId && order.Status == "pending")
-                .ExecuteUpdateAsync(update => update
-                    .SetProperty(order => order.Status, "completed")
-                    .SetProperty(order => order.UserId, (int?)userId)
-                    .SetProperty(order => order.UpdatedAt, now));
-
-            return updated == 1;
-        }
-
 
 
     }

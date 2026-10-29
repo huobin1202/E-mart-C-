@@ -177,33 +177,29 @@ namespace backend.Services
         {
             if (await _orderRepo.IsPosOrderAsync(orderId))
                 return await _checkout.CancelAsync(orderId);
-            // 1. Lấy user hiện tại
-            int currentUserId = GetCurrentUserId();
-
-            // 2. Kiểm tra order tồn tại
-            var order = await _orderRepo.GetByIdAsync(orderId);
-            if (order == null)
-                return false;
-
-            // 3. Ghi lại ai là người hủy đơn
-            await _orderRepo.UpdateOrderUserAsync(orderId, currentUserId);
-
-            // 4. Tiến hành hủy đơn
-            var cancelled = await _orderRepo.CancelOrderAsync(orderId);
-            if (cancelled) await _invoiceService.SyncOrderLifecycleAsync(orderId);
-            return cancelled;
+            return await RejectOnlineOrderAsync(orderId, "Nhân viên hủy đơn");
         }
 
         public async Task<bool> CompletePendingOrderAsync(int orderId)
         {
-            var order = await _orderRepo.GetStatusSnapshotAsync(orderId);
-            if (order?.CheckoutKey != null)
+            await using var transaction = await _orderRepo.BeginSerializableTransactionAsync();
+            await _orderRepo.LockOrderAsync(orderId);
+            var order = await _orderRepo.GetOrderForLifecycleAsync(orderId);
+            if (order?.OrderType != "pos")
+                throw new InvalidOperationException("Đơn online phải hoàn tất qua nghiệp vụ giao hàng.");
+            if (order.CheckoutKey != null)
                 throw new InvalidOperationException("Đơn POS phải được xác nhận thanh toán theo đúng phương thức.");
-            if (order?.PaymentStatus != "paid") throw new InvalidOperationException("Chưa có xác nhận thu đủ tiền cho đơn hàng.");
-            var currentUserId = GetCurrentUserId();
-            var completed = await _orderRepo.CompletePendingOrderAsync(orderId, currentUserId);
-            if (completed) await _invoiceService.SyncOrderLifecycleAsync(orderId);
-            return completed;
+            if (order.PaymentStatus != "paid")
+                throw new InvalidOperationException("Chưa có xác nhận thu đủ tiền cho đơn hàng.");
+            if (order.Status == "completed") return true;
+            if (order.Status != "pending") return false;
+            order.Status = "completed";
+            order.UserId = GetCurrentUserId();
+            order.UpdatedAt = DateTime.UtcNow;
+            await _orderRepo.SaveChangesAsync();
+            await _invoiceService.SyncOrderLifecycleAsync(orderId);
+            await transaction.CommitAsync();
+            return true;
         }
 
         // ===== ONLINE ORDER MANAGEMENT =====
@@ -266,24 +262,83 @@ namespace backend.Services
         /// <summary>Xác nhận đơn: pending -> processing</summary>
         public async Task<bool> ConfirmOnlineOrderAsync(int orderId)
         {
-            int userId = GetCurrentUserId();
-            var updated = await _orderRepo.ConfirmOnlineOrderAsync(orderId, userId);
+            await using var transaction = await _orderRepo.BeginSerializableTransactionAsync();
+            await _orderRepo.LockOrderAsync(orderId);
+            var order = await _orderRepo.GetOnlineOrderForLifecycleAsync(orderId);
+            if (order == null || order.Status is not ("pending" or "processing")) return false;
+            var updated = order.Status == "pending";
+            if (updated)
+            {
+                order.Status = "processing";
+                order.UserId = GetCurrentUserId();
+                order.UpdatedAt = DateTime.UtcNow;
+                await _orderRepo.SaveChangesAsync();
+                await _invoiceService.SyncOrderLifecycleAsync(orderId);
+            }
+            await transaction.CommitAsync();
             if (updated)
             {
                 await _realtime.BroadcastToWeb("OrderStatusChanged", new { orderId, status = "processing" });
-                await _invoiceService.SyncOrderLifecycleAsync(orderId);
             }
-            return updated;
+            return true;
         }
 
         /// <summary>Từ chối đơn: pending|processing -> cancelled (hoàn kho)</summary>
         public async Task<bool> RejectOnlineOrderAsync(int orderId, string? reason)
         {
-            var cancelled = await _orderRepo.RejectOnlineOrderAsync(orderId, reason);
+            await using var transaction = await _orderRepo.BeginSerializableTransactionAsync();
+            await _orderRepo.LockOrderAsync(orderId);
+            var order = await _orderRepo.GetOnlineOrderForLifecycleAsync(orderId);
+            if (order == null) return false;
+            if (order.Status == "cancelled") return true;
+            if (order.Status is not ("pending" or "processing")) return false;
+
+            var now = DateTime.UtcNow;
+            foreach (var item in order.OrderItems)
+            {
+                if (!await _orderRepo.RestoreStockAsync(item.ProductId, item.Quantity, now))
+                    throw new InvalidOperationException("Không thể hoàn tồn kho của đơn hàng.");
+                _orderRepo.AddInventoryAdjustment(new InventoryAdjustment
+                {
+                    ProductId = item.ProductId,
+                    ChangeAmount = item.Quantity,
+                    Reason = $"Hủy {order.OrderNumber}",
+                    UserId = GetCurrentUserId(),
+                    CreatedAt = now
+                });
+            }
+            if (order.Customer != null && order.PointsUsed > 0)
+            {
+                order.Customer.RewardPoints += order.PointsUsed;
+                order.Customer.UpdatedAt = now;
+            }
+            var redemptions = await _orderRepo.GetPromotionRedemptionsAsync(orderId);
+            foreach (var group in redemptions.GroupBy(redemption => redemption.PromotionId))
+            {
+                var promotion = group.First().Promotion;
+                if (promotion != null) promotion.UsedCount = Math.Max(0, promotion.UsedCount - 1);
+            }
+            _orderRepo.RemovePromotionRedemptions(redemptions);
+            order.Status = "cancelled";
+            order.UserId = GetCurrentUserId();
+            order.UpdatedAt = now;
+            if (!string.IsNullOrWhiteSpace(reason))
+                order.Note = string.IsNullOrWhiteSpace(order.Note) ? $"Từ chối: {reason}" : $"{order.Note} | Từ chối: {reason}";
+            // Paid cancellations remain paid until the refund transaction is confirmed.
+            await _orderRepo.SaveChangesAsync();
+            await _invoiceService.SyncOrderLifecycleAsync(orderId);
+            await transaction.CommitAsync();
+            var cancelled = true;
             if (cancelled)
             {
                 await _realtime.BroadcastToWeb("OrderStatusChanged", new { orderId, status = "cancelled" });
-                await _invoiceService.SyncOrderLifecycleAsync(orderId);
+                await _realtime.BroadcastStock("StockUpdated", new
+                {
+                    productIds = order.OrderItems.Select(item => item.ProductId).Distinct().ToArray(),
+                    orderId,
+                    source = "order-cancel",
+                    changedAt = now
+                });
             }
             return cancelled;
         }
@@ -291,24 +346,92 @@ namespace backend.Services
         /// <summary>Giao hàng thành công: processing -> completed</summary>
         public async Task<bool> DeliverOnlineOrderAsync(int orderId)
         {
-            int userId = GetCurrentUserId();
-            var delivered = await _orderRepo.DeliverOnlineOrderAsync(orderId, userId);
+            await using var transaction = await _orderRepo.BeginSerializableTransactionAsync();
+            await _orderRepo.LockOrderAsync(orderId);
+            var order = await _orderRepo.GetOnlineOrderForLifecycleAsync(orderId);
+            if (order == null) return false;
+            if (order.Status == "completed" && order.PaymentStatus == "paid") return true;
+            if (order.Status != "processing") return false;
+            if (order.PaymentMethod != "cash" && order.PaymentStatus != "paid")
+                throw new InvalidOperationException("Chờ xác nhận thanh toán trước khi hoàn tất giao hàng.");
+
+            var now = DateTime.UtcNow;
+            if (order.PaymentMethod == "cash" && order.PaymentStatus != "paid")
+                _orderRepo.AddPayment(new Payment
+                {
+                    OrderId = order.Id,
+                    Amount = order.TotalAmount,
+                    Method = "cash",
+                    Status = "completed",
+                    TransactionRef = $"COD-{order.Id}",
+                    CreatedAt = now
+                });
+            order.Status = "completed";
+            order.PaymentStatus = "paid";
+            order.UserId = GetCurrentUserId();
+            order.UpdatedAt = now;
+            order.PointsEarned = order.CustomerId.HasValue ? (int)decimal.Floor(order.TotalAmount / 10000m) : 0;
+            if (order.Customer != null && order.PointsEarned > 0)
+            {
+                order.Customer.RewardPoints += order.PointsEarned;
+                order.Customer.UpdatedAt = now;
+            }
+            await _orderRepo.SaveChangesAsync();
+            await _invoiceService.SyncOrderLifecycleAsync(orderId);
+            await transaction.CommitAsync();
+            var delivered = true;
             if (delivered)
             {
                 await _realtime.BroadcastToWeb("OrderStatusChanged", new { orderId, status = "completed" });
-                await _invoiceService.SyncOrderLifecycleAsync(orderId);
             }
             return delivered;
         }
 
-        public async Task<bool> MarkOrderRefundedAsync(int orderId)
+        public async Task<bool> MarkOrderRefundedAsync(int orderId, decimal amount, string reference)
         {
-            var order = await _orderRepo.GetStatusSnapshotAsync(orderId);
-            if (order == null || order.PaymentStatus != "paid" || order.Status == "cancelled") return false;
-            await _invoiceService.EnsureInvoiceForOrderAsync(orderId);
-            var refunded = await _orderRepo.MarkOrderRefundedAsync(orderId);
+            if (string.IsNullOrWhiteSpace(reference) || reference.Trim().Length > 200)
+                throw new ArgumentException("Nhập mã giao dịch hoàn tiền.");
+            var normalizedReference = $"REFUND-{reference.Trim()}";
+            await using var transaction = await _orderRepo.BeginSerializableTransactionAsync();
+            await _orderRepo.LockOrderAsync(orderId);
+            var order = await _orderRepo.GetOnlineOrderForLifecycleAsync(orderId);
+            if (order == null || amount != order.TotalAmount) return false;
+            if (order.PaymentStatus == "refunded")
+                return order.Payments.Any(payment => payment.Status == "refunded" && payment.TransactionRef == normalizedReference);
+            if (order.PaymentStatus != "paid") return false;
+            if (order.Status is "pending" or "processing")
+                throw new InvalidOperationException("Hủy đơn chưa giao trước khi xác nhận hoàn tiền.");
+            if (await _orderRepo.TransactionReferenceExistsAsync(normalizedReference))
+                throw new InvalidOperationException("Mã hoàn tiền đã được sử dụng.");
+
+            var now = DateTime.UtcNow;
+            if (order.Customer != null && order.Status != "cancelled")
+            {
+                order.Customer.RewardPoints += order.PointsUsed - order.PointsEarned;
+                order.Customer.UpdatedAt = now;
+            }
+            if (order.Status != "cancelled") order.Status = "refunded";
+            order.PaymentStatus = "refunded";
+            order.UpdatedAt = now;
+            _orderRepo.AddPayment(new Payment
+            {
+                OrderId = order.Id,
+                Amount = amount,
+                Method = order.PaymentMethod == "e_wallet" ? "other" : order.PaymentMethod ?? "cash",
+                Status = "refunded",
+                TransactionRef = normalizedReference,
+                CreatedAt = now
+            });
+            await _orderRepo.SaveChangesAsync();
             await _invoiceService.SyncOrderLifecycleAsync(orderId);
-            return refunded;
+            await transaction.CommitAsync();
+            await _realtime.BroadcastToWeb("OrderStatusChanged", new
+            {
+                orderId,
+                status = order.Status,
+                paymentStatus = "refunded"
+            });
+            return true;
         }
 
         /// <summary>Lấy danh sách items của đơn hàng</summary>

@@ -93,6 +93,7 @@ public sealed class InvoiceService
                 invoice.UpdatedAt = DateTime.UtcNow;
                 await _repository.SaveChangesAsync();
             }
+            _cache.RemoveWhere(item => item.OrderId == orderId);
             return;
         }
 
@@ -105,6 +106,7 @@ public sealed class InvoiceService
                 invoice.UpdatedAt = DateTime.UtcNow;
                 await _repository.SaveChangesAsync();
             }
+            _cache.RemoveWhere(item => item.OrderId == orderId);
             return;
         }
 
@@ -130,7 +132,7 @@ public sealed class InvoiceService
         var (items, _) = await _cache.GetOrCreateAsync(
             () => _repository.GetCompletedInvoiceDtosAsync(), CacheTtl);
 
-        IEnumerable<InvoiceDTO> filtered = items;
+        IEnumerable<InvoiceDTO> filtered = items.Where(item => item.OrderStatus == "completed");
         if (from.HasValue) filtered = filtered.Where(i => i.IssuedAt >= from.Value);
         if (to.HasValue) filtered = filtered.Where(i => i.IssuedAt < to.Value.Date.AddDays(1));
         if (!string.IsNullOrWhiteSpace(paymentStatus))

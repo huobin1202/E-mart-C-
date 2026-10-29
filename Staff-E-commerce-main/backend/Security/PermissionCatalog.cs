@@ -25,7 +25,7 @@ public static class PermissionCatalog
             "Units" => "units", "Suppliers" => "suppliers", "Inventory" => "inventory",
             "PurchaseOrders" => "purchaseorders", "Orders" or "OrderItem" => "orders",
             "Payment" => "payments", "Invoice" => "invoices", "Promotions" => "promotions",
-            "Reports" or "Statistics" => "reports", "ActivityLogs" => "audit",
+            "Reports" or "Statistics" => "reports", "ActivityLog" or "ActivityLogs" => "audit",
             "Import" => action.Contains("Customer", StringComparison.OrdinalIgnoreCase) ? "customers" : "products",
             "Auth" when action == "Register" => "users",
             _ => null
