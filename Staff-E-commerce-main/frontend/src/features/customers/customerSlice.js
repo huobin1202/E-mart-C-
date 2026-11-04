@@ -88,6 +88,7 @@ const initialState = {
   items: [],
   currentCustomer: null,
   loading: false,
+  refreshError: null,
   error: null,
   successMessage: null,
   pagination: {
@@ -150,7 +151,8 @@ const customerSlice = createSlice({
     builder
       .addCase(fetchCustomers.pending, (state, action) => {
         state.listRequestId = action.meta.requestId;
-        state.loading = true;
+        if (!action.meta.arg.silent) state.loading = true;
+        state.refreshError = null;
         state.error = null;
       })
       .addCase(fetchCustomers.fulfilled, (state, action) => {
@@ -168,7 +170,8 @@ const customerSlice = createSlice({
       .addCase(fetchCustomers.rejected, (state, action) => {
         if (state.listRequestId !== action.meta.requestId) return;
         state.loading = false;
-        state.error = action.payload;
+        if (action.meta.arg.silent) state.refreshError = action.payload;
+        else state.error = action.payload;
       });
 
     // Fetch Customer By ID

@@ -74,9 +74,9 @@ namespace backend.Services
             if (page < 1) page = 1;
             if (pageSize < 1 || pageSize > 100) pageSize = 10;
             var skip = (page - 1) * pageSize;
-            // The Admin list must reflect profile edits made by the storefront immediately.
-            // The in-process cache can be stale across API instances, so this read goes to SQL.
-            var filtered = (await _repo.GetAllAsync()).Select(MapToCustomerResponseDto).AsEnumerable();
+            // Reuse the BUS snapshot for filtering, paging and summary counts.
+            // Successful writes invalidate it; storefront profile changes also synchronize it.
+            var filtered = (await GetCachedAsync()).AsEnumerable();
             if (!string.IsNullOrWhiteSpace(keyword))
             {
                 var value = keyword.Trim();

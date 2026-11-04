@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as signalR from "@microsoft/signalr";
 import { BASE_URL, getAuthToken } from "../api/apiClient";
 
@@ -6,6 +6,7 @@ const hubUrl = `${BASE_URL.replace(/\/api\/?$/, "")}/hub/notifications`;
 
 /** Authenticated SignalR subscription. Handlers can change without reconnecting. */
 export function useRealtimeNotifications(handlers = {}) {
+  const [connected, setConnected] = useState(false);
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
 
@@ -19,6 +20,17 @@ export function useRealtimeNotifications(handlers = {}) {
       .build();
 
     const events = ["CustomerCreated", "CustomerUpdated", "NewOrderPlaced", "OrderStatusChanged", "StockUpdated", "StockReserved"];
+    connection.onreconnecting(() => { if (!disposed) setConnected(false); });
+    connection.onreconnected(() => {
+      if (disposed) return;
+      setConnected(true);
+      handlersRef.current.Connected?.();
+    });
+    connection.onclose(() => {
+      if (disposed) return;
+      setConnected(false);
+      void startWithRetry();
+    });
     for (const eventName of events) {
       connection.on(eventName, (payload) => handlersRef.current[eventName]?.(payload));
     }
@@ -26,7 +38,11 @@ export function useRealtimeNotifications(handlers = {}) {
       while (!disposed) {
         try {
           await connection.start();
-          if (!disposed) console.info("Realtime notifications connected.");
+          if (!disposed) {
+            setConnected(true);
+            handlersRef.current.Connected?.();
+            console.info("Realtime notifications connected.");
+          }
           return;
         } catch (error) {
           if (disposed) return;
@@ -46,4 +62,5 @@ export function useRealtimeNotifications(handlers = {}) {
       void connection.stop();
     };
   }, []);
+  return connected;
 }

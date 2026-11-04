@@ -39,6 +39,7 @@ const CustomerList = () => {
     items: customers,
     loading,
     error,
+    refreshError,
     pagination,
     filters,
   } = useSelector((state) => state.customers);
@@ -60,7 +61,8 @@ const CustomerList = () => {
     inactive: 0,
   });
 
-  useRealtimeNotifications({
+  const realtimeConnected = useRealtimeNotifications({
+    Connected: () => refreshCustomerData(),
     CustomerCreated: (customer) => {
       dispatch(mergeRealtimeCustomer(customer));
       refreshCustomerData();
@@ -77,6 +79,7 @@ const CustomerList = () => {
       pageSize: pagination.pageSize,
       search: filters.search,
       status: filters.status,
+      silent: true,
     }));
     Promise.all([
       getCustomers(1, 1, "", "all"),
@@ -112,23 +115,27 @@ const CustomerList = () => {
       }
     };
     fetchStats();
-    const refreshTimer = window.setInterval(fetchStats, 15000);
-    return () => window.clearInterval(refreshTimer);
   }, []);
 
   // Fetch customers when filters or pagination changes
   useEffect(() => {
-    const refreshCustomers = () => dispatch(
+    const refreshCustomers = (silent = false) => dispatch(
       fetchCustomers({
         page: pagination.currentPage,
         pageSize: pagination.pageSize,
         search: filters.search,
         status: filters.status,
+        silent,
       })
     );
     refreshCustomers();
-    // Fallback when the SignalR connection is not available; the list endpoint reads SQL directly.
-    const refreshTimer = window.setInterval(refreshCustomers, 3000);
+  }, [dispatch, pagination.currentPage, filters.search, filters.status, pagination.pageSize]);
+
+  useEffect(() => {
+    // Only poll when realtime is unavailable; reuse the BUS cache and keep the table visible.
+    const refreshTimer = window.setInterval(() => {
+      if (!realtimeConnected && document.visibilityState === "visible") refreshCustomerData();
+    }, 30000);
     return () => window.clearInterval(refreshTimer);
   }, [
     dispatch,
@@ -136,6 +143,7 @@ const CustomerList = () => {
     filters.search,
     filters.status,
     pagination.pageSize,
+    realtimeConnected,
   ]);
 
   useDebouncedSearch(localSearchTerm, filters.search, (keyword) => {
@@ -206,6 +214,7 @@ const CustomerList = () => {
   };
 
   const handleReset = () => {
+    if (!filters.search && filters.status === "all" && pagination.currentPage === 1) refreshCustomerData();
     dispatch(resetFilters());
     setLocalSearchTerm("");
   };
@@ -241,6 +250,7 @@ const CustomerList = () => {
         </div>
       </div>
       {actionNotice && <div role={actionNotice.type === "error" ? "alert" : "status"} className={`fixed right-4 top-4 z-50 max-w-md rounded-lg border p-3 shadow-lg ${actionNotice.type === "error" ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>{actionNotice.message}<button type="button" className="ml-3 underline" onClick={() => setActionNotice(null)}>Đóng</button></div>}
+      {refreshError && <p role="status" className="mb-3 text-sm text-amber-700">Chưa cập nhật được danh sách: {refreshError}. Đang giữ dữ liệu đã tải.</p>}
 
       {/* Statistics */}
       <div className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
