@@ -1,0 +1,39 @@
+.invoice-report { color: #173047; }
+.invoice-report h1 { font-size: 26px; font-weight: 700; margin-bottom: 16px; }
+.invoice-report h2 { font-size: 17px; font-weight: 650; margin: 12px 0; }
+.report-controls, .report-toolbar { display:flex; flex-wrap:wrap; align-items:end; gap:12px; margin-bottom:16px; }
+.report-controls label { display:flex; flex-direction:column; gap:4px; }
+.invoice-report input, .invoice-report select, .invoice-report button { padding:8px 12px; border:1px solid #bccbd5; border-radius:6px; background:white; }
+.invoice-report button { cursor:pointer; color:#075985; }
+.invoice-report button:disabled { opacity:.5; cursor:wait; }
+.report-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:12px; }
+.report-kpis > div { padding:14px; background:#eef6fa; border:1px solid #d4e3ec; border-radius:8px; }
+.report-kpis strong { display:block; font-size:23px; margin-top:5px; }
+.report-policy { font-size:13px; line-height:1.6; margin:14px 0; }
+.report-error { color:#b91c1c; padding:12px; }
+.report-table-section { margin:24px 0; }
+.report-scroll { overflow:auto; max-height:65vh; }
+.invoice-report table { width:100%; border-collapse:collapse; background:white; font-size:13px; }
+.invoice-report th, .invoice-report td { padding:8px 12px; border:1px solid #d6e1e8; text-align:right; white-space:nowrap; }
+.invoice-report th:first-child { text-align:left; }
+.invoice-report thead th { background:#e5eff5; position:sticky; top:0; }
+.invoice-report tfoot { background:#e5eff5; font-weight:700; }
+.daily-invoices { padding:16px; background:white; border:1px solid #d4e3ec; border-radius:8px; margin-bottom:20px; }
+.report-print-only { display:none; }
+.product-report-filters { display:flex; flex-wrap:wrap; align-items:end; gap:10px; margin:10px 0; padding:12px; background:#f5fafc; border:1px solid #d4e3ec; border-radius:8px; }
+.product-report-filters label { display:flex; flex-direction:column; gap:4px; font-size:13px; }
+@media print {
+  @page { size:A3 landscape; margin:10mm; }
+  body * { visibility:hidden; }
+  .invoice-report-print, .invoice-report-print * { visibility:visible; }
+  .invoice-report-print { position:absolute; left:0; top:0; width:100%; background:white; }
+  .report-scroll { overflow:visible; max-height:none; }
+  .report-screen-only { display:none; }
+  .report-print-only { display:block; }
+  .report-print-part + .report-print-part { break-before:page; }
+  .invoice-report table { font-size:9px; }
+  .invoice-report th, .invoice-report td { padding:4px; white-space:normal; }
+  .invoice-report thead th { position:static; }
+  .invoice-report tr { break-inside:avoid; }
+  .report-table-section { break-before:auto; }
+}

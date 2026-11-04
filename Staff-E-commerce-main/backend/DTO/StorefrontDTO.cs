@@ -69,7 +69,7 @@ public sealed class StorefrontAuthenticationDTO
 {
     public string Token { get; set; } = string.Empty;
     public string TokenType { get; set; } = "Bearer";
-    public int ExpiresIn { get; set; }
+    public int? ExpiresIn { get; set; }
     public StorefrontCustomerProfileDTO Customer { get; set; } = new();
 }
 

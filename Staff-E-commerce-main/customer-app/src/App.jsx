@@ -1,5 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import ProductDescription from "./components/ProductDescription";
+import BirthdayInput from "./components/BirthdayInput";
+import { birthdayToIso } from "./utils/birthday";
 import {
   checkoutDefinitelyRejected,
   checkoutStorageKey,
@@ -1002,9 +1004,9 @@ export default function App() {
       setAccountError("Địa chỉ không được vượt quá 500 ký tự.");
       return;
     }
-    const parsedBirthDate = parseRegistrationDate(registerDateOfBirth);
-    if (parsedBirthDate.error) {
-      setAccountError("Ngày sinh chưa hợp lệ.");
+    const dateOfBirth = birthdayToIso(registerDateOfBirth);
+    if (registerDateOfBirth.trim() && !dateOfBirth) {
+      setAccountError("Ngày sinh chưa hợp lệ. Vui lòng nhập DD/MM/YYYY và không chọn ngày trong tương lai.");
       return;
     }
     if (phoneAvailability?.phone === phone && phoneAvailability.available === false) {
@@ -1019,7 +1021,7 @@ export default function App() {
       const response = await fetch(`${API_URL}/storefront/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: phone, password: loginPassword, fullName, phone, email: email || null, address: address || null, dateOfBirth: parsedBirthDate.iso }),
+        body: JSON.stringify({ username: phone, password: loginPassword, fullName, phone, email: email || null, address: address || null, dateOfBirth }),
       });
       if (!response.ok) throw new Error(await readError(response));
       const result = await response.json();
@@ -2375,7 +2377,7 @@ export default function App() {
               {phoneAvailability.checking ? "Đang kiểm tra số điện thoại..." : phoneAvailability.error ? "Chưa kiểm tra được. Số điện thoại sẽ được xác minh khi tạo tài khoản." : phoneAvailability.available ? "Số điện thoại có thể đăng ký." : "Số điện thoại này đã được đăng ký."}
             </Text> : null}
             {registerMode ? <TextInput value={registerEmail} onChangeText={setRegisterEmail} placeholder="Email" style={styles.formInput} keyboardType="email-address" autoCapitalize="none" maxLength={255} /> : null}
-            {registerMode ? <TextInput value={registerDateOfBirth} onChangeText={setRegisterDateOfBirth} placeholder="Ngày sinh (DD/MM/YYYY)" style={styles.formInput} keyboardType="numbers-and-punctuation" maxLength={10} /> : null}
+            {registerMode ? <BirthdayInput value={registerDateOfBirth} onChange={setRegisterDateOfBirth} /> : null}
             {registerMode ? <TextInput value={registerAddress} onChangeText={setRegisterAddress} placeholder="Địa chỉ" style={[styles.formInput, styles.addressInput]} multiline maxLength={500} /> : null}
             {!registerMode ? <TextInput
               value={loginUsername}

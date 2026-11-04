@@ -134,6 +134,7 @@ builder.Services.AddScoped<ImportService>();
 builder.Services.AddScoped<SupplierService>();
 builder.Services.AddScoped<ReportsService>();
 builder.Services.AddScoped<RevenueAnalyticsService>();
+builder.Services.AddScoped<InvoiceStatisticsService>();
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<UnitService>();
 builder.Services.AddScoped<PurchaseOrderService>();
@@ -173,6 +174,8 @@ builder.Services.AddAuthentication(options =>
     };
     options.TokenValidationParameters = new TokenValidationParameters
     {
+        RequireExpirationTime = false,
+        ValidateLifetime = true,
         ValidateIssuer = true,
         ValidateAudience = true,
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
