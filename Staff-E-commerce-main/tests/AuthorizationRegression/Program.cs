@@ -85,6 +85,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
 {
     o.TokenValidationParameters = new TokenValidationParameters
     {
+        RequireExpirationTime = false,
+        ValidateLifetime = true,
         ValidateIssuer = true, ValidateAudience = true, ValidIssuer = "test", ValidAudience = "test",
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!))
     };
@@ -134,6 +136,14 @@ try
     var adminToken = await Token(adminId);
     var staffToken = await Token(staffId);
     var customerToken = await Token(customerId);
+    var decodedSession = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().ReadJwtToken(adminToken);
+    Check(!decodedSession.Payload.ContainsKey("exp"), "New login session has no time-based expiration");
+    Check(decodedSession.Claims.Any(c => c.Type == "session_version"), "Non-expiring session retains revocation version");
+    await Expect(HttpMethod.Get, "/api/me", adminToken, null, HttpStatusCode.OK);
+    await Expect(HttpMethod.Get, "/api/me", null, null, HttpStatusCode.Unauthorized);
+    var tokenParts = adminToken.Split('.');
+    tokenParts[2] = (tokenParts[2][0] == 'A' ? "B" : "A") + tokenParts[2][1..];
+    await Expect(HttpMethod.Get, "/api/me", string.Join('.', tokenParts), null, HttpStatusCode.Unauthorized);
 
     if (args.Contains("--voucher-only"))
     {

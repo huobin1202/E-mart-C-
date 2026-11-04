@@ -66,7 +66,7 @@ namespace backend.Services
             return products;
         }
 
-        private async Task<IReadOnlyList<ProductDTO>> GetSearchProductsAsync()
+        public async Task<IReadOnlyList<ProductDTO>> GetSearchProductsAsync()
         {
             var (products, _) = await _cache.GetOrCreateAsync(
                 async () => (await GetLiveProductsAsync()).ToList(),

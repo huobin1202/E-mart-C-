@@ -10,6 +10,43 @@ namespace backend.Controllers
     [Route("api/[controller]")]
     public class ImportController : ControllerBase
     {
+        [HttpGet("export/products")]
+        public async Task<IActionResult> ExportProducts([FromServices] ProductService service)
+        {
+            var rows = (await service.GetSearchProductsAsync()).Select(p => new ProductImportDTO {
+                Sku = p.Sku, ProductName = p.ProductName, CategoryId = p.CategoryId, SupplierId = p.SupplierId,
+                Price = p.Price, Cost = p.Cost, UnitId = p.UnitId, Description = p.Description, ImageUrl = p.ImageUrl, IsActive = p.IsActive
+            });
+            return ExportWorkbook(rows, "san-pham");
+        }
+
+        [HttpGet("export/customers")]
+        public async Task<IActionResult> ExportCustomers([FromServices] CustomerService service)
+        {
+            var rows = (await service.GetCachedAsync()).Select(c => new CustomerImportDTO {
+                FullName = c.FullName, Phone = c.Phone, Email = c.Email, Address = c.Address, Note = c.Note
+            });
+            return ExportWorkbook(rows, "khach-hang");
+        }
+
+        private IActionResult ExportWorkbook<T>(IEnumerable<T> rows, string name)
+        {
+            using var package = new ExcelPackage();
+            var sheet = package.Workbook.Worksheets.Add(name);
+            var fields = typeof(T).GetProperties();
+            for (var col = 0; col < fields.Length; col++) sheet.Cells[1, col + 1].Value = fields[col].Name;
+            var row = 2;
+            foreach (var item in rows)
+            {
+                for (var col = 0; col < fields.Length; col++) sheet.Cells[row, col + 1].Value = fields[col].GetValue(item);
+                row++;
+            }
+            sheet.Cells[1, 1, 1, fields.Length].Style.Font.Bold = true;
+            sheet.View.FreezePanes(2, 1);
+            sheet.Cells.AutoFitColumns(12, 50);
+            return File(package.GetAsByteArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", name + ".xlsx");
+        }
+
         private readonly ImportService _importService;
 
         public ImportController(ImportService importService)

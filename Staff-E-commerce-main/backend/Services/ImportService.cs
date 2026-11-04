@@ -36,7 +36,7 @@ namespace backend.Services
             var result = new ImportResultDTO();
 
             // Validate file
-            ValidateFile(file, new[] { ".csv", ".xlsx", ".xls" }, 10 * 1024 * 1024); // 10MB max
+            ValidateFile(file, new[] { ".csv", ".xlsx" }, 10 * 1024 * 1024); // 10MB max
 
             // Parse file
             List<ProductImportDTO> rows;
@@ -141,7 +141,7 @@ namespace backend.Services
             var result = new ImportResultDTO();
 
             // Validate file
-            ValidateFile(file, new[] { ".csv", ".xlsx", ".xls" }, 10 * 1024 * 1024);
+            ValidateFile(file, new[] { ".csv", ".xlsx" }, 10 * 1024 * 1024);
 
             // Parse file
             List<CustomerImportDTO> rows;
@@ -278,8 +278,7 @@ namespace backend.Services
             for (int col = 1; col <= colCount; col++)
             {
                 var header = worksheet.Cells[1, col].Value?.ToString()?.Trim();
-                if (!string.IsNullOrEmpty(header))
-                    headers.Add(header);
+                headers.Add(header ?? "");
             }
 
             // Map headers to properties
@@ -315,9 +314,9 @@ namespace backend.Services
                             var value = ConvertValue(cellValue, property.PropertyType);
                             property.SetValue(obj, value);
                         }
-                        catch
+                        catch (Exception ex)
                         {
-                            // Ignore conversion errors, will be caught in validation
+                            throw new ArgumentException($"Dòng {row}, cột {property.Name}: dữ liệu không hợp lệ.", ex);
                         }
                     }
                 }
@@ -371,6 +370,11 @@ namespace backend.Services
         private List<ImportErrorDTO> ValidateProductRow(ProductImportDTO row, int rowNumber)
         {
             var errors = new List<ImportErrorDTO>();
+
+            if (row.Cost < 0)
+                errors.Add(new ImportErrorDTO { RowNumber = rowNumber, Field = nameof(row.Cost), Message = "Giá vốn không được âm" });
+            if (row.UnitId.HasValue && row.UnitId <= 0)
+                errors.Add(new ImportErrorDTO { RowNumber = rowNumber, Field = nameof(row.UnitId), Message = "UnitId không hợp lệ" });
 
             if (string.IsNullOrWhiteSpace(row.ProductName))
             {

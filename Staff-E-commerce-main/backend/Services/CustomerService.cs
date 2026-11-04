@@ -16,7 +16,7 @@ namespace backend.Services
             _cache = cache;
         }
 
-        private async Task<IReadOnlyList<CustomerResponseDTO>> GetCachedAsync()
+        public async Task<IReadOnlyList<CustomerResponseDTO>> GetCachedAsync()
         {
             var (items, _) = await _cache.GetOrCreateAsync(
                 async () => (await _repo.GetAllAsync()).Select(MapToCustomerResponseDto).ToList(),
@@ -237,6 +237,7 @@ namespace backend.Services
                 IsActive = customer.IsActive,
                 RewardPoints = customer.RewardPoints,
                 CreatedAt = customer.CreatedAt,
+                Note = customer.Note,
                 UpdatedAt = customer.UpdatedAt,
             };
         }

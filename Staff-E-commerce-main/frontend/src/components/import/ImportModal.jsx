@@ -49,11 +49,11 @@ export default function ImportModal({ isOpen, onClose, onSuccess, type = "produc
   };
 
   const validateFile = (file) => {
-    const validExtensions = [".csv", ".xlsx", ".xls"];
+    const validExtensions = [".csv", ".xlsx"];
     const extension = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
     
     if (!validExtensions.includes(extension)) {
-      setError("Chỉ chấp nhận file CSV hoặc Excel (.csv, .xlsx, .xls)");
+      setError("Chỉ chấp nhận file CSV hoặc Excel (.csv, .xlsx)");
       return false;
     }
 
@@ -221,14 +221,14 @@ export default function ImportModal({ isOpen, onClose, onSuccess, type = "produc
                     </button>
                   </div>
                   <p className="text-sm text-gray-500">
-                    Hỗ trợ: CSV, Excel (.xlsx, .xls) - Tối đa 10MB
+                    Hỗ trợ: CSV, Excel (.xlsx) - Tối đa 10MB
                   </p>
                 </div>
               )}
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".csv,.xlsx,.xls"
+                accept=".csv,.xlsx"
                 onChange={handleFileChange}
                 className="hidden"
               />

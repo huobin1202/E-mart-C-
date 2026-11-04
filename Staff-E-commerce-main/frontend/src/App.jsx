@@ -17,7 +17,7 @@ import ProtectedRoute from "./components/auth/ProtectedRoute";
 import "./App.css";
 import CustomerList from "./pages/customers/CustomerList";
 import CategoryList from "./pages/categories/CategoryList";
-import ReportsPage from "./pages/reports/ReportsPage";
+import ReportsPage from "./pages/reports/InvoiceReports";
 import UnitList from "./pages/units/UnitList";
 import SupplierList from "./pages/suppliers/SupplierList";
 import PurchaseOrderList from "./pages/purchaseOrders/PurchaseOrderList";

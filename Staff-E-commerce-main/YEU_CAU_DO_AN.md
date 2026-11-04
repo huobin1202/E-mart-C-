@@ -100,6 +100,8 @@
 
 ## 5. Chức năng Thống kê (Hiển thị nhanh & Báo cáo Pivot Table)
 
+> Đã bổ sung trang **Báo cáo thống kê hóa đơn**, thống kê hóa đơn trong ngày trên Dashboard, bốn Pivot, xuất Excel và in/lưu PDF; thêm xuất Excel sản phẩm/khách hàng và sửa xác thực luồng nhập Excel. Xem [kiểm thử thống kê](KIEM_THU_THONG_KE.md) để chạy đối chiếu và nghiệm thu giao diện. Các checkbox nghiệm thu vẫn để mở cho đến khi kiểm tra trực tiếp với Database thực tế.
+
 ### 5.1. Thống kê nhanh (Realtime/Daily Summary)
 
 - [ ] Hiển thị trực tiếp các chỉ số thường xuyên trong ngày ngay trên giao diện chính.

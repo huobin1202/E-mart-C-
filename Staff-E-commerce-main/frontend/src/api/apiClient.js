@@ -160,7 +160,7 @@ export async function request(path, options = {}) {
     if (res.status === 401) {
       let displayMessage = isLoginPath
         ? "Sai tài khoản hoặc mật khẩu, vui lòng đăng nhập lại."
-        : "Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.";
+        : "Phiên đăng nhập không hợp lệ hoặc đã bị thu hồi. Vui lòng đăng nhập lại.";
       try {
         const errText = await res.text();
         displayMessage = errText || displayMessage;

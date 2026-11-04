@@ -1317,3 +1317,112 @@
 [2026-11-02 20:21:53] [User:5] [Action:CREATE_Storefront] [Entity:Storefront#promotions] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"{\u0022code\u0022:\u0022\u0022,\u0022eventPromotionId\u0022:12,\u0022orderAmount\u0022:300000}"}
 [2026-11-02 20:22:00] [User:5] [Action:CREATE_Storefront] [Entity:Storefront#promotions] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"{\u0022code\u0022:\u0022EMART211\u0022,\u0022eventPromotionId\u0022:null,\u0022orderAmount\u0022:300000}"}
 [2026-11-02 20:23:02] [User:] [Action:CREATE_Storefront] [Entity:Storefront#login] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Authentication payload omitted]"}
+[2026-11-04 19:12:04] [User:] [Action:CREATE_Storefront] [Entity:Storefront#login] [IP:127.0.0.1] {"statusCode":401,"succeeded":false,"body":"[Authentication payload omitted]"}
+[2026-11-04 19:12:19] [User:] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Authentication payload omitted]"}
+[2026-11-04 19:12:22] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:12:23] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:12:23] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:19:37] [User:] [Action:CREATE_Storefront] [Entity:Storefront#login] [IP:127.0.0.1] {"statusCode":401,"succeeded":false,"body":"[Authentication payload omitted]"}
+[2026-11-04 19:19:39] [User:] [Action:CREATE_Storefront] [Entity:Storefront#login] [IP:127.0.0.1] {"statusCode":401,"succeeded":false,"body":"[Authentication payload omitted]"}
+[2026-11-04 19:19:54] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:19:54] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:19:54] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:24:33] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:24:33] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:24:33] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:24:33] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:24:34] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:24:34] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:26:03] [User:1] [Action:CREATE_Users] [Entity:Users#0] [IP:127.0.0.1] {"statusCode":201,"succeeded":true,"body":"{\u0022username\u0022:\u0022customer17\u0022,\u0022password\u0022:\u0022[REDACTED]\u0022,\u0022role\u0022:\u0022customer\u0022,\u0022isActive\u0022:true,\u0022customerId\u0022:17}"}
+[2026-11-04 19:26:59] [User:] [Action:CREATE_Storefront] [Entity:Storefront#login] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Authentication payload omitted]"}
+[2026-11-04 19:27:18] [User:9] [Action:CREATE_Storefront] [Entity:Storefront#vouchers] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"{\u0022promotionId\u0022:8}"}
+[2026-11-04 19:37:21] [User:] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Authentication payload omitted]"}
+[2026-11-04 19:58:36] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:58:50] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:59:01] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:59:01] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:59:02] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:59:02] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:59:02] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:59:02] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:59:05] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:59:05] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:59:11] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:59:12] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 19:59:12] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 20:00:10] [User:] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Authentication payload omitted]"}
+[2026-11-04 20:02:14] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 20:02:14] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 20:02:38] [User:1] [Action:CREATE_Purchase-orders] [Entity:Purchase-orders#3] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 20:02:54] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 20:02:54] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 20:03:27] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 20:03:27] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 20:03:33] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 20:03:40] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 20:03:40] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 20:03:41] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 20:06:03] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 20:06:03] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 20:12:31] [User:] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"statusCode":403,"succeeded":false,"body":"[Authentication payload omitted]"}
+[2026-11-04 20:12:40] [User:] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Authentication payload omitted]"}
+[2026-11-04 21:09:28] [User:] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Authentication payload omitted]"}
+[2026-11-04 21:09:31] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:09:31] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:09:31] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:09:33] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:09:33] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:09:33] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:09:37] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:09:38] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:09:38] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:09:38] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:09:40] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:09:44] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:09:44] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:09:46] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:09:52] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:10:50] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:10:50] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:10:52] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:10:52] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:10:52] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:10:53] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:10:53] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:13:23] [User:] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Authentication payload omitted]"}
+[2026-11-04 21:13:26] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:13:26] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:17:59] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:17:59] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:17:59] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:18:00] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:18:02] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:18:02] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:21:57] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:23:19] [User:] [Action:CREATE_Auth] [Entity:Auth#login] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Authentication payload omitted]"}
+[2026-11-04 21:25:01] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:25:01] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:25:48] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:25:48] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:25:50] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:25:50] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:25:51] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:25:52] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:25:53] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:25:53] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:25:54] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:25:54] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:25:56] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:25:56] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:26:01] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:26:01] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:26:03] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:26:04] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:26:04] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:37:14] [User:] [Action:CREATE_Storefront] [Entity:Storefront#register] [IP:127.0.0.1] {"statusCode":409,"succeeded":false,"body":"[Authentication payload omitted]"}
+[2026-11-04 21:37:23] [User:] [Action:CREATE_Storefront] [Entity:Storefront#register] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Authentication payload omitted]"}
+[2026-11-04 21:37:44] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:37:44] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:54:54] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:54:54] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}
+[2026-11-04 21:54:54] [User:1] [Action:CREATE_Unknown] [Entity:Unknown#0] [IP:127.0.0.1] {"statusCode":200,"succeeded":true,"body":"[Empty Body]"}

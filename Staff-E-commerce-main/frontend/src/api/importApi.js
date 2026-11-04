@@ -1,5 +1,13 @@
 // src/api/importApi.js
-import { BASE_URL, getCurrentUserId } from "./apiClient";
+import { BASE_URL, getCurrentUserId, getAuthToken } from "./apiClient";
+
+export async function exportMasterExcel(type) {
+  const response = await fetch(`${BASE_URL}/import/export/${type}`, { headers: { Authorization: `Bearer ${getAuthToken() || ''}` } });
+  if (!response.ok) throw new Error('Không thể xuất Excel. Vui lòng kiểm tra quyền truy cập.');
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a'); link.href = url; link.download = `${type}.xlsx`; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 /**
  * Import sản phẩm từ file
@@ -11,7 +19,7 @@ export async function importProducts(file) {
   formData.append("file", file);
 
   const currentUserId = getCurrentUserId();
-  const headers = {};
+  const headers = { Authorization: `Bearer ${getAuthToken() || ""}` };
   if (currentUserId) {
     headers["X-User-Id"] = currentUserId;
   }
@@ -47,7 +55,7 @@ export async function importCustomers(file) {
   formData.append("file", file);
 
   const currentUserId = getCurrentUserId();
-  const headers = {};
+  const headers = { Authorization: `Bearer ${getAuthToken() || ""}` };
   if (currentUserId) {
     headers["X-User-Id"] = currentUserId;
   }
@@ -80,7 +88,7 @@ export async function importCustomers(file) {
 export async function downloadProductTemplate(format = "excel") {
   try {
     const currentUserId = getCurrentUserId();
-    const headers = {};
+    const headers = { Authorization: `Bearer ${getAuthToken() || ""}` };
     if (currentUserId) {
       headers["X-User-Id"] = currentUserId;
     }
@@ -134,7 +142,7 @@ export async function downloadProductTemplate(format = "excel") {
  */
 export async function downloadCustomerTemplate(format = "excel") {
   const currentUserId = getCurrentUserId();
-  const headers = {};
+  const headers = { Authorization: `Bearer ${getAuthToken() || ""}` };
   if (currentUserId) {
     headers["X-User-Id"] = currentUserId;
   }

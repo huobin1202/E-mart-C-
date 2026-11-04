@@ -28,6 +28,7 @@ import {
   Power,
 } from "lucide-react";
 import ImportModal from "../../components/import/ImportModal";
+import ExportExcelButton from "../../components/import/ExportExcelButton";
 import { getCustomers, deleteCustomer, toggleCustomerStatus } from "../../api/customerApi";
 import { useAuth } from "../../hook/useAuth";
 import { useRealtimeNotifications } from "../../hooks/useRealtimeNotifications";
@@ -222,6 +223,7 @@ const CustomerList = () => {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold text-gray-800">Quản Lý Khách Hàng</h1>
         <div className="flex flex-wrap gap-2">
+          <ExportExcelButton type="customers" />
           <button
             onClick={() => setIsImportModalOpen(true)}
             className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2"

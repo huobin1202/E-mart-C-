@@ -7,6 +7,7 @@ import { formatPrice } from "../../utils/formatPrice";
 import ProductModal from "../../components/products/ProductModal";
 import AdvancedProductSearch from "../../components/products/AdvancedProductSearch";
 import ImportModal from "../../components/import/ImportModal";
+import ExportExcelButton from "../../components/import/ExportExcelButton";
 import { getAllCategories } from "../../api/categoryApi";
 import { useAuth } from "../../hook/useAuth";
 import { getInventoryStats } from "../../api/inventoryApi";
@@ -402,6 +403,7 @@ export default function ProductList() {
           </h1>
 
           <div className="flex flex-wrap items-center gap-2">
+            <ExportExcelButton type="products" />
             <input
               type="text"
               placeholder="Tìm kiếm sản phẩm..."

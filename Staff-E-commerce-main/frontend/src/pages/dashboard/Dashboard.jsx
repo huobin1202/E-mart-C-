@@ -1,19 +1,17 @@
 // src/pages/dashboard/Dashboard.jsx
 import React, { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import OverviewCards from "./OverviewCards";
+import { DailyInvoiceSummary } from "../reports/InvoiceReports";
 import RevenueChart from "./RevenueChart";
 import TopProductsChart from "./TopProductsChart";
 import OrderStatusChart from "./OrderStatusChart";
 import LowStockAlert from "./LowStockAlert";
 import { fetchDashboard } from "../../features/statistics/statisticsSlice";
-import { useTokenExpiry } from "../../hook/useTokenExpiry";
 
 export default function Dashboard() {
-  useTokenExpiry();
 
   const dispatch = useDispatch();
-  const { overview, revenue, bestSellers, lowStock, orderStats, loading } =
+  const { revenue, bestSellers, lowStock, orderStats, loading } =
     useSelector((s) => s.statistics);
 
   useEffect(() => {
@@ -29,7 +27,7 @@ export default function Dashboard() {
       <div className="max-w-7xl mx-auto">
         <h1 className="text-3xl font-bold mb-6">Dashboard POS</h1>
 
-        <OverviewCards overview={overview} />
+        <DailyInvoiceSummary />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <RevenueChart data={revenue} />

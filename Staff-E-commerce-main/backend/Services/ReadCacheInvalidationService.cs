@@ -4,6 +4,7 @@ using backend.Models;
 namespace backend.Services;
 
 public sealed class ReadCacheInvalidationService(
+    BusMemoryCache<ReportSnapshot> reportSnapshots,
     BusMemoryCache<CategoryDTO> categories,
     BusMemoryCache<CustomerResponseDTO> customers,
     BusMemoryCache<InventoryAdjustmentDTO> inventoryAdjustments,
@@ -22,6 +23,7 @@ public sealed class ReadCacheInvalidationService(
 {
     public void ClearAll()
     {
+        reportSnapshots.Clear();
         categories.Clear();
         customers.Clear();
         inventoryAdjustments.Clear();

@@ -12,6 +12,53 @@ namespace backend.Controllers
     [Route("api/[controller]")]
     public class ReportsController : ControllerBase
     {
+        [HttpGet("invoice-statistics")]
+        public async Task<IActionResult> InvoiceStatistics([FromServices] InvoiceStatisticsService service,
+            [FromQuery] DateTime from, [FromQuery] DateTime to, [FromQuery] string period = "quarter", [FromQuery] string format = "json", [FromQuery] Guid? snapshotId = null, [FromQuery] string? productSearch = null, [FromQuery] int? categoryId = null, [FromQuery] string productSort = "name")
+        {
+            if (from == default || to == default) return BadRequest(new { message = "Vui lòng chọn ngày bắt đầu và kết thúc." });
+            if (format is not ("json" or "xlsx")) return BadRequest(new { message = "Định dạng không hợp lệ." });
+            try
+            {
+                var report = await service.GetAsync(from, to, period, snapshotId, productSearch, categoryId, productSort);
+                if (format == "json") return Ok(report);
+                using var package = new ExcelPackage();
+                foreach (var table in report.Tables)
+                {
+                    var sheet = package.Workbook.Worksheets.Add($"Pivot {package.Workbook.Worksheets.Count + 1}");
+                    sheet.Cells[1, 1].Value = table.Title;
+                    sheet.Cells[2, 1].Value = $"{report.From:dd/MM/yyyy} - {report.To:dd/MM/yyyy}";
+                    sheet.Cells[3, 1].Value = report.Policy;
+                    sheet.Cells[3, 1, 3, table.Columns.Length + 2].Merge = true;
+                    sheet.Cells[3, 1].Style.WrapText = true;
+                    sheet.Row(3).Height = 60;
+                    sheet.Cells[4, 1].Value = table.FilterDescription;
+                    sheet.Cells[4, 1, 4, table.Columns.Length + 2].Merge = true;
+                    sheet.Cells[4, 1].Style.WrapText = true;
+                    sheet.Row(4).Height = 35;
+                    sheet.Cells[5, 1].Value = "Chỉ tiêu / Đối tượng";
+                    for (var c = 0; c < table.Columns.Length; c++) sheet.Cells[5, c + 2].Value = table.Columns[c];
+                    sheet.Cells[5, table.Columns.Length + 2].Value = "TC";
+                    var rows = table.Rows.ToList();
+                    if (table.Totals.Length > 0) rows.Add(new PivotRow("Tổng cộng", table.Totals, table.GrandTotal));
+                    for (var r = 0; r < rows.Count; r++)
+                    {
+                        sheet.Cells[r + 6, 1].Value = rows[r].Label;
+                        for (var c = 0; c < rows[r].Values.Length; c++) sheet.Cells[r + 6, c + 2].Value = rows[r].Values[c];
+                        sheet.Cells[r + 6, table.Columns.Length + 2].Value = rows[r].Total;
+                    }
+                    sheet.Cells[5, 1, 5, table.Columns.Length + 2].Style.Font.Bold = true;
+                    sheet.Cells[6, 2, Math.Max(6, rows.Count + 5), table.Columns.Length + 2].Style.Numberformat.Format = "#,##0.00";
+                    sheet.Column(1).Width = 35;
+                    for (var c = 2; c <= table.Columns.Length + 2; c++) sheet.Column(c).Width = 20;
+                    sheet.View.FreezePanes(6, 2);
+                }
+                return File(package.GetAsByteArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "thong-ke-hoa-don.xlsx");
+            }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
+        }
+
         private readonly ReportsService _reportsService;
 
         public ReportsController(ReportsService reportsService)
