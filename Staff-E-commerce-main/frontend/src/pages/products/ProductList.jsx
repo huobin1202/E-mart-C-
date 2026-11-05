@@ -5,7 +5,6 @@ import { advancedSearchProducts, BASE_URL, getProductsPaginated, request } from 
 import { ImageOff } from "lucide-react";
 import { formatPrice } from "../../utils/formatPrice";
 import ProductModal from "../../components/products/ProductModal";
-import AdvancedProductSearch from "../../components/products/AdvancedProductSearch";
 import ImportModal from "../../components/import/ImportModal";
 import ExportExcelButton from "../../components/import/ExportExcelButton";
 import { getAllCategories } from "../../api/categoryApi";
@@ -591,12 +590,6 @@ export default function ProductList() {
             </div>
           </div>
         </div>
-
-        <AdvancedProductSearch
-          appliedConditions={advancedConditions}
-          onApply={applyAdvancedSearch}
-          onClear={clearAdvancedSearch}
-        />
 
         {notification && (
           <div

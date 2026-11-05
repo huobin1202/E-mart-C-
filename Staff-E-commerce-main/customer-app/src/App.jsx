@@ -1,6 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import ProductDescription from "./components/ProductDescription";
 import BirthdayInput from "./components/BirthdayInput";
+import ProductFilters from "./components/ProductFilters";
+import { emptyFilters, matchesFilters } from "./utils/productFilters";
 import { birthdayToIso } from "./utils/birthday";
 import {
   checkoutDefinitelyRejected,
@@ -630,6 +632,8 @@ export default function App() {
   // Bộ lọc & Sắp xếp
   const [sortOption, setSortOption] = useState("default");
   const [priceFilter, setPriceFilter] = useState("all");
+  const [advancedFilters, setAdvancedFilters] = useState(emptyFilters);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [selectedDrawerCatId, setSelectedDrawerCatId] = useState("all");
   const [drawerSearchText, setDrawerSearchText] = useState("");
@@ -1339,7 +1343,7 @@ export default function App() {
       .filter(({ product, text }) =>
         (!keyword || text.includes(keyword)) &&
         (categoryId === "all" || String(product.categoryId) === String(categoryId)) &&
-        product.price >= range.min && product.price < range.max)
+        product.price >= range.min && product.price < range.max && matchesFilters(product, advancedFilters))
       .map(({ product }) => product);
 
     if (sortOption === "price_asc") {
@@ -1351,7 +1355,7 @@ export default function App() {
       result = [...result].sort((a, b) => (b.soldCount || 0) - (a.soldCount || 0));
     }
     return result;
-  }, [searchIndex, query, categoryId, sortOption, priceFilter]);
+  }, [searchIndex, query, categoryId, sortOption, priceFilter, advancedFilters]);
 
   const visibleVoucherHistory = useMemo(() => voucherHistory.filter((item) => {
     return item.walletStatus === voucherHistoryTab;
@@ -1832,6 +1836,8 @@ export default function App() {
     />
   ), [cartItemMap, addToCart, changeQuantity, setProductQuantity, cardWidthStyle, openProduct]);
 
+  const hasSearchFilters = !!query.trim() || categoryId !== "all" || priceFilter !== "all" || JSON.stringify(advancedFilters) !== JSON.stringify(emptyFilters());
+
   const renderHome = () => (
     <FlatList
       ref={homeListRef}
@@ -1851,7 +1857,7 @@ export default function App() {
       showsVerticalScrollIndicator={false}
       ListHeaderComponent={<>
         {/* 1. HERO BANNER BÁCH HÓA XANH */}
-        <View style={[styles.heroBanner, { backgroundColor: currentBanner.bg }]}>
+        {!hasSearchFilters && <View style={[styles.heroBanner, { backgroundColor: currentBanner.bg }]}>
           <View style={styles.bannerInfo}>
             <View style={styles.bannerBadgePill}>
               <IconFlash size={11} color={BHX_YELLOW} />
@@ -1878,9 +1884,9 @@ export default function App() {
               />
             ))}
           </View>
-        </View>
+        </View>}
 
-        {!!flashSaleProducts.length && <View style={styles.flashHomeSection}>
+        {!hasSearchFilters && !!flashSaleProducts.length && <View style={styles.flashHomeSection}>
           <View style={styles.flashHomeHeading}>
             <View>
               <Text style={styles.flashHomeTitle}>FLASH SALE</Text>
@@ -1910,9 +1916,10 @@ export default function App() {
   
 
         <View style={styles.filterToolbar}>
+          <Pressable accessibilityRole="button" onPress={() => setFiltersOpen(true)} style={[styles.sortPill, { borderColor: BHX_GREEN, borderWidth: 1 }]}><Text style={{ color: BHX_GREEN, fontWeight: "700" }}>☷ Tùy chọn tìm kiếm</Text></Pressable>
           <View style={styles.filterLeft}>
             <Text style={styles.filterResultCount} numberOfLines={1}>
-              {categoryId === "all" ? "Tất cả sản phẩm" : (categories.find((c) => String(c.id) === String(categoryId))?.name || "Ngành hàng")}
+              {hasSearchFilters ? `${visibleProducts.length} sản phẩm phù hợp` : "Tất cả sản phẩm"}
             </Text>
           </View>
 
@@ -1940,19 +1947,6 @@ export default function App() {
               </Text>
             </Pressable>
           </View>
-          <View style={styles.sortPillsRow}>
-            {PRICE_FILTERS.map((filter) => (
-              <Pressable
-                key={filter.id}
-                onPress={() => setPriceFilter(filter.id)}
-                accessibilityRole="button"
-                accessibilityLabel={`Lọc giá ${filter.label}`}
-                style={[styles.sortPill, priceFilter === filter.id && styles.sortPillActive]}
-              >
-                <Text style={[styles.sortPillText, priceFilter === filter.id && styles.sortPillTextActive]}>{filter.label}</Text>
-              </Pressable>
-            ))}
-          </View>
         </View>
 
       </>}
@@ -1973,7 +1967,7 @@ export default function App() {
             <IconCart size={50} color="#cbd5e1" />
             <Text style={styles.emptyTitle}>Chưa có sản phẩm phù hợp</Text>
             <Text style={styles.stateText}>Hãy chọn ngành hàng khác hoặc bấm xem tất cả.</Text>
-            <AppButton title="Xem tất cả sản phẩm" onPress={() => { setQuery(""); setPriceFilter("all"); selectHomeCategory("all"); }} style={styles.emptyCta} />
+            <AppButton title="Xem tất cả sản phẩm" onPress={() => { setQuery(""); setPriceFilter("all"); setAdvancedFilters(emptyFilters()); selectHomeCategory("all"); }} style={styles.emptyCta} />
           </View>
         )}
       ListFooterComponent={<View style={styles.loadMoreFooter}>
@@ -2453,6 +2447,7 @@ export default function App() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" />
+      {filtersOpen && <ProductFilters visible value={{ ...advancedFilters, ...(categoryId !== "all" ? { categories: [String(categoryId)] } : {}), ...(priceFilter !== "all" ? { min: String((PRICE_FILTERS.find((f) => f.id === priceFilter) || PRICE_FILTERS[0]).min), max: Number.isFinite((PRICE_FILTERS.find((f) => f.id === priceFilter) || PRICE_FILTERS[0]).max) ? String((PRICE_FILTERS.find((f) => f.id === priceFilter) || PRICE_FILTERS[0]).max - 1) : "" } : {}) }} categories={categories} products={products} query={query} onApply={(filters, keyword) => { setQuery(keyword); setAdvancedFilters(filters); setPriceFilter("all"); setCategoryId("all"); setTab("home"); requestAnimationFrame(() => homeListRef.current?.scrollToOffset({ offset: 0, animated: true })); }} onClose={() => setFiltersOpen(false)} />}
 
       {/* 1. TOP HEADER PHONG CÁCH BÁCH HÓA XANH (TÁCH 2 TẦNG TRÊN MOBILE ĐẢM BẢO KHÔNG BỊ TRÀN) */}
       <View style={styles.header}>
@@ -2501,7 +2496,8 @@ export default function App() {
             </Pressable>
             <TextInput
               value={query}
-              onChangeText={setQuery}
+              onChangeText={(text) => { setQuery(text); setTab("home"); }}
+              onSubmitEditing={() => { setTab("home"); homeListRef.current?.scrollToOffset({ offset: 0, animated: true }); }}
               placeholder="Bạn tìm thịt cá, rau củ, mì gói, nước giặt..."
               placeholderTextColor="#64748b"
               style={styles.searchInput}
@@ -2519,6 +2515,7 @@ export default function App() {
             )}
           </View>
 
+          <Pressable accessibilityRole="button" accessibilityLabel="Mở tìm kiếm và bộ lọc nâng cao" onPress={() => setFiltersOpen(true)} style={{ alignSelf: "flex-end", paddingVertical: 8, paddingHorizontal: 6 }}><Text style={{ color: "#fff", fontWeight: "700", fontSize: 12 }}>☷ Tìm kiếm nâng cao / Bộ lọc</Text></Pressable>
           {/* Lọc sản phẩm theo danh mục */}
           {tab === "home" && !flashSaleOpen && <ScrollView horizontal style={styles.quickTagsScroll} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickTagsRow} keyboardShouldPersistTaps="handled">
             {[{ id: "all", name: "Tất cả" }, ...categories].map((category) => (

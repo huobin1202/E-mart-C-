@@ -205,7 +205,7 @@ public sealed class StorefrontRepository
     /// including out-of-stock items so the app can label them "Hết hàng" instead of hiding them.
     /// </summary>
     public Task<List<Product>> GetSellableProductsAsync() =>
-        _context.Products.AsNoTracking()
+        _context.Products.AsNoTracking().Include(product => product.Supplier)
             .Include(product => product.Category)
             .Include(product => product.Unit)
             .Where(product => product.IsActive && (product.Category == null || product.Category.IsActive))

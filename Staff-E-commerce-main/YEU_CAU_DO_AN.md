@@ -30,6 +30,8 @@
 
 ## 2. Chức năng Bộ lọc và Tìm kiếm nâng cao (Advanced Filter & Search)
 
+> **Phạm vi triển khai:** Bộ lọc nâng cao dành cho **customer app**, mở từ nút **Tùy chọn tìm kiếm** trong danh sách sản phẩm. Giao diện popup nổi trên nền tối, ô từ khóa ở phía trên, nội dung bộ lọc cuộn độc lập và thanh thao tác cố định phía dưới; danh mục nhiều lựa chọn, thanh kéo và ô nhập khoảng giá, khuyến mãi, tình trạng, số kết quả xem trước và nút thiết lập lại/tìm kiếm. Theo điều chỉnh giao diện: bỏ trình tạo điều kiện AND/OR/NOT; dùng NOT theo từng nhóm để loại trừ lựa chọn (danh mục, khoảng giá, khuyến mãi, tình trạng, miền). Các nhóm kết hợp AND, nhiều danh mục/miền trong nhóm kết hợp OR; khoảng giá gồm hai biên. Bộ xử lý so sánh cũ vẫn được giữ, giao diện không còn nhập toán tử tùy ý. Lọc miền Bắc/Trung/Nam theo địa chỉ nhà cung cấp; miền chưa xác định không khớp khi chọn miền. Lọc trực tiếp trên danh sách đã tải trong bộ nhớ, không gọi API khi thay đổi điều kiện. Đã bỏ khung advanced search khỏi trang sản phẩm quản trị. Kiểm thử logic tự động và build đã đạt; cần nghiệm thu giao diện trên thiết bị thực tế.
+
 ### 2.1. Nguồn dữ liệu lọc
 
 - [x] Thực hiện lọc trực tiếp trên danh sách in-memory đã được cache theo yêu cầu tại Phần 1.

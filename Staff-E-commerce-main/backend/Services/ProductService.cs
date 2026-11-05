@@ -693,7 +693,7 @@ namespace backend.Services
                 : !string.Equals(selector(product), expected, StringComparison.Ordinal);
         }
 
-        private static string? GetSupplierRegion(string? address)
+        internal static string? GetSupplierRegion(string? address)
         {
             if (string.IsNullOrWhiteSpace(address)) return null;
 

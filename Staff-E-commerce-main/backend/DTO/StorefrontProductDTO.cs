@@ -7,6 +7,7 @@ public sealed class StorefrontProductDTO
     public string? Description { get; set; }
     public int? CategoryId { get; set; }
     public string? CategoryName { get; set; }
+    public string? Region { get; set; }
     public decimal Price { get; set; }
     public decimal OriginalPrice { get; set; }
     public string? UnitName { get; set; }
