@@ -1,9 +1,11 @@
 import { BASE_URL, getAuthToken } from './apiClient';
 
-export async function invoiceStatistics(filters, format = 'json') {
+// `signal` (optional) lets the caller abort a request that a newer filter selection has replaced.
+export async function invoiceStatistics(filters, format = 'json', { signal } = {}) {
   const params = new URLSearchParams(Object.entries({ ...filters, format }).filter(([, value]) => value !== undefined && value !== null && value !== ''));
   const response = await fetch(`${BASE_URL}/reports/invoice-statistics?${params}`, {
     headers: { Authorization: `Bearer ${getAuthToken() || ''}` },
+    signal,
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));

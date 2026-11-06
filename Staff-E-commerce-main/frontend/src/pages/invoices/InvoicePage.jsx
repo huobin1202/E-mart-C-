@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FileText, Printer } from "lucide-react";
+import { FileText, Printer, X } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getInvoice, getInvoiceById, getInvoices } from "../../api/invoiceApi";
 import { useDebouncedSearch } from "../../hook/useDebouncedSearch";
 import { paymentMethodLabels } from "../../utils/orderStatus";
 import { useRealtimeNotifications } from "../../hooks/useRealtimeNotifications";
 import TableDisplayControls from "../../components/ui/TableDisplayControls";
+import TableScroll from "../../components/ui/TableScroll";
 
 const money = (value) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(value || 0);
 const dateTime = (value) => new Date(value).toLocaleString("vi-VN");
@@ -21,7 +22,7 @@ const invoiceStatusLabels = {
 
 export default function InvoicePage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const linkedOrderId = Number(searchParams.get("orderId")) || 0;
   const [result, setResult] = useState({ items: [], totalPages: 0, totalItems: 0 });
   const [page, setPage] = useState(1);
@@ -97,6 +98,20 @@ export default function InvoicePage() {
     }
   }, [selectedInvoiceId, showDetail]);
 
+  const closeDetail = useCallback(() => {
+    latestDetailRequest.current++;
+    setShowDetail(false);
+    setSelectedInvoiceId(null);
+    setSelected(null);
+    setDetailError("");
+    setDetailLoading(false);
+    if (searchParams.has("orderId")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("orderId");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
   const openByOrderId = useCallback(async (orderId) => {
     setShowDetail(true);
     const requestId = ++latestDetailRequest.current;
@@ -158,7 +173,7 @@ export default function InvoicePage() {
   ].filter(([, value, duplicate]) => !duplicate && (!hasDeliveryDetails || value?.trim())) : [];
 
   return (
-    <section className="space-y-3 p-1 sm:p-2">
+    <section className="space-y-4">
       <header className="flex items-center gap-3">
         <div className="rounded-lg bg-primary-50 p-2 text-primary-700"><FileText size={20} /></div>
         <div>
@@ -194,7 +209,7 @@ export default function InvoicePage() {
             <TableDisplayControls pageSize={pageSize} compact={compact} onCompactChange={setCompact} disabled={loading}
               onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />
           </div>
-          <div className="management-table-scroll" key={`${page}-${pageSize}-${from}-${to}-${customerSearch}`}>
+          <TableScroll resetKey={`${page}-${pageSize}-${from}-${to}-${customerSearch}`} busy={loading && result.items.length > 0}>
             <table className="management-table min-w-full w-full text-left text-sm" data-compact={compact} aria-label="Danh sách hóa đơn">
               <thead className="bg-gray-50 text-gray-600">
                 <tr>
@@ -203,7 +218,7 @@ export default function InvoicePage() {
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
+                {loading && result.items.length === 0 ? (
                   <tr><td colSpan="8" className="p-8 text-center text-gray-500">Đang tải...</td></tr>
                 ) : result.items.length === 0 ? (
                   <tr><td colSpan="8" className="p-8 text-center text-gray-500">Không có hóa đơn phù hợp.</td></tr>
@@ -233,7 +248,7 @@ export default function InvoicePage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableScroll>
           <div className="flex flex-wrap items-center justify-end gap-2 border-t px-3 py-2 text-sm">
             <span className="mr-auto text-gray-500">
               {result.totalItems ? (page - 1) * pageSize + 1 : 0}–{Math.min(page * pageSize, result.totalItems)} / {result.totalItems} hóa đơn
@@ -251,7 +266,13 @@ export default function InvoicePage() {
         </section>
 
         <article id="invoice-detail" hidden={!showDetail} className="invoice-paper invoice-detail-panel min-w-0 rounded-xl border bg-white p-4 shadow-sm" aria-label="Chi tiết hóa đơn">
-          <h2 className="border-b pb-3 text-lg font-semibold text-gray-800">Chi tiết hóa đơn</h2>
+          <div className="flex items-center justify-between gap-3 border-b pb-3">
+            <h2 className="text-lg font-semibold text-gray-800">Chi tiết hóa đơn</h2>
+            <button type="button" onClick={closeDetail} aria-label="Đóng chi tiết hóa đơn" title="Đóng"
+              className="rounded-lg p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 print:hidden">
+              <X size={20} />
+            </button>
+          </div>
           {detailLoading ? (
             <p className="py-10 text-center text-sm text-gray-500">Đang tải chi tiết...</p>
           ) : detailError ? (

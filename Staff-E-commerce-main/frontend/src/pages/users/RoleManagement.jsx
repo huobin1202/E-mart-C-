@@ -58,7 +58,7 @@ export default function RoleManagement() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-gray-800">Phân quyền nhân viên</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Phân quyền nhân viên</h1>
       </div>
       {message && <div className="rounded-md bg-primary-50 px-4 py-2 text-sm text-primary-700">{message}</div>}
       <div className="grid gap-6 md:grid-cols-3">

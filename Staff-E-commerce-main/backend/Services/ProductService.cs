@@ -323,7 +323,7 @@ namespace backend.Services
                 Barcode = p.Barcode,
                 CategoryId = p.CategoryId,
                 SupplierId = p.SupplierId,
-                Region = GetSupplierRegion(p.Supplier?.Address),
+                Region = p.Supplier?.Region ?? GetSupplierRegion(p.Supplier?.Address),
                 Price = p.Price,
                 Cost = p.Cost,
                 UnitId = p.UnitId,

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDebouncedSearch } from "../../hook/useDebouncedSearch";
 import { useLocation, useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
+import PanelCloseButton from "../../components/ui/PanelCloseButton";
 import { getAllSuppliers } from "../../api/supplierApi";
 import { getProductsPaginated } from "../../api/apiClient";
 import {
@@ -152,7 +153,7 @@ export default function PurchaseOrderList() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-5">
+    <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div><h1 className="text-2xl font-bold text-gray-900">Phiếu nhập hàng</h1><p className="mt-1 text-sm text-gray-500">Lập phiếu từ nhà cung cấp, kiểm tra chi tiết, rồi xác nhận cộng tồn kho.</p></div>
         <button type="button" onClick={() => setShowCreate(true)} className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">Tạo phiếu nhập</button>
@@ -198,7 +199,7 @@ export default function PurchaseOrderList() {
       </section>
 
       {detail && <article className="management-detail-panel min-w-0 rounded-xl border bg-white p-4 shadow-sm" aria-label="Chi tiết phiếu nhập">
-        <h2 className="border-b pb-3 text-lg font-semibold">Chi tiết phiếu nhập</h2>
+        <div className="flex items-center justify-between gap-3 border-b pb-3"><h2 className="text-lg font-semibold">Chi tiết phiếu nhập</h2><PanelCloseButton onClick={() => { setDetail(null); setDetailLoading(false); }} label="Đóng chi tiết phiếu nhập" /></div>
         {detailLoading ? <p className="py-10 text-center text-gray-500">Đang tải chi tiết...</p> : !detail ? <p className="py-10 text-center text-gray-500">Chọn một dòng để xem chi tiết.</p> : <div className="space-y-4 pt-4">
           <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2"><div><span className="text-gray-500">Mã phiếu</span><p className="font-semibold text-primary-700">{detail.poCode}</p></div><div><span className="text-gray-500">Nhà cung cấp</span><p>{detail.supplierName}</p></div><div><span className="text-gray-500">Nhân viên</span><p>{detail.employeeName || detail.userName || 'Hệ thống'}</p></div><div><span className="text-gray-500">Trạng thái</span><p>{detail.status === 'pending' ? 'Chờ xử lý' : detail.status === 'completed' ? 'Đã nhập kho' : 'Đã hủy'}</p></div></div>
           {detail.note && <p className="rounded bg-gray-50 p-3 text-sm"><span className="font-medium">Ghi chú:</span> {detail.note}</p>}

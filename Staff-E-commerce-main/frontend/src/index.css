@@ -25,6 +25,101 @@
 
 body {
   font-family: inherit;
+  color: var(--color-gray-800);
+  background-color: var(--color-gray-50);
+}
+
+/*
+ * Tailwind v4 makes a bare `border` use currentColor, which rendered most
+ * cards, filters, selects and outline buttons with heavy black borders.
+ * Restore a soft default; explicit border-* color utilities still win.
+ */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200);
+  }
+
+  :is(input, select, textarea):not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]) {
+    border-color: var(--color-gray-300);
+    border-radius: 0.5rem;
+    background-color: #fff;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  :is(input, select, textarea):not([type="checkbox"], [type="radio"], [type="range"]):focus {
+    outline: none;
+    border-color: var(--color-primary-500);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-primary-500) 20%, transparent);
+  }
+
+  :is(input, select, textarea):disabled {
+    background-color: var(--color-gray-100);
+    color: var(--color-gray-500);
+    cursor: not-allowed;
+  }
+
+  ::placeholder {
+    color: var(--color-gray-400);
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--color-primary-600);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary,
+  select:not(:disabled),
+  label:has(> input[type="checkbox"], > input[type="radio"]) {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary-500);
+    outline-offset: 2px;
+  }
+}
+
+@media screen {
+  /* Readable, consistent tables on every admin page. */
+  .admin-main table > thead > tr > th {
+    color: var(--color-gray-600);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .admin-main table > tbody > tr {
+    transition: background-color 0.1s;
+  }
+
+  .admin-main table > tbody > tr:hover > td {
+    background-color: color-mix(in oklab, var(--color-primary-50) 55%, transparent);
+  }
+
+  .admin-main ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .admin-main ::-webkit-scrollbar-thumb {
+    background: var(--color-gray-300);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+  }
+
+  .admin-main ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-gray-400);
+  }
 }
 
 /* Opt in on management lists; invoice print layouts use their original spacing. */
@@ -35,17 +130,47 @@ body {
     overscroll-behavior: contain;
   }
 
+  /* Refresh in progress: keep the old rows (and the table height) but show they are stale. */
+  .management-table-scroll[data-busy="true"] > table > tbody {
+    opacity: 0.55;
+    pointer-events: none;
+  }
+
   .management-table > thead {
     position: sticky;
     top: 0;
     z-index: 1;
   }
 
+  .management-table > thead {
+    background-color: var(--color-gray-50);
+  }
+
   .management-table > :is(thead, tbody) > tr > :is(th, td) {
-    padding: 0.3rem 0.4rem;
+    padding: 0.5rem 0.625rem;
     font-size: 0.8125rem;
-    line-height: 1.15rem;
-    overflow-wrap: anywhere;
+    line-height: 1.25rem;
+    overflow-wrap: break-word;
+  }
+
+  .management-table > tbody > tr > td {
+    border-color: var(--color-gray-100);
+  }
+
+  /* Larger type for lists people read item by item (products, vouchers). */
+  .management-table[data-size="comfortable"] > :is(thead, tbody) > tr > :is(th, td) {
+    padding: 0.625rem 0.75rem;
+    font-size: 0.9375rem;
+    line-height: 1.375rem;
+  }
+
+  .management-table[data-size="comfortable"] > thead > tr > th {
+    font-size: 0.875rem;
+  }
+
+  .management-table[data-size="comfortable"] .product-thumbnail {
+    width: 3rem;
+    height: 3rem;
   }
 
   .management-table .product-thumbnail {

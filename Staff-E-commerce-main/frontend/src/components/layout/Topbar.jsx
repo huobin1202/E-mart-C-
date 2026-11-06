@@ -1,70 +1,66 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { ChevronDown, LogOut, Menu, UserRound } from "lucide-react";
 import { logout } from "../../api/apiClient";
-import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hook/useAuth";
 
-const SearchIcon = (props) => (
-  <svg
-    viewBox="0 0 24 24"
-    width="20"
-    height="20"
-    fill="none"
-    stroke="currentColor"
-    {...props}
-  >
-    <path
-      d="M21 21l-4.35-4.35"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <circle
-      cx="11"
-      cy="11"
-      r="6"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
+// Page titles shown in the top bar so users always know where they are.
+const pageTitles = {
+  "/dashboard": "Tổng quan",
+  "/pos": "Bán hàng (POS)",
+  "/orders": "Lịch sử đơn hàng",
+  "/invoices": "Quản lý hóa đơn",
+  "/customers": "Khách hàng",
+  "/promotions": "Giảm giá",
+  "/products": "Sản phẩm",
+  "/categories": "Danh mục sản phẩm",
+  "/units": "Đơn vị tính",
+  "/suppliers": "Nhà cung cấp",
+  "/purchase-orders": "Phiếu nhập hàng",
+  "/employees": "Nhân viên",
+  "/users": "Tài khoản",
+  "/roles": "Phân quyền role",
+  "/audit": "Nhật ký hệ thống",
+  "/reports": "Báo cáo / Thống kê",
+  "/profile": "Thông tin cá nhân",
+};
 
-const BellIcon = (props) => (
-  <svg
-    viewBox="0 0 24 24"
-    width="20"
-    height="20"
-    fill="none"
-    stroke="currentColor"
-    {...props}
-  >
-    <path
-      d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M13.73 21a2 2 0 01-3.46 0"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
+const roleLabels = {
+  admin: "Quản trị viên",
+  manager: "Quản lý",
+  staff: "Nhân viên",
+  employee: "Nhân viên",
+};
+
+const getInitials = (name) => {
+  if (!name) return "U";
+  const parts = name.trim().split(/\s+/);
+  const letters = parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : parts[0].slice(0, 2);
+  return letters.toUpperCase();
+};
 
 export default function Topbar({ onToggleSidebar }) {
-  // const [q, setQ] = useState("");
   const [showUserMenu, setShowUserMenu] = useState(false);
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { user, loading } = useAuth();
   const menuRef = useRef(null);
 
-  // const handleSearchSubmit = (e) => {
-  //   e.preventDefault();
-  //   // TODO: call parent search handler or navigate to search page
-  //   console.log("Search for:", q);
-  // };
+  useEffect(() => {
+    if (!showUserMenu) return undefined;
+    const handlePointer = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) setShowUserMenu(false);
+    };
+    const handleKey = (event) => { if (event.key === "Escape") setShowUserMenu(false); };
+    document.addEventListener("mousedown", handlePointer);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handlePointer);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [showUserMenu]);
+
+  useEffect(() => { setShowUserMenu(false); }, [pathname]);
 
   const handleLogout = () => {
     if (confirm("Bạn có chắc muốn đăng xuất?")) {
@@ -73,168 +69,67 @@ export default function Topbar({ onToggleSidebar }) {
     }
   };
 
-  const getInitials = (name) => {
-    if (!name) return "U";
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  };
-
-  // ✅ Mapping role sang tiếng Việt
-  const getRoleLabel = (role) => {
-    const roleMap = {
-      Admin: "Quản trị viên",
-      Manager: "Quản lý",
-      Employee: "Nhân viên",
-    };
-    return roleMap[role] || role;
-  };
+  const displayName = user?.fullName || user?.username || "Người dùng";
+  const roleLabel = roleLabels[String(user?.role || "").toLowerCase()] || user?.role || "";
+  const titleKey = Object.keys(pageTitles).find((path) => pathname === path || pathname.startsWith(`${path}/`));
+  const today = new Date().toLocaleDateString("vi-VN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
   return (
-    <header className="flex shrink-0 items-center justify-between bg-white border-b border-gray-200 px-4 py-2">
-      <div className="flex items-center gap-3">
+    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between gap-3 border-b border-gray-200 bg-white/95 px-3 backdrop-blur sm:px-6">
+      <div className="flex min-w-0 items-center gap-3">
         <button
+          type="button"
           onClick={onToggleSidebar}
-          className="p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring"
-          aria-label="Toggle sidebar"
+          className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 md:hidden"
+          aria-label="Mở menu"
         >
-          {/* menu icon */}
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            className="text-gray-700 block lg:hidden"
-          >
-            <path
-              d="M4 6h16M4 12h16M4 18h16"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <Menu size={20} />
         </button>
-
-        <div className="hidden md:block">
-          <>
-            <style jsx>{`
-              @keyframes typing {
-                from {
-                  width: 0;
-                }
-                to {
-                  width: 30ch;
-                }
-              }
-            `}</style>
-
-            <h1
-              className="font-mono overflow-hidden whitespace-nowrap text-xl font-bold text-gray-800"
-              style={{ animation: "typing 2s steps(30) infinite alternate" }}
-            >
-              Xin chào, {user?.fullName || user?.username || "User"}! 👋
-            </h1>
-          </>
-          <p className="text-sm text-gray-500">
-            {new Date().toLocaleDateString("vi-VN", {
-              weekday: "long",
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            })}
+        <div className="min-w-0">
+          <p className="truncate text-xs text-gray-500">
+            <span className="hidden sm:inline">Xin chào, <span className="font-medium text-gray-700">{loading ? "…" : displayName}</span> · </span>
+            <span className="first-letter:uppercase">{today}</span>
+          </p>
+          <p className="truncate text-base font-semibold text-gray-900">
+            {pageTitles[titleKey] || "Quản trị cửa hàng"}
           </p>
         </div>
       </div>
 
-      <div className="flex items-center gap-4">
-        {/* <button className="relative p-2 rounded-md hover:bg-gray-100 focus:outline-none">
-          <BellIcon className="text-gray-600" />
-          <span className="absolute top-0 right-0 inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white bg-red-500 rounded-full">
-            3
+      <div className="relative" ref={menuRef}>
+        <button
+          type="button"
+          onClick={() => setShowUserMenu((open) => !open)}
+          className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-gray-100"
+          aria-haspopup="menu"
+          aria-expanded={showUserMenu}
+        >
+          <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-600 text-sm font-semibold text-white">
+            {loading ? "…" : getInitials(displayName)}
+            <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
           </span>
-        </button> */}
-        <div className="w-px h-8 bg-gray-200" />
-        <div className="relative" ref={menuRef}>
-          <button
-            onClick={() => setShowUserMenu(!showUserMenu)}
-            className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
-            aria-haspopup="true"
-            aria-expanded={showUserMenu}
-          >
-            <div className="relative">
-              <div className="w-10 h-10 border-2 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 text-primary-400 flex items-center justify-center text-sm font-bold shadow-md">
-                {loading ? (
-                  <div className="animate-spin">⏳</div>
-                ) : (
-                  getInitials(user?.fullName || user?.username)
-                )}
-              </div>
-              <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full"></div>
-            </div>
-            <div className="hidden sm:flex flex-col text-left">
-              <span className="text-sm font-medium text-gray-800">
-                {loading
-                  ? "Đang tải..."
-                  : user?.fullName || user?.username || "User"}
-              </span>
-              <span className="text-xs text-gray-500">
-                {loading ? "" : getRoleLabel(user?.role)}
-              </span>
-            </div>
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              className="text-gray-500"
-            >
-              <path
-                d="M6 9l6 6 6-6"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
+          <span className="hidden flex-col text-left sm:flex">
+            <span className="max-w-48 truncate text-sm font-medium text-gray-900">{loading ? "Đang tải..." : displayName}</span>
+            <span className="text-xs text-gray-500">{loading ? "" : roleLabel}</span>
+          </span>
+          <ChevronDown size={16} className={`text-gray-400 transition-transform ${showUserMenu ? "rotate-180" : ""}`} />
+        </button>
 
-          {showUserMenu && (
-            <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-20">
-              <div className="px-4 py-3 border-b">
-                <p className="text-sm font-medium text-gray-800">
-                  {user?.fullName || user?.username}
-                </p>
-                <p className="text-xs text-gray-500">{user?.email}</p>
-              </div>
-
-              <a
-                href="/profile"
-                className="block px-4 py-2 text-sm hover:bg-gray-50"
-              >
-                Hồ sơ
-              </a>
-              <a
-                href="/settings"
-                className="block px-4 py-2 text-sm hover:bg-gray-50"
-              >
-                Cài đặt
-              </a>
-              <div className="border-t" />
-              <button
-                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"
-                onClick={() => {
-                  handleLogout();
-                }}
-              >
-                Đăng xuất
-              </button>
+        {showUserMenu && (
+          <div role="menu" className="absolute right-0 z-40 mt-2 w-60 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
+            <div className="border-b border-gray-100 px-4 py-3">
+              <p className="truncate text-sm font-semibold text-gray-900">{displayName}</p>
+              {user?.email && <p className="truncate text-xs text-gray-500">{user.email}</p>}
             </div>
-          )}
-        </div>
+            <Link role="menuitem" to="/profile" className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
+              <UserRound size={16} /> Thông tin cá nhân
+            </Link>
+            <button role="menuitem" type="button" onClick={handleLogout}
+              className="flex w-full items-center gap-2 border-t border-gray-100 px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50">
+              <LogOut size={16} /> Đăng xuất
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

@@ -15,6 +15,7 @@ namespace backend.DTO
         public string? Phone { get; set; }
         public string? Email { get; set; }
         public string? Address { get; set; }
+        public string? Region { get; set; }
         public bool IsActive { get; set; } = true;
         public int ProductCount { get; set; }
         public decimal TotalImportedValue { get; set; }

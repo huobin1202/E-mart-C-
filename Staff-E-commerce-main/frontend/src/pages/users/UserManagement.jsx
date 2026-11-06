@@ -233,7 +233,7 @@ export default function UserManagement() {
       return;
     }
 
-    if ((formData.role !== "admin" && formData.role !== "customer") && !formData.employeeId) {
+    if (formData.role !== "customer" && !formData.employeeId) {
       setFieldErrors({ employeeId: "Vui lòng chọn hồ sơ nhân viên." });
       return;
     }
@@ -395,7 +395,7 @@ export default function UserManagement() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-800">
+          <h1 className="text-2xl font-bold text-gray-900">
             Quản lý tài khoản
           </h1>
           <p className="text-sm text-gray-500">
@@ -680,7 +680,7 @@ export default function UserManagement() {
                     className="mt-2 w-full rounded-md border px-3 py-2"
                     value={formData.employeeId}
                     onChange={(e) => setFormData((prev) => ({ ...prev, employeeId: e.target.value }))}
-                    required={formData.role !== "admin"}
+                    required
                   >
                     <option value="">Chọn hồ sơ nhân viên để cấp tài khoản</option>
                     {employees.filter((item) => !item.hasAccount || String(item.id) === String(formData.employeeId)).map((item) => (
@@ -820,7 +820,7 @@ export default function UserManagement() {
                   ))}
                 </select>
                 {formData.role !== "customer" && (
-                  <select className="mt-2 w-full rounded-md border px-3 py-2" value={formData.employeeId} onChange={(e) => setFormData((prev) => ({ ...prev, employeeId: e.target.value }))} required={formData.role !== "admin"}>
+                  <select className="mt-2 w-full rounded-md border px-3 py-2" value={formData.employeeId} onChange={(e) => setFormData((prev) => ({ ...prev, employeeId: e.target.value }))} required>
                     <option value="">Chọn hồ sơ nhân viên</option>
                     {employees.filter((item) => !item.hasAccount || String(item.id) === String(formData.employeeId)).map((item) => <option key={item.id} value={item.id}>{item.fullName}</option>)}
                   </select>

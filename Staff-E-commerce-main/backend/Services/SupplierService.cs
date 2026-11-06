@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using backend.DTO;
+using backend.Helpers;
 using backend.Models;
 using backend.Repository;
 
@@ -31,6 +32,7 @@ namespace backend.Services
                 Phone = s.Phone,
                 Email = s.Email,
                 Address = s.Address,
+                Region = s.Region,
                 IsActive = s.IsActive,
                 CreatedAt = s.CreatedAt,
                 UpdatedAt = s.UpdatedAt
@@ -55,17 +57,28 @@ namespace backend.Services
             return (await GetAllAsync()).FirstOrDefault(s => s.Id == id);
         }
 
-        public async Task<PaginationResult<SupplierDTO>> GetPaginatedAsync(int page, int pageSize, string? search)
+        public async Task<PaginationResult<SupplierDTO>> GetPaginatedAsync(int page, int pageSize, string? search, string? region = null)
         {
             if (page < 1) page = 1;
             if (pageSize < 1) pageSize = 12;
 
-            var all = await GetAllAsync();
-            var filtered = string.IsNullOrWhiteSpace(search)
-                ? all
-                : all.Where(x => x.Name.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase)
-                    || (x.Email?.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false)
-                    || (x.Phone?.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
+            IEnumerable<SupplierDTO> query = await GetAllAsync();
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var keyword = search.Trim();
+                query = query.Where(x => x.Name.Contains(keyword, StringComparison.OrdinalIgnoreCase)
+                    || (x.Email?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (x.Phone?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+            if (!string.IsNullOrWhiteSpace(region))
+            {
+                // "none" lists suppliers that have not been classified yet; anything else must be a valid region.
+                var wanted = string.Equals(region.Trim(), SupplierRegion.Unclassified, StringComparison.OrdinalIgnoreCase)
+                    ? null
+                    : SupplierRegion.Normalize(region);
+                query = query.Where(x => string.Equals(x.Region, wanted, StringComparison.Ordinal));
+            }
+            var filtered = query.ToList();
             var total = filtered.Count;
             var dtoItems = filtered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
@@ -92,6 +105,7 @@ namespace backend.Services
             if (exists)
                 throw new ArgumentException("Supplier name already exists");
 
+            supplier.Region = SupplierRegion.Require(supplier.Region);
             supplier.CreatedAt = DateTime.UtcNow;
             supplier.UpdatedAt = DateTime.UtcNow;
 
@@ -119,6 +133,7 @@ namespace backend.Services
             existing.Phone = supplier.Phone;
             existing.Email = supplier.Email;
             existing.Address = supplier.Address;
+            existing.Region = SupplierRegion.Require(supplier.Region);
             existing.IsActive = supplier.IsActive;
             existing.UpdatedAt = DateTime.UtcNow;
 

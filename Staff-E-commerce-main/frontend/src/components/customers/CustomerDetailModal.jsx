@@ -36,12 +36,15 @@ export default function CustomerDetailModal({ onClose, customerId, embedded = fa
           <h2 className="text-2xl font-bold text-gray-800">
             Chi Tiết Khách Hàng
           </h2>
-          {!embedded && <button
+          <button
+            type="button"
             onClick={onClose}
+            aria-label="Đóng chi tiết khách hàng"
+            title="Đóng"
             className="p-1 hover:bg-gray-100 rounded-lg transition"
           >
             <X size={24} className="text-gray-600" />
-          </button>}
+          </button>
         </div>
 
         {/* Body */}
@@ -57,30 +60,30 @@ export default function CustomerDetailModal({ onClose, customerId, embedded = fa
           ) : customer ? (
             <div className="space-y-6">
               {/* Basic Info */}
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 [&>div]:min-w-0">
                 <div>
                   <label className="block text-sm font-semibold text-gray-600 mb-1">
                     Tên Khách Hàng
                   </label>
-                  <p className="text-lg text-gray-800">{customer.fullName}</p>
+                  <p className="text-lg text-gray-800 break-words">{customer.fullName}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-600 mb-1">
                     Email
                   </label>
-                  <p className="text-lg text-gray-800">
+                  <p className="text-lg text-gray-800 break-words">
                     {customer.email || "-"}
                   </p>
                 </div>
               </div>
 
               {/* Contact Info */}
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 [&>div]:min-w-0">
                 <div>
                   <label className="block text-sm font-semibold text-gray-600 mb-1">
                     Số Điện Thoại
                   </label>
-                  <p className="text-lg text-gray-800">
+                  <p className="text-lg text-gray-800 break-words">
                     {customer.phone || "-"}
                   </p>
                 </div>
@@ -88,7 +91,7 @@ export default function CustomerDetailModal({ onClose, customerId, embedded = fa
                   <label className="block text-sm font-semibold text-gray-600 mb-1">
                     Ngày Sinh
                   </label>
-                  <p className="text-lg text-gray-800">
+                  <p className="text-lg text-gray-800 break-words">
                     {customer.dateOfBirth ? new Date(customer.dateOfBirth).toLocaleDateString("vi-VN") : "-"}
                   </p>
                 </div>
@@ -113,18 +116,18 @@ export default function CustomerDetailModal({ onClose, customerId, embedded = fa
                 <label className="block text-sm font-semibold text-gray-600 mb-1">
                   Địa Chỉ
                 </label>
-                <p className="text-lg text-gray-800">
+                <p className="text-lg text-gray-800 break-words">
                   {customer.address || "-"}
                 </p>
               </div>
 
               {/* Created Date */}
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 [&>div]:min-w-0">
                 <div>
                   <label className="block text-sm font-semibold text-gray-600 mb-1">
                     Ngày Tạo
                   </label>
-                  <p className="text-lg text-gray-800">
+                  <p className="text-lg text-gray-800 break-words">
                     {customer.createdAt
                       ? new Date(customer.createdAt).toLocaleDateString("vi-VN")
                       : "-"}
@@ -134,7 +137,7 @@ export default function CustomerDetailModal({ onClose, customerId, embedded = fa
                   <label className="block text-sm font-semibold text-gray-600 mb-1">
                     Cập Nhật Lần Cuối
                   </label>
-                  <p className="text-lg text-gray-800">
+                  <p className="text-lg text-gray-800 break-words">
                     {customer.updatedAt
                       ? new Date(customer.updatedAt).toLocaleDateString("vi-VN")
                       : "-"}

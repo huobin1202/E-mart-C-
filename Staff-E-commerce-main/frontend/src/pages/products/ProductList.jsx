@@ -13,6 +13,8 @@ import { getInventoryStats } from "../../api/inventoryApi";
 import InventoryHistory from "../inventory/InventoryHistory";
 import { useRealtimeNotifications } from "../../hooks/useRealtimeNotifications";
 import TableDisplayControls from "../../components/ui/TableDisplayControls";
+import TableScroll from "../../components/ui/TableScroll";
+import AdvancedProductSearch from "../../components/products/AdvancedProductSearch";
 
 function ProductThumbnail({ imagePath, name }) {
   const [failedSource, setFailedSource] = useState(null);
@@ -390,15 +392,15 @@ export default function ProductList() {
   const getDiscountPrice = (p) => p.discountPrice ?? p.DiscountPrice ?? null;
   const getQty = (p) => p.stockQuantity ?? p.inventory?.quantity ?? p.Quantity ?? 0;
   const getQuantityBadge = (quantity) => {
-    if (quantity === 0) return <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800">Hết hàng</span>;
-    if (quantity < 10) return <span className="px-2 py-1 text-xs rounded-full bg-amber-100 text-amber-800">Sắp hết</span>;
-    return <span className="px-2 py-1 text-xs rounded-full bg-emerald-100 text-emerald-800">Còn hàng</span>;
+    if (quantity === 0) return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-800">Hết hàng</span>;
+    if (quantity < 10) return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-100 text-amber-800">Sắp hết</span>;
+    return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-100 text-emerald-800">Còn hàng</span>;
   };
   return (
     <div className="p-1 sm:p-2">
       <div className="w-full">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-2xl font-semibold text-gray-800">
+          <h1 className="text-2xl font-bold text-gray-900">
             Danh sách sản phẩm
           </h1>
 
@@ -450,7 +452,7 @@ export default function ProductList() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-3">
             {/* Danh mục */}
             <div>
-              <label className="block text-xs text-gray-600 mb-1">
+              <label className="mb-1 block text-sm font-medium text-gray-700">
                 Danh mục
               </label>
               <select
@@ -472,7 +474,7 @@ export default function ProductList() {
 
             {/* Nhà cung cấp */}
             <div>
-              <label className="block text-xs text-gray-600 mb-1">
+              <label className="mb-1 block text-sm font-medium text-gray-700">
                 Nhà cung cấp
               </label>
               <select
@@ -494,7 +496,7 @@ export default function ProductList() {
 
             {/* Giá từ */}
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Giá từ</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Giá từ</label>
               <input
                 type="number"
                 placeholder="0"
@@ -509,7 +511,7 @@ export default function ProductList() {
 
             {/* Giá đến */}
             <div>
-              <label className="block text-xs text-gray-600 mb-1">
+              <label className="mb-1 block text-sm font-medium text-gray-700">
                 Giá đến
               </label>
               <input
@@ -526,7 +528,7 @@ export default function ProductList() {
 
             {/* Sắp xếp */}
             <div>
-              <label className="block text-xs text-gray-600 mb-1">
+              <label className="mb-1 block text-sm font-medium text-gray-700">
                 Sắp xếp
               </label>
               <select
@@ -555,7 +557,7 @@ export default function ProductList() {
 
             {/* Trạng thái */}
             <div>
-              <label className="block text-xs text-gray-600 mb-1">
+              <label className="mb-1 block text-sm font-medium text-gray-700">
                 Trạng thái
               </label>
               <select
@@ -573,7 +575,7 @@ export default function ProductList() {
             </div>
 
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Số lượng</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Số lượng</label>
               <select value={stockStatus} onChange={(e) => { setStockStatus(e.target.value); setPage(1); }} className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring focus:border-primary-300 text-sm">
                 <option value="">Tất cả</option><option value="out_of_stock">Hết hàng</option><option value="low_stock">Sắp hết (&lt; 10)</option><option value="in_stock">Còn hàng (≥ 10)</option>
               </select>
@@ -591,6 +593,8 @@ export default function ProductList() {
           </div>
         </div>
 
+        <AdvancedProductSearch appliedConditions={advancedConditions} onApply={applyAdvancedSearch} onClear={clearAdvancedSearch} />
+
         {notification && (
           <div
             className={`mb-3 p-2 rounded ${
@@ -603,15 +607,14 @@ export default function ProductList() {
           </div>
         )}
 
-        <div className={`grid items-start gap-3 ${modalState.open && modalState.mode !== "create" ? "xl:grid-cols-[minmax(0,1.75fr)_minmax(320px,0.8fr)]" : "grid-cols-1"}`}>
         <section className="min-w-0">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <TableDisplayControls pageSize={pageSize} compact={compact} onCompactChange={setCompact} disabled={loading}
             onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />
           <span className="text-sm text-gray-500">{meta.totalItems} sản phẩm</span>
         </div>
-        <div className="management-table-scroll bg-white rounded-md shadow-sm" key={`${page}-${pageSize}`}>
-          <table className="management-table min-w-full divide-y divide-gray-200" data-compact={compact}>
+        <TableScroll className="bg-white rounded-md shadow-sm" resetKey={`${page}-${pageSize}`} busy={loading && items.length > 0}>
+          <table className="management-table min-w-full divide-y divide-gray-200" data-compact={compact} data-size="comfortable">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
@@ -648,9 +651,9 @@ export default function ProductList() {
             </thead>
 
             <tbody className="bg-white divide-y divide-gray-100">
-              {loading ? (
+              {loading && items.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="p-6 text-center">
+                  <td colSpan={10} className="p-6 text-center text-gray-500">
                     Đang tải...
                   </td>
                 </tr>
@@ -697,7 +700,7 @@ export default function ProductList() {
                     <td className="px-4 py-3 text-sm text-gray-700">
                       <div>{p.supplier?.name || "—"}</div>
                       {p.region && (
-                        <span className="mt-1 inline-flex rounded bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-700">
+                        <span className="mt-1 inline-flex rounded bg-sky-50 px-1.5 py-0.5 text-xs font-medium text-sky-700">
                           Miền {p.region}
                         </span>
                       )}
@@ -741,7 +744,7 @@ export default function ProductList() {
               )}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
 
         {/* Pagination */}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -793,35 +796,11 @@ export default function ProductList() {
           </div>
         </div>
         </section>
-
-        {modalState.open && modalState.mode !== "create" && (
-          <div className="management-detail-panel min-w-0">
-            <ProductModal
-              embedded
-              mode={readOnly ? "view" : modalState.mode}
-              product={modalState.product}
-              onSave={handleSave}
-              onCreatePurchaseOrder={!readOnly ? (product) => navigate("/purchase-orders", { state: { prefillProduct: product } }) : undefined}
-              onCancel={closeModal}
-              onDelete={() => {
-                if (modalState.product?.id && !readOnly) {
-                  handleDelete(modalState.product.id, modalState.product.isActive !== false);
-                  closeModal();
-                }
-              }}
-              saving={saving}
-              categories={categories}
-              suppliers={suppliers}
-              units={units}
-            />
-          </div>
-        )}
-        </div>
         </>}
       </div>
 
-      {/* Universal Modal */}
-      {modalState.open && modalState.mode === "create" && (
+      {/* One dialog for view / edit / create: the list keeps its full width (no master-detail split). */}
+      {modalState.open && (
         <ProductModal
           mode={readOnly ? "view" : modalState.mode}
           product={modalState.product}

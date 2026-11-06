@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import ProductDescription from "./components/ProductDescription";
 import BirthdayInput from "./components/BirthdayInput";
 import ProductFilters from "./components/ProductFilters";
-import { emptyFilters, matchesFilters } from "./utils/productFilters";
+import { allCategoriesOff, emptyFilters, enableAllCategories, hiddenCategoryCount, matchesFilters } from "./utils/productFilters";
 import { birthdayToIso } from "./utils/birthday";
 import {
   checkoutDefinitelyRejected,
@@ -303,6 +303,54 @@ function QuantityInput({ quantity, onCommit, style }) {
     style={[styles.quantityInput, style]}
   />;
 }
+
+// Ticks once per second on its own. The tick used to live in App state, which re-rendered the whole
+// app (header, home list header, cart…) every second and made the storefront visibly jitter.
+// Rotates on its own timer so the 4.5 s slide change re-renders only the banner, not the whole app.
+const HeroBanner = memo(function HeroBanner({ onOpenOffers }) {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setIndex((prev) => (prev + 1) % BANNERS.length), 4500);
+    return () => clearInterval(timer);
+  }, []);
+  const banner = BANNERS[index];
+  return <View style={[styles.heroBanner, { backgroundColor: banner.bg }]}>
+    <View style={styles.bannerInfo}>
+      <View style={styles.bannerBadgePill}>
+        <IconFlash size={11} color={BHX_YELLOW} />
+        <Text style={styles.bannerBadgeText}>{banner.tag}</Text>
+      </View>
+      <Text style={styles.bannerTitle} numberOfLines={1}>{banner.title}</Text>
+      <Text style={styles.bannerSubtitle} numberOfLines={2}>{banner.subtitle}</Text>
+      <Pressable onPress={onOpenOffers} style={styles.bannerCtaBtn}>
+        <Text style={styles.bannerCtaText}>Xem ưu đãi  ›</Text>
+      </Pressable>
+    </View>
+    {/* Carousel Pagination Dots */}
+    <View style={styles.bannerDots}>
+      {BANNERS.map((item, i) => (
+        <Pressable key={item.id} accessibilityLabel={`Banner ${i + 1}`} onPress={() => setIndex(i)} style={[styles.bannerDot, i === index && styles.bannerDotActive]} />
+      ))}
+    </View>
+  </View>;
+});
+
+const FlashCountdown = memo(function FlashCountdown({ endTimes, keyPrefix = "" }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const end = endTimes.filter((value) => value > now).sort((left, right) => left - right)[0] || now;
+  const remaining = Math.max(0, Math.floor((end - now) / 1000));
+  const parts = [
+    { label: "ngày", value: Math.floor(remaining / 86400) },
+    { label: "giờ", value: Math.floor((remaining % 86400) / 3600) },
+    { label: "phút", value: Math.floor((remaining % 3600) / 60) },
+    { label: "giây", value: remaining % 60 },
+  ];
+  return parts.map((part) => <View key={`${keyPrefix}${part.label}`} style={styles.flashTimeGroup}><View style={styles.flashTimeBox}><Text style={styles.flashTimeText}>{String(part.value).padStart(2, "0")}</Text></View><Text style={styles.flashTimeLabel}>{part.label}</Text></View>);
+});
 
 const ProductCard = memo(function ProductCard({ product, cartQty = 0, onAdd, onQuantityChange, onQuantitySet, onOpen, cardWidthStyle }) {
   const originalPrice = product.originalPrice ?? product.price;
@@ -622,12 +670,10 @@ export default function App() {
   const flashSalePage = 1;
   const flashSaleLoading = loading;
   const [flashSaleOpen, setFlashSaleOpen] = useState(false);
-  const [countdownNow, setCountdownNow] = useState(Date.now());
   const [query, setQuery] = useState("");
   const [categoryId, setCategoryId] = useState("all");
   const homeListRef = useRef(null);
   const [tab, setTab] = useState("home");
-  const [bannerIndex, setBannerIndex] = useState(0);
 
   // Bộ lọc & Sắp xếp
   const [sortOption, setSortOption] = useState("default");
@@ -749,13 +795,6 @@ export default function App() {
     return () => { active = false; };
   }, [customer?.id, customerToken]);
 
-  // Auto scroll banner
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setBannerIndex((prev) => (prev + 1) % BANNERS.length);
-    }, 4500);
-    return () => clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     let active = true;
@@ -810,11 +849,6 @@ export default function App() {
     const subscription = AppState.addEventListener?.("change", (state) => { if (state === "active") loadStore(true); });
     return () => { clearInterval(stockRefresh); subscription?.remove?.(); };
   }, [loadStore]);
-
-  useEffect(() => {
-    const timer = setInterval(() => setCountdownNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   const productInfoRequest = useRef(null);
   const [descriptionStatus, setDescriptionStatus] = useState(null);
@@ -1336,7 +1370,11 @@ export default function App() {
   );
 
   // Lọc và Sắp xếp danh sách sản phẩm
+  const categoriesAllOff = allCategoriesOff(advancedFilters, categories);
+  const hiddenCategories = hiddenCategoryCount(advancedFilters, categories);
   const visibleProducts = useMemo(() => {
+    // Every category switched off means "show nothing", not "no category filter".
+    if (categoriesAllOff) return [];
     const keyword = normalizeSearch(query);
     const range = PRICE_FILTERS.find((filter) => filter.id === priceFilter) || PRICE_FILTERS[0];
     let result = searchIndex
@@ -1355,7 +1393,7 @@ export default function App() {
       result = [...result].sort((a, b) => (b.soldCount || 0) - (a.soldCount || 0));
     }
     return result;
-  }, [searchIndex, query, categoryId, sortOption, priceFilter, advancedFilters]);
+  }, [searchIndex, query, categoryId, sortOption, priceFilter, advancedFilters, categoriesAllOff]);
 
   const visibleVoucherHistory = useMemo(() => voucherHistory.filter((item) => {
     return item.walletStatus === voucherHistoryTab;
@@ -1799,18 +1837,8 @@ export default function App() {
     }
   };
 
-  const currentBanner = BANNERS[bannerIndex];
-  const flashSaleEnd = flashSaleProducts
-    .map((product) => product.promotionEndsAt ? new Date(product.promotionEndsAt).getTime() : 0)
-    .filter((value) => value > countdownNow)
-    .sort((left, right) => left - right)[0] || countdownNow;
-  const flashRemainingSeconds = Math.max(0, Math.floor((flashSaleEnd - countdownNow) / 1000));
-  const flashCountdown = [
-    { label: "ngày", value: Math.floor(flashRemainingSeconds / 86400) },
-    { label: "giờ", value: Math.floor((flashRemainingSeconds % 86400) / 3600) },
-    { label: "phút", value: Math.floor((flashRemainingSeconds % 3600) / 60) },
-    { label: "giây", value: flashRemainingSeconds % 60 },
-  ].map((part) => ({ ...part, value: String(part.value).padStart(2, "0") }));
+  const flashSaleEndTimes = useMemo(() => flashSaleProducts
+    .map((product) => product.promotionEndsAt ? new Date(product.promotionEndsAt).getTime() : 0), [flashSaleProducts]);
 
   // Dynamic responsive card styles
   const cardWidthStyle = useMemo(() => {
@@ -1857,34 +1885,7 @@ export default function App() {
       showsVerticalScrollIndicator={false}
       ListHeaderComponent={<>
         {/* 1. HERO BANNER BÁCH HÓA XANH */}
-        {!hasSearchFilters && <View style={[styles.heroBanner, { backgroundColor: currentBanner.bg }]}>
-          <View style={styles.bannerInfo}>
-            <View style={styles.bannerBadgePill}>
-              <IconFlash size={11} color={BHX_YELLOW} />
-              <Text style={styles.bannerBadgeText}>{currentBanner.tag}</Text>
-            </View>
-            <Text style={styles.bannerTitle} numberOfLines={1}>{currentBanner.title}</Text>
-            <Text style={styles.bannerSubtitle} numberOfLines={2}>{currentBanner.subtitle}</Text>
-
-            <Pressable
-              onPress={() => openVouchers()}
-              style={styles.bannerCtaBtn}
-            >
-              <Text style={styles.bannerCtaText}>Xem ưu đãi  ›</Text>
-            </Pressable>
-          </View>
-
-          {/* Carousel Pagination Dots */}
-          <View style={styles.bannerDots}>
-            {BANNERS.map((banner, i) => (
-              <Pressable
-                key={banner.id}
-                onPress={() => setBannerIndex(i)}
-                style={[styles.bannerDot, i === bannerIndex && styles.bannerDotActive]}
-              />
-            ))}
-          </View>
-        </View>}
+        {!hasSearchFilters && <HeroBanner onOpenOffers={() => openVouchers()} />}
 
         {!hasSearchFilters && !!flashSaleProducts.length && <View style={styles.flashHomeSection}>
           <View style={styles.flashHomeHeading}>
@@ -1892,7 +1893,7 @@ export default function App() {
               <Text style={styles.flashHomeTitle}>FLASH SALE</Text>
               <View style={styles.flashCountdownRow}>
                 <Text style={styles.flashEndingText}>Kết thúc sau</Text>
-                {flashCountdown.map((part) => <View key={part.label} style={styles.flashTimeGroup}><View style={styles.flashTimeBox}><Text style={styles.flashTimeText}>{part.value}</Text></View><Text style={styles.flashTimeLabel}>{part.label}</Text></View>)}
+                <FlashCountdown endTimes={flashSaleEndTimes} />
               </View>
             </View>
             <Pressable onPress={() => setFlashSaleOpen(true)} style={styles.flashShopAllButton}>
@@ -1921,6 +1922,9 @@ export default function App() {
             <Text style={styles.filterResultCount} numberOfLines={1}>
               {hasSearchFilters ? `${visibleProducts.length} sản phẩm phù hợp` : "Tất cả sản phẩm"}
             </Text>
+            {hiddenCategories > 0 && <Pressable accessibilityRole="button" accessibilityLabel={`Đang ẩn ${hiddenCategories} danh mục. Bật tất cả danh mục`} onPress={() => { setAdvancedFilters((current) => enableAllCategories(current)); homeListRef.current?.scrollToOffset({ offset: 0, animated: false }); }}>
+              <Text style={styles.hiddenCategoryText} numberOfLines={1}>Đang ẩn {hiddenCategories} danh mục · Bật tất cả</Text>
+            </Pressable>}
           </View>
 
           {/* Các nút sắp xếp chuẩn siêu thị */}
@@ -1962,6 +1966,13 @@ export default function App() {
             <Text style={styles.apiHint}>API: {API_URL}</Text>
             <AppButton title="Thử kết nối lại" onPress={() => loadStore()} />
           </View>
+        ) : categoriesAllOff ? (
+          <View style={styles.emptyState}>
+            <IconCart size={50} color="#cbd5e1" />
+            <Text style={styles.emptyTitle}>Bạn đã tắt tất cả danh mục</Text>
+            <Text style={styles.stateText}>Mở "Tùy chọn tìm kiếm" và nhấn vào danh mục muốn xem để bật lại, hoặc bật tất cả.</Text>
+            <AppButton title="Bật tất cả danh mục" onPress={() => { setAdvancedFilters((current) => enableAllCategories(current)); homeListRef.current?.scrollToOffset({ offset: 0, animated: false }); }} style={styles.emptyCta} />
+          </View>
         ) : (
           <View style={styles.emptyState}>
             <IconCart size={50} color="#cbd5e1" />
@@ -1988,7 +1999,7 @@ export default function App() {
       ListHeaderComponent={<View style={styles.flashPageHeader}>
         <Pressable onPress={() => setFlashSaleOpen(false)} style={styles.flashBackButton}><Text style={styles.flashBackText}>‹</Text></Pressable>
         <View style={{ flex: 1 }}><Text style={styles.flashPageTitle}>Flash Sale</Text><Text style={styles.flashPageSubtitle}>Giá sốc trong thời gian có hạn</Text></View>
-        <View style={styles.flashCountdownRow}>{flashCountdown.map((part) => <View key={`page-${part.label}`} style={styles.flashTimeGroup}><View style={styles.flashTimeBox}><Text style={styles.flashTimeText}>{part.value}</Text></View><Text style={styles.flashTimeLabel}>{part.label}</Text></View>)}</View>
+        <View style={styles.flashCountdownRow}><FlashCountdown endTimes={flashSaleEndTimes} keyPrefix="page-" /></View>
       </View>}
       ListEmptyComponent={flashSaleLoading ? <View style={styles.centerState}><ActivityIndicator color={BHX_GREEN} /><Text style={styles.stateText}>Đang tải Flash Sale...</Text></View> : <View style={styles.emptyState}><Text style={styles.emptyTitle}>Hiện chưa có sản phẩm Flash Sale</Text></View>}
       ListFooterComponent={<View style={styles.loadMoreFooter}>{flashSaleHasMore && <AppButton title={flashSaleLoading ? "Đang tải thêm..." : "Load more"} disabled={flashSaleLoading} onPress={() => loadFlashSale(flashSalePage + 1, true)} style={styles.loadMoreButton} />}</View>}
@@ -2447,7 +2458,7 @@ export default function App() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" />
-      {filtersOpen && <ProductFilters visible value={{ ...advancedFilters, ...(categoryId !== "all" ? { categories: [String(categoryId)] } : {}), ...(priceFilter !== "all" ? { min: String((PRICE_FILTERS.find((f) => f.id === priceFilter) || PRICE_FILTERS[0]).min), max: Number.isFinite((PRICE_FILTERS.find((f) => f.id === priceFilter) || PRICE_FILTERS[0]).max) ? String((PRICE_FILTERS.find((f) => f.id === priceFilter) || PRICE_FILTERS[0]).max - 1) : "" } : {}) }} categories={categories} products={products} query={query} onApply={(filters, keyword) => { setQuery(keyword); setAdvancedFilters(filters); setPriceFilter("all"); setCategoryId("all"); setTab("home"); requestAnimationFrame(() => homeListRef.current?.scrollToOffset({ offset: 0, animated: true })); }} onClose={() => setFiltersOpen(false)} />}
+      {filtersOpen && <ProductFilters visible value={{ ...advancedFilters, ...(categoryId !== "all" ? { excludedCategories: categories.filter((category) => String(category.id) !== String(categoryId)).map((category) => String(category.id)) } : {}), ...(priceFilter !== "all" ? { min: String((PRICE_FILTERS.find((f) => f.id === priceFilter) || PRICE_FILTERS[0]).min), max: Number.isFinite((PRICE_FILTERS.find((f) => f.id === priceFilter) || PRICE_FILTERS[0]).max) ? String((PRICE_FILTERS.find((f) => f.id === priceFilter) || PRICE_FILTERS[0]).max - 1) : "" } : {}) }} categories={categories} products={products} query={query} onApply={(filters, keyword) => { setQuery(keyword); setAdvancedFilters(filters); setPriceFilter("all"); setCategoryId("all"); setTab("home"); requestAnimationFrame(() => homeListRef.current?.scrollToOffset({ offset: 0, animated: false })); }} onClose={() => setFiltersOpen(false)} />}
 
       {/* 1. TOP HEADER PHONG CÁCH BÁCH HÓA XANH (TÁCH 2 TẦNG TRÊN MOBILE ĐẢM BẢO KHÔNG BỊ TRÀN) */}
       <View style={styles.header}>
@@ -3014,7 +3025,7 @@ export default function App() {
                 </View>
                 {vouchersLoading ? <View style={styles.centerState}><ActivityIndicator color={BHX_GREEN} /></View> : visibleVoucherHistory.map((item) => <View key={item.id} style={styles.voucherHistoryCard}>
                   <View style={styles.voucherHistoryIcon}><Text style={styles.voucherHistoryIconText}>%</Text></View>
-                  <View style={{ flex: 1 }}><Text style={styles.voucherName}>{item.name}</Text>{item.walletStatus === "used" ? <><Text style={styles.voucherMinimum}>Đơn hàng {item.orderNumber}</Text><Text style={styles.voucherExpiry}>Đã dùng ngày {new Date(item.usedAt).toLocaleDateString("vi-VN")}</Text></> : <Text style={styles.voucherExpiry}>Hết hạn ngày {new Date(item.endDate).toLocaleDateString("vi-VN")}</Text>}<Text style={styles.voucherUse}>Mã: {item.voucherCode}</Text></View>
+                  <View style={{ flex: 1, minWidth: 0 }}><Text style={styles.voucherName}>{item.name}</Text>{item.walletStatus === "used" ? <><Text style={styles.voucherMinimum}>Đơn hàng {item.orderNumber}</Text><Text style={styles.voucherExpiry}>Đã dùng ngày {new Date(item.usedAt).toLocaleDateString("vi-VN")}</Text></> : <Text style={styles.voucherExpiry}>Hết hạn ngày {new Date(item.endDate).toLocaleDateString("vi-VN")}</Text>}<Text style={styles.voucherUse}>Mã: {item.voucherCode}</Text></View>
                 </View>)}
                 {!vouchersLoading && !visibleVoucherHistory.length && <View style={styles.centerState}><Text style={styles.stateText}>Chưa có voucher trong mục này.</Text></View>}
               </> : <>
@@ -3223,18 +3234,18 @@ const styles = StyleSheet.create({
   flashEndingText: { color: TEXT_MUTED, fontSize: 10, marginRight: 3 },
   flashTimeGroup: { alignItems: "center", gap: 2 },
   flashTimeBox: { minWidth: 27, height: 27, borderRadius: 4, backgroundColor: "#c83232", alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
-  flashTimeText: { color: "#fff", fontSize: 11, fontWeight: "900" },
+  flashTimeText: { color: "#fff", fontSize: 12, fontWeight: "900", fontVariant: ["tabular-nums"] },
   flashTimeLabel: { color: TEXT_MUTED, fontSize: 8, fontWeight: "600" },
   flashShopAllButton: { borderWidth: 1, borderColor: BHX_ORANGE, borderRadius: 5, paddingHorizontal: 10, paddingVertical: 9 },
   flashShopAllText: { color: BHX_ORANGE, fontSize: 10, fontWeight: "800" },
   flashProductRow: { paddingHorizontal: 12, gap: 10 },
   flashProductCard: { width: 145, backgroundColor: "#fff" },
   flashProductImageBox: { height: 130, backgroundColor: "#f7f8f7", borderRadius: 7, overflow: "hidden", alignItems: "center", justifyContent: "center" },
-  flashProductName: { color: TEXT_DARK, fontSize: 11, lineHeight: 16, minHeight: 32, marginTop: 7 },
-  flashProductPrice: { color: BHX_ORANGE, fontSize: 14, fontWeight: "900", marginTop: 4 },
+  flashProductName: { color: TEXT_DARK, fontSize: 14, lineHeight: 19, minHeight: 38, marginTop: 7 },
+  flashProductPrice: { color: BHX_ORANGE, fontSize: 16, fontWeight: "900", marginTop: 4 },
   flashOldPriceRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 3 },
-  flashOriginalPrice: { color: "#9aa1a8", fontSize: 10, textDecorationLine: "line-through" },
-  flashDiscountBadge: { color: "#fff", backgroundColor: "#d33b35", borderRadius: 3, overflow: "hidden", paddingHorizontal: 4, fontSize: 9, fontWeight: "800" },
+  flashOriginalPrice: { color: "#6b7280", fontSize: 12, textDecorationLine: "line-through" },
+  flashDiscountBadge: { color: "#fff", backgroundColor: "#d33b35", borderRadius: 3, overflow: "hidden", paddingHorizontal: 4, fontSize: 11, fontWeight: "800" },
   flashPageHeader: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#fff", borderRadius: 12, padding: 12, marginBottom: 14 },
   flashBackButton: { width: 38, height: 42, alignItems: "center", justifyContent: "center" },
   flashBackText: { color: BHX_ORANGE, fontSize: 36, lineHeight: 39 },
@@ -3248,7 +3259,8 @@ const styles = StyleSheet.create({
   trustDivider: { width: 1, height: 26, backgroundColor: BORDER_COLOR },
   filterToolbar: { gap: 10, marginTop: 18, marginBottom: 12 },
   filterLeft: { flexDirection: "row", alignItems: "center" },
-  filterResultCount: { color: TEXT_MUTED, fontSize: 12 },
+  filterResultCount: { color: TEXT_MUTED, fontSize: 13 },
+  hiddenCategoryText: { color: BHX_GREEN, fontSize: 13, fontWeight: "700", marginTop: 2 },
   filterNumber: { color: BHX_GREEN, fontWeight: "800" },
   sortPillsRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   sortPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 16, backgroundColor: "#fff", borderWidth: 1, borderColor: BORDER_COLOR },
@@ -3277,34 +3289,34 @@ const styles = StyleSheet.create({
   productCard: { width: "48.5%", backgroundColor: "#fff", borderColor: "#edf0ec", borderWidth: 1, borderRadius: 13, padding: 9 },
   productCardActive: { borderColor: BHX_GREEN },
   badgeRow: { position: "absolute", top: 0, left: 0, right: 0, flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  discountBadgeText: { color: "#fff", fontSize: 10, fontWeight: "800" },
+  discountBadgeText: { color: "#fff", fontSize: 12, fontWeight: "800" },
   hotBadge: { backgroundColor: BHX_YELLOW, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 3 },
-  hotBadgeText: { color: BHX_RED, fontSize: 9, fontWeight: "900" },
+  hotBadgeText: { color: BHX_RED, fontSize: 11, fontWeight: "900" },
   productBody: { flex: 1 },
   fastDeliveryTag: { flexDirection: "row", alignItems: "center", gap: 3, marginTop: 5 },
-  fastDeliveryText: { color: BHX_ORANGE, fontSize: 9 },
+  fastDeliveryText: { color: BHX_ORANGE, fontSize: 12 },
   priceContainer: { marginTop: 8 },
   stepperContainer: { marginTop: "auto", paddingTop: 10 },
   addCartBtn: { minHeight: 36, backgroundColor: BHX_GREEN, borderRadius: 7, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5 },
-  addCartBtnText: { color: "#fff", fontSize: 10, fontWeight: "800" },
+  addCartBtnText: { color: "#fff", fontSize: 13, fontWeight: "800" },
   stepperBox: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: BHX_GREEN, borderRadius: 7, overflow: "hidden" },
   stepperBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center", backgroundColor: "#eef8f1" },
   stepperBtnPlus: { backgroundColor: BHX_GREEN },
-  stepperQtyText: { color: TEXT_DARK, fontSize: 13, fontWeight: "800", textAlign: "center" },
+  stepperQtyText: { color: TEXT_DARK, fontSize: 15, fontWeight: "800", textAlign: "center" },
   productImageBox: { height: 123, borderRadius: 10, backgroundColor: "#f7f8f5", alignItems: "center", justifyContent: "center", overflow: "hidden", marginBottom: 9 },
   productImage: { width: "90%", height: "90%" },
   productEmoji: { fontSize: 40 },
-  productCategory: { color: "#839287", fontSize: 8, fontWeight: "800", letterSpacing: 0.8 },
-  productName: { color: "#34463a", fontWeight: "800", fontSize: 12, lineHeight: 17, minHeight: 34, marginTop: 4 },
-  stockLabel: { color: "#328259", fontSize: 9, marginTop: 5 },
+  productCategory: { color: "#5f7266", fontSize: 11, fontWeight: "800", letterSpacing: 0.6 },
+  productName: { color: "#26372c", fontWeight: "800", fontSize: 15, lineHeight: 21, minHeight: 42, marginTop: 4 },
+  stockLabel: { color: "#2b7550", fontSize: 12, marginTop: 5 },
   productFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8 },
-  productPrice: { color: "#1e573b", fontSize: 12, fontWeight: "900", flexShrink: 1 },
-  originalPrice: { color: "#8b95a1", fontSize: 10, marginTop: 2, textDecorationLine: "line-through" },
-  productSaving: { color: "#df4c42", fontSize: 9, fontWeight: "800", marginTop: 2 },
+  productPrice: { color: "#1e573b", fontSize: 16, fontWeight: "900", flexShrink: 1 },
+  originalPrice: { color: "#6b7280", fontSize: 12, marginTop: 2, textDecorationLine: "line-through" },
+  productSaving: { color: "#c53b32", fontSize: 12, fontWeight: "800", marginTop: 2 },
   addButton: { width: 29, height: 29, borderRadius: 9, backgroundColor: "#eaf3ea", alignItems: "center", justifyContent: "center", marginLeft: 4 },
   addButtonText: { color: BHX_GREEN, fontSize: 22, lineHeight: 25, fontWeight: "600" },
   centerState: { minHeight: 170, alignItems: "center", justifyContent: "center" },
-  stateText: { color: TEXT_MUTED, fontSize: 12, lineHeight: 18, textAlign: "center", marginTop: 7 },
+  stateText: { color: TEXT_MUTED, fontSize: 14, lineHeight: 20, textAlign: "center", marginTop: 7 },
   emptyState: { alignItems: "center", justifyContent: "center", paddingVertical: 55, paddingHorizontal: 18 },
   emptyEmoji: { fontSize: 51, marginBottom: 9 },
   emptyTitle: { color: TEXT_DARK, fontSize: 16, fontWeight: "900", textAlign: "center" },
@@ -3462,27 +3474,27 @@ const styles = StyleSheet.create({
   voucherDiscoverConditions: { color: "#447bc3", fontSize: 10, textAlign: "center", marginTop: 5, fontWeight: "700" },
   voucherFilterChip: { paddingHorizontal: 11, paddingVertical: 7, borderRadius: 16, backgroundColor: "#f2f3f5" },
   voucherFilterChipActive: { backgroundColor: "#ee4d2d" },
-  voucherFilterText: { color: TEXT_MUTED, fontSize: 11 },
+  voucherFilterText: { color: TEXT_MUTED, fontSize: 13 },
   voucherFilterTextActive: { color: "#fff", fontWeight: "700" },
   voucherHistoryTabs: { flexDirection: "row", backgroundColor: "#fff", marginBottom: 10 },
   voucherHistoryTab: { flex: 1, alignItems: "center", paddingVertical: 14, borderBottomWidth: 2, borderBottomColor: "transparent" },
   voucherHistoryTabActive: { borderBottomColor: "#ee4d2d" },
-  voucherHistoryTabText: { color: TEXT_MUTED, fontSize: 13 },
+  voucherHistoryTabText: { color: TEXT_MUTED, fontSize: 15 },
   voucherHistoryTabTextActive: { color: "#ee4d2d", fontWeight: "800" },
   voucherHistoryCard: { flexDirection: "row", gap: 12, marginHorizontal: 12, marginBottom: 10, padding: 14, backgroundColor: "#fff", borderRadius: 8 },
   voucherHistoryIcon: { width: 70, minHeight: 86, backgroundColor: "#f6a89b", alignItems: "center", justifyContent: "center" },
-  voucherHistoryIconText: { color: "#fff", fontSize: 29, fontWeight: "900" },
+  voucherHistoryIconText: { color: "#fff", fontSize: 30, fontWeight: "900" },
   voucherSaveLater: { width: 66, alignItems: "center", justifyContent: "center", paddingHorizontal: 5 },
-  voucherSaveLaterText: { color: "#ee4d2d", borderWidth: 1, borderColor: "#ee4d2d", borderRadius: 4, paddingHorizontal: 7, paddingVertical: 7, fontSize: 11, textAlign: "center" },
+  voucherSaveLaterText: { color: "#ee4d2d", borderWidth: 1, borderColor: "#ee4d2d", borderRadius: 4, paddingHorizontal: 7, paddingVertical: 7, fontSize: 13, textAlign: "center" },
   voucherSubheading: { color: "#222", fontSize: 17, fontWeight: "700", marginBottom: 18 },
   voucherList: { flex: 1 },
   voucherListContent: { paddingBottom: 12 },
   voucherSection: { backgroundColor: "#fff", paddingHorizontal: 12, paddingTop: 20, paddingBottom: 6, marginBottom: 10 },
-  voucherEmptyText: { color: TEXT_MUTED, fontSize: 13, paddingBottom: 16 },
+  voucherEmptyText: { color: TEXT_MUTED, fontSize: 14, paddingBottom: 16 },
   voucherCard: { backgroundColor: "#fff", borderRadius: 3, borderColor: "#ececec", borderWidth: 1, marginBottom: 14, overflow: "hidden", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1 },
   voucherCardUnavailable: { backgroundColor: "#dfe3e8", borderColor: "#c3cbd5" },
   voucherUseBtnUnavailable: { backgroundColor: "#87929e" },
-  voucherUnavailableText: { color: "#888", fontSize: 12, lineHeight: 18, paddingHorizontal: 12, paddingVertical: 12, borderTopWidth: 1, borderTopColor: "#eee", borderStyle: "dashed" },
+  voucherUnavailableText: { color: "#6b7280", fontSize: 13, lineHeight: 19, paddingHorizontal: 12, paddingVertical: 12, borderTopWidth: 1, borderTopColor: "#eee", borderStyle: "dashed" },
   voucherCardTop: { flexDirection: "row", alignItems: "stretch", minHeight: 132 },
   voucherBadge: { width: 98, paddingHorizontal: 6, paddingVertical: 18, backgroundColor: BHX_GREEN, alignItems: "center", justifyContent: "center", gap: 6 },
   voucherBadgeUnavailable: { backgroundColor: "#b9dcd5" },
@@ -3492,9 +3504,9 @@ const styles = StyleSheet.create({
   voucherInfo: { flex: 1, minWidth: 0, paddingLeft: 12, paddingVertical: 14, justifyContent: "center" },
   voucherName: { color: "#222", fontSize: 17, lineHeight: 23, fontWeight: "700" },
   voucherMuted: { color: "#999" },
-  voucherMinimum: { color: "#555", fontSize: 12, marginTop: 4 },
+  voucherMinimum: { color: "#444", fontSize: 14, lineHeight: 20, marginTop: 4 },
   voucherPromotionName: { color: "#888", fontSize: 11, marginTop: 4 },
-  voucherExpiry: { color: "#999", fontSize: 11, marginTop: 5 },
+  voucherExpiry: { color: "#6b7280", fontSize: 13, lineHeight: 18, marginTop: 5 },
   voucherUsage: { color: "#ee4d2d", fontSize: 12, fontWeight: "600", paddingVertical: 5 },
   voucherSelectTarget: { width: 46, alignItems: "center", justifyContent: "center" },
   voucherRadio: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: "#aaa", alignItems: "center", justifyContent: "center" },
@@ -3506,7 +3518,7 @@ const styles = StyleSheet.create({
   voucherFooterSaving: { color: "#333", fontSize: 14, fontWeight: "600" },
   voucherSavingAmount: { color: "#ee4d2d", fontWeight: "800" },
   voucherConfirm: { backgroundColor: BHX_GREEN, borderRadius: 6, minHeight: 48, marginTop: 6 },
-  voucherUse: { color: "#25976c", fontSize: 12, fontWeight: "900" },
+  voucherUse: { color: "#1f7f5b", fontSize: 14, fontWeight: "900" },
   voucherDescription: { color: "#d58b3d", fontSize: 11, lineHeight: 16, marginTop: 8 },
   voucherMessage: { color: "#b0443c", fontSize: 12, marginVertical: 8, marginHorizontal: 14 },
   accountPageHeading: { minHeight: 54, backgroundColor: "#fff", flexDirection: "row", alignItems: "center", justifyContent: "center", borderRadius: 12, marginBottom: 10, position: "relative" },

@@ -33,6 +33,11 @@ namespace backend.Models
         [Column("address")]
         public string? Address { get; set; }
 
+        // Miền: "Bắc" | "Trung" | "Nam"; NULL = chưa phân loại (existing suppliers are not guessed).
+        [Column("region")]
+        [StringLength(10)]
+        public string? Region { get; set; }
+
         [Column("is_active")]
         public bool IsActive { get; set; } = true;
 

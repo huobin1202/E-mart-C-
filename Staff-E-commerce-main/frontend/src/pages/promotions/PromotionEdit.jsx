@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { updatePromotion } from "../../api/promotionApi";
 import ProductPickerModal from "../../components/promotions/ProductPickerModal";
 import VoucherDistributionFields from "../../components/promotions/VoucherDistributionFields";
+import ModalShell from "../../components/ui/ModalShell";
+import { Field, FormError, FormSection } from "../../components/promotions/PromotionFormParts";
 
 export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
   const [formData, setFormData] = useState({
@@ -118,184 +120,107 @@ export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
     }
   };
 
+  const inputClass = "w-full rounded-lg border border-gray-300 px-3 py-2 disabled:bg-gray-100";
+  const formId = "promotion-edit-form";
+
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="bg-primary-600 p-6 rounded-t-xl">
-          <h2 className="text-2xl font-bold text-white">Chỉnh sửa khuyến mãi</h2>
-          <p className="text-white mt-1 font-mono">{formData.code}</p>
-        </div>
+    <>
+      <ModalShell
+        title="Chỉnh sửa khuyến mãi"
+        subtitle={formData.code ? <span className="font-mono">{formData.code}</span> : undefined}
+        onClose={loading ? undefined : onCancel}
+        closeOnBackdrop={false}
+        busy={loading}
+        size="2xl"
+        footer={<>
+          <button type="button" onClick={onCancel} disabled={loading} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-700 hover:bg-gray-50 disabled:opacity-50">Hủy</button>
+          <button type="submit" form={formId} disabled={loading} className="rounded-lg bg-primary-600 px-5 py-2 font-semibold text-white hover:bg-primary-700 disabled:opacity-50">{loading ? "Đang cập nhật..." : "Cập nhật"}</button>
+        </>}
+      >
+        <form id={formId} onSubmit={handleSubmit}>
+          <FormError message={error} />
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            <div className="space-y-3">
+              <FormSection title="Thông tin chung">
+                <Field label="Tên chương trình" htmlFor="promo-edit-name">
+                  <input id="promo-edit-name" name="name" value={formData.name} onChange={handleChange} className={inputClass} required />
+                </Field>
+                <Field label={<>Loại chương trình <span className="text-red-500">*</span></>} htmlFor="promo-edit-type">
+                  <select id="promo-edit-type" name="type" value={formData.type} onChange={handleChange} className={inputClass}>
+                    <option value="event">Sự kiện</option>
+                    <option value="voucher">Voucher</option>
+                    <option value="product">Theo sản phẩm</option>
+                  </select>
+                </Field>
+                <Field label="Mô tả" htmlFor="promo-edit-description">
+                  <textarea id="promo-edit-description" name="description" value={formData.description} onChange={handleChange} rows="2"
+                    placeholder="Mô tả chi tiết về chương trình khuyến mãi..." className={inputClass} />
+                </Field>
+              </FormSection>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <div className="flex">
-                <svg className="h-5 w-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <p className="ml-3 text-sm text-red-800">{error}</p>
-              </div>
+              <FormSection title="Giá trị ưu đãi">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Field label="Kiểu giảm" htmlFor="promo-edit-discount-type">
+                    <select id="promo-edit-discount-type" name="discountType" value={formData.discountType} onChange={handleChange} className={inputClass}>
+                      <option value="percent">Phần trăm</option>
+                      <option value="fixed">Số tiền cố định</option>
+                    </select>
+                  </Field>
+                  <Field label={<>Giá trị {formData.discountType === "percent" ? "(%)" : "(VNĐ)"} <span className="text-red-500">*</span></>} htmlFor="promo-edit-value">
+                    <input id="promo-edit-value" type="number" name="value" value={formData.value} onChange={handleChange} min="0"
+                      step={formData.discountType === "percent" ? "1" : "1000"} max={formData.discountType === "percent" ? "100" : undefined}
+                      className={inputClass} required />
+                  </Field>
+                  <Field label="Giảm tối đa (VNĐ, tùy chọn)" htmlFor="promo-edit-max-discount" className="sm:col-span-2">
+                    <input id="promo-edit-max-discount" type="number" name="maxDiscount" value={formData.maxDiscount} onChange={handleChange} min="0" step="1000"
+                      disabled={formData.discountType === "fixed"} className={inputClass} />
+                  </Field>
+                </div>
+              </FormSection>
             </div>
-          )}
 
-          <div><label className="block text-sm font-medium text-gray-700 mb-2">Tên chương trình</label><input name="name" value={formData.name} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg" required /></div>
+            <div className="space-y-3">
+              <FormSection title="Điều kiện áp dụng">
+                {formData.type === "event" && <Field label={<>Đơn hàng tối thiểu (VNĐ) <span className="text-red-500">*</span></>} htmlFor="promo-edit-min-order">
+                  <input id="promo-edit-min-order" type="number" name="minOrderAmount" value={formData.minOrderAmount} onChange={handleChange} min="0" step="1000" className={inputClass} required />
+                </Field>}
+                {formData.type === "voucher" && <Field label="Mã voucher" htmlFor="promo-edit-voucher-code">
+                  <input id="promo-edit-voucher-code" name="voucherCode" value={formData.voucherCode} onChange={handleChange} className={inputClass} required />
+                </Field>}
+                {formData.type === "product" && <Field label={<>Sản phẩm áp dụng <span className="text-red-500">*</span></>}>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button type="button" onClick={() => setShowProductPicker(true)} className="rounded-lg border border-primary-600 px-4 py-2 font-medium text-primary-700 hover:bg-primary-50">Chọn sản phẩm</button>
+                    <span className="text-sm text-gray-600">Đã chọn {formData.productIdsText ? formData.productIdsText.split(",").filter(Boolean).length : 0} sản phẩm</span>
+                  </div>
+                </Field>}
+              </FormSection>
 
-          {/* Loại và giá trị */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Loại chương trình <span className="text-red-500">*</span>
-              </label>
-              <select
-                name="type"
-                value={formData.type}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              >
-                <option value="event">Sự kiện</option>
-                <option value="voucher">Voucher</option>
-                <option value="product">Theo sản phẩm</option>
-              </select>
+              <FormSection title="Thời hạn">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Field label={formData.type === "voucher" ? "Ngày bắt đầu nhận / sử dụng" : "Ngày bắt đầu"} htmlFor="promo-edit-start">
+                    <input id="promo-edit-start" type="date" name="startDate" value={formData.startDate} onChange={handleChange} required className={inputClass} />
+                  </Field>
+                  <Field label={formData.type === "voucher" ? "Ngày hết hạn sử dụng" : "Ngày kết thúc"} htmlFor="promo-edit-end">
+                    <input id="promo-edit-end" type="date" name="endDate" value={formData.endDate} onChange={handleChange} required min={formData.startDate} className={inputClass} />
+                  </Field>
+                </div>
+              </FormSection>
+
+              {formData.type === "voucher" && <VoucherDistributionFields formData={formData} onChange={handleChange} editing claimedCount={promotion.claimedCount || 0} />}
+              <FormSection title="Số lượng và trạng thái">
+                {formData.type !== "voucher" && <Field label={<>Giới hạn lượt sử dụng <span className="text-sm font-normal text-gray-500">(để trống = không giới hạn)</span></>} htmlFor="promo-edit-usage-limit"
+                  hint={`Đã sử dụng: ${formData.usedCount} lượt`}>
+                  <input id="promo-edit-usage-limit" type="number" name="usageLimit" value={formData.usageLimit} onChange={handleChange} min={formData.usedCount} className={inputClass} />
+                </Field>}
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input type="checkbox" name="active" checked={formData.active} onChange={handleChange} className="h-4 w-4 rounded border-gray-300" />
+                  Kích hoạt
+                </label>
+              </FormSection>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Giá trị {formData.discountType === "percent" ? "(%)" : "(VNĐ)"} <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                name="value"
-                value={formData.value}
-                onChange={handleChange}
-                min="0"
-                step={formData.discountType === "percent" ? "1" : "1000"}
-                max={formData.discountType === "percent" ? "100" : undefined}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                required
-              />
-            </div>
-          </div>
-
-          <div><label className="block text-sm font-medium text-gray-700 mb-2">Kiểu giảm</label><select name="discountType" value={formData.discountType} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg"><option value="percent">Phần trăm</option><option value="fixed">Số tiền cố định</option></select></div>
-          {/* Điều kiện event */}
-          {formData.type === "event" && <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Đơn hàng tối thiểu (VNĐ) <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                name="minOrderAmount"
-                value={formData.minOrderAmount}
-                onChange={handleChange}
-                min="0"
-                step="1000"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                required
-              />
-            </div>
-          </div>}
-          {formData.type === "voucher" && <div><label className="block text-sm font-medium text-gray-700 mb-2">Mã voucher</label><input name="voucherCode" value={formData.voucherCode} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg" required /></div>}
-          {formData.type === "product" && <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">Sản phẩm áp dụng <span className="text-red-500">*</span></label>
-            <div className="flex flex-wrap items-center gap-3">
-              <button type="button" onClick={() => setShowProductPicker(true)} className="rounded-lg border border-primary-600 px-4 py-2 font-medium text-primary-700 hover:bg-primary-50">Chọn sản phẩm</button>
-              <span className="text-sm text-gray-600">Đã chọn {formData.productIdsText ? formData.productIdsText.split(",").filter(Boolean).length : 0} sản phẩm</span>
-            </div>
-          </div>}
-          <div><label className="block text-sm font-medium text-gray-700 mb-2">Giảm tối đa (VNĐ, tùy chọn)</label><input type="number" name="maxDiscount" value={formData.maxDiscount} onChange={handleChange} min="0" step="1000" disabled={formData.discountType === "fixed"} className="w-full px-4 py-2 border border-gray-300 rounded-lg disabled:bg-gray-100" /></div>
-
-          {/* Thời gian */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">{formData.type === "voucher" ? "Ngày bắt đầu nhận / sử dụng" : "Ngày bắt đầu"}</label>
-              <input
-                type="date"
-                name="startDate"
-                value={formData.startDate}
-                onChange={handleChange}
-                required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">{formData.type === "voucher" ? "Ngày hết hạn sử dụng" : "Ngày kết thúc"}</label>
-              <input
-                type="date"
-                name="endDate"
-                value={formData.endDate}
-                onChange={handleChange}
-                required
-                min={formData.startDate}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              />
-            </div>
-          </div>
-
-          {/* Giới hạn sử dụng */}
-          {formData.type === "voucher" ? <VoucherDistributionFields formData={formData} onChange={handleChange} editing claimedCount={promotion.claimedCount || 0} /> : <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Giới hạn lượt sử dụng <span className="text-gray-500 text-xs">(để trống = không giới hạn)</span>
-            </label>
-            <input
-              type="number"
-              name="usageLimit"
-              value={formData.usageLimit}
-              onChange={handleChange}
-              min={formData.usedCount}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Đã sử dụng: {formData.usedCount} lượt
-            </p>
-          </div>}
-
-          {/* Mô tả */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Mô tả</label>
-            <textarea
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              rows="3"
-              placeholder="Mô tả chi tiết về chương trình khuyến mãi..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-            />
-          </div>
-
-          {/* Trạng thái */}
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              name="active"
-              checked={formData.active}
-              onChange={handleChange}
-              className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-            />
-            <label className="ml-2 block text-sm text-gray-700">Kích hoạt</label>
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-3 pt-4 border-t">
-            <button
-              type="button"
-              onClick={onCancel}
-              disabled={loading}
-              className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-            >
-              Hủy
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 font-semibold"
-            >
-              {loading ? "Đang cập nhật..." : "Cập nhật"}
-            </button>
           </div>
         </form>
-      </div>
+      </ModalShell>
       {showProductPicker && <ProductPickerModal
         selectedIds={formData.productIdsText.split(",").filter(Boolean).map(Number)}
         onChange={(ids) => setFormData((previous) => ({ ...previous, productIdsText: ids.join(",") }))}
@@ -304,6 +229,6 @@ export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
         excludePromotionId={formData.id}
         onClose={() => setShowProductPicker(false)}
       />}
-    </div>
+    </>
   );
 }

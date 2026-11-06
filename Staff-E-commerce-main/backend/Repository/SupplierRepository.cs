@@ -36,6 +36,7 @@ namespace backend.Repository
                     Phone = s.Phone,
                     Email = s.Email,
                     Address = s.Address,
+                    Region = s.Region,
                     IsActive = s.IsActive,
                     CreatedAt = s.CreatedAt,
                     UpdatedAt = s.UpdatedAt,

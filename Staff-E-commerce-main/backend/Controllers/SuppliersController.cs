@@ -22,13 +22,21 @@ namespace backend.Controllers
         public async Task<ActionResult<PaginationResult<SupplierDTO>>> GetPaginated(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 12,
-            [FromQuery] string? search = null)
+            [FromQuery] string? search = null,
+            [FromQuery] string? region = null)
         {
             if (page < 1) page = 1;
             if (pageSize < 1 || pageSize > 200) pageSize = 12;
 
-            var result = await _service.GetPaginatedAsync(page, pageSize, search);
-            return Ok(result);
+            try
+            {
+                var result = await _service.GetPaginatedAsync(page, pageSize, search, region);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         // GET api/suppliers
@@ -64,6 +72,7 @@ namespace backend.Controllers
                     Phone = dto.Phone,
                     Email = dto.Email,
                     Address = dto.Address,
+                    Region = dto.Region,
                     IsActive = dto.IsActive
                 };
 
@@ -95,6 +104,7 @@ namespace backend.Controllers
                     Phone = dto.Phone,
                     Email = dto.Email,
                     Address = dto.Address,
+                    Region = dto.Region,
                     IsActive = dto.IsActive
                 };
 

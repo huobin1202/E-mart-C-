@@ -97,7 +97,7 @@ public sealed class StorefrontService(
             Description = product.Description,
             CategoryId = product.CategoryId,
             CategoryName = product.Category?.Name,
-            Region = ProductService.GetSupplierRegion(product.Supplier?.Address),
+            Region = product.Supplier?.Region ?? ProductService.GetSupplierRegion(product.Supplier?.Address),
             Price = SalePricing.Price(product.Price),
             OriginalPrice = SalePricing.Price(product.Price),
             UnitName = product.Unit?.Name,

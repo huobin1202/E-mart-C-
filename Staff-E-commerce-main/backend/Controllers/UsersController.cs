@@ -58,8 +58,8 @@ namespace backend.Controllers
 
             NormalizeUserDto(request);
             ModelState.Clear();
-            if (request.Role == "staff" && !request.EmployeeId.HasValue)
-                return BadRequest("EmployeeId is required for a staff account.");
+            if (request.Role != "customer" && !request.EmployeeId.HasValue)
+                return BadRequest("Tài khoản nội bộ (admin/staff) phải gắn với một hồ sơ nhân viên.");
             if (request.Role == "customer" && !request.CustomerId.HasValue)
                 return BadRequest("CustomerId is required for a customer account.");
             if (request.Role == "admin" && request.CustomerId.HasValue)
@@ -104,8 +104,8 @@ namespace backend.Controllers
 
             NormalizeUserDto(request);
             ModelState.Clear();
-            if (request.Role == "staff" && !request.EmployeeId.HasValue)
-                return BadRequest("EmployeeId is required for a staff account.");
+            if (request.Role != "customer" && !request.EmployeeId.HasValue)
+                return BadRequest("Tài khoản nội bộ (admin/staff) phải gắn với một hồ sơ nhân viên.");
             if (request.Role == "customer" && !request.CustomerId.HasValue)
                 return BadRequest("CustomerId is required for a customer account.");
             if (request.Role == "admin" && request.CustomerId.HasValue)

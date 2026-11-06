@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import CustomSelect from "../ui/CustomSelect";
+import ModalShell from "../ui/ModalShell";
 import { request, API_ORIGIN } from "../../api/apiClient";
 
 const DEFAULT_IMAGE = `${API_ORIGIN}/assets/images/products/default.jpg`;
@@ -23,7 +24,6 @@ const ProductModal = ({
   categories = [],
   suppliers = [],
   units = [],
-  embedded = false,
 }) => {
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
@@ -329,28 +329,51 @@ const ProductModal = ({
   const isView = mode === "view";
 
   return (
-    <div className={embedded ? "w-full" : "fixed inset-0 z-40 flex items-center justify-center bg-black/50"}>
-      <div className={embedded ? "w-full rounded-xl border bg-white p-4 shadow-sm" : "bg-white rounded-md w-full max-w-4xl p-4 shadow-lg"}>
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="text-lg font-semibold">{modalTitle}</h3>
-          {onDelete && mode !== "create" && (
-            <button
-              className={`text-sm ${product?.isActive === false ? "text-emerald-700 hover:text-emerald-900" : "text-red-600 hover:text-red-800"}`}
-              onClick={onDelete}
-            >
-              {product?.isActive === false ? "Mở bán lại" : "Ngừng bán"}
-            </button>
-          )}
-        </div>
-
-        <div className={embedded ? "space-y-4" : "flex gap-4"}>
+    <ModalShell
+      title={modalTitle}
+      subtitle={mode !== "create" && formData.productName ? formData.productName : undefined}
+      onClose={onCancel}
+      closeOnBackdrop={isView}
+      busy={saving || uploading}
+      size="2xl"
+      headerExtra={onDelete && mode !== "create" ? (
+        <button
+          type="button"
+          className={`text-sm font-medium ${product?.isActive === false ? "text-emerald-700 hover:text-emerald-900" : "text-red-600 hover:text-red-800"}`}
+          onClick={onDelete}
+        >
+          {product?.isActive === false ? "Mở bán lại" : "Ngừng bán"}
+        </button>
+      ) : null}
+      footer={<>
+        {mode !== "create" && onCreatePurchaseOrder && (
+          <button type="button" className="mr-auto inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2" onClick={() => onCreatePurchaseOrder(product)}>
+            Nhập hàng từ nhà cung cấp
+          </button>
+        )}
+        <button type="button" className="rounded-lg border bg-white px-4 py-2" onClick={onCancel}>
+          {isView ? "Đóng" : "Hủy"}
+        </button>
+        {!isView && (
+          <button
+            type="button"
+            className="rounded-lg bg-primary-600 px-4 py-2 font-semibold text-white hover:bg-primary-700 disabled:opacity-60"
+            onClick={handleSave}
+            disabled={saving || uploading}
+          >
+            {uploading ? "Đang tải ảnh..." : saving ? "Đang lưu..." : mode === "create" ? "Thêm mới" : "Lưu"}
+          </button>
+        )}
+      </>}
+    >
+        <div className="flex flex-col gap-4 md:flex-row">
           {/* --- CỘT TRÁI: ẢNH SẢN PHẨM --- */}
-          <div className={embedded ? "w-full" : "w-1/3"}>
-            <label className="text-xs text-gray-600 mb-2 block">
+          <div className="w-full md:w-1/3 md:max-w-xs">
+            <label className="mb-1 block text-sm font-medium text-gray-700">
               Hình ảnh sản phẩm
             </label>
             {isView ? (
-              <div children>
+              <div>
                 <div className="border rounded bg-gray-50 aspect-square flex items-center justify-center">
                   <img
                     // src={getImageSource()}
@@ -360,7 +383,7 @@ const ProductModal = ({
                     onError={showFallbackImage}
                   />
                 </div>
-                <label className="text-xs text-gray-600 mb-2 block">
+                <label className="mb-1 block text-sm font-medium text-gray-700">
                   Ngày tạo: {formData.createdAt}
                 </label>
               </div>
@@ -426,7 +449,7 @@ const ProductModal = ({
                 <div className="relative">
                   <input
                     type="text"
-                    className="w-full border px-2 py-1 rounded text-sm pr-20"
+                    className="w-full border px-3 py-2 rounded text-sm pr-20"
                     placeholder="Hoặc nhập URL ảnh..."
                     value={
                       formData.imageFile
@@ -440,7 +463,7 @@ const ProductModal = ({
                     }
                     disabled={!!formData.imageFile}
                   />
-                  <div className="absolute right-1 top-1 text-xs text-gray-400">
+                  <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">
                     URL
                   </div>
                 </div>
@@ -459,31 +482,31 @@ const ProductModal = ({
                         imageUrl: product?.imageUrl || "", // Reset về ảnh cũ nếu có
                       }));
                     }}
-                    className="w-full text-xs text-red-600 hover:text-red-800"
+                    className="w-full text-sm text-red-600 hover:text-red-800"
                   >
                     Xóa file đã chọn
                   </button>
                 )}
 
-                <p className="text-xs text-gray-500">
+                <p className="text-sm text-gray-500">
                   Chọn ảnh từ máy hoặc nhập URL hình ảnh
                 </p>
               </div>
             )}
           </div>
-          <div className={embedded ? "w-full" : "w-2/3"}>
-            <div className="grid grid-cols-2 gap-3">
+          <div className="product-form w-full min-w-0 md:flex-1">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {/* --- TÊN SẢN PHẨM --- */}
               <div>
-                <label className="text-xs text-gray-600">Tên sản phẩm *</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Tên sản phẩm *</label>
                 {isView ? (
-                  <div className="p-2 border rounded bg-gray-50">
+                  <div className="min-h-10 px-3 py-2 border rounded bg-gray-50 break-words">
                     {formData.productName || "—"}
                   </div>
                 ) : (
                   <>
                     <input
-                      className={`w-full border px-2 py-1 rounded ${
+                      className={`w-full border px-3 py-2 rounded ${
                         errors.productName ? "border-red-500" : ""
                       }`}
                       value={formData.productName || ""}
@@ -492,7 +515,7 @@ const ProductModal = ({
                       }
                     />
                     {errors.productName && (
-                      <p className="text-xs text-red-500 mt-1">
+                      <p className="mt-1 text-sm text-red-600">
                         {errors.productName}
                       </p>
                     )}
@@ -502,22 +525,22 @@ const ProductModal = ({
 
               {/* --- SKU --- */}
               <div>
-                <label className="text-xs text-gray-600">SKU</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">SKU</label>
                 {isView ? (
-                  <div className="p-2 border rounded bg-gray-50">
+                  <div className="min-h-10 px-3 py-2 border rounded bg-gray-50 break-words">
                     {formData.sku}
                   </div>
                 ) : (
                   <>
                     <input
-                      className={`w-full border px-2 py-1 rounded ${
+                      className={`w-full border px-3 py-2 rounded ${
                         errors.sku ? "border-red-500" : ""
                       }`}
                       value={formData.sku}
                       onChange={(e) => handleFieldChange("sku", e.target.value)}
                     />
                     {errors.sku && (
-                      <p className="text-xs text-red-500 mt-1">{errors.sku}</p>
+                      <p className="mt-1 text-sm text-red-600">{errors.sku}</p>
                     )}
                   </>
                 )}
@@ -525,16 +548,16 @@ const ProductModal = ({
 
               {/* --- GIÁ --- */}
               <div>
-                <label className="text-xs text-gray-600">Giá *</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Giá *</label>
                 {isView ? (
-                  <div className="p-2 border rounded bg-gray-50">
+                  <div className="min-h-10 px-3 py-2 border rounded bg-gray-50 break-words">
                     {formatPrice(formData.price) || "—"}
                   </div>
                 ) : (
                   <>
                     <input
                       type="number"
-                      className={`w-full border px-2 py-1 rounded ${
+                      className={`w-full border px-3 py-2 rounded ${
                         errors.price ? "border-red-500" : ""
                       }`}
                       value={formData.price || ""}
@@ -543,7 +566,7 @@ const ProductModal = ({
                       }
                     />
                     {errors.price && (
-                      <p className="text-xs text-red-500 mt-1">
+                      <p className="mt-1 text-sm text-red-600">
                         {errors.price}
                       </p>
                     )}
@@ -552,26 +575,26 @@ const ProductModal = ({
               </div>
 
               <div>
-                <label className="text-xs text-gray-600">Giá giảm</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Giá giảm</label>
                 <div className="p-2 border rounded bg-gray-50 text-red-600 font-medium">
                   {formData.discountPrice != null && Number(formData.discountPrice) < Number(formData.price)
                     ? formatPrice(formData.discountPrice)
                     : "Chưa có khuyến mãi áp dụng"}
                 </div>
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-sm text-gray-500">
                   Giá này được tính tự động từ khuyến mãi theo sản phẩm đang hoạt động.
                 </p>
               </div>
 
               <div>
-                <label className="text-xs text-gray-600">Số lượng tồn *</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Số lượng tồn *</label>
                 {isView || mode !== "create" ? (
                   <>
-                    <div className="p-2 border rounded bg-gray-50">
+                    <div className="min-h-10 px-3 py-2 border rounded bg-gray-50 break-words">
                       {Number(formData.stockQuantity ?? 0).toLocaleString("vi-VN")}
                     </div>
                     {!isView && (
-                      <p className="mt-1 text-xs text-gray-500">
+                      <p className="mt-1 text-sm text-gray-500">
                         Đổi số tồn tại mục Kho hàng (điều chỉnh có lý do) hoặc qua phiếu nhập để giữ lịch sử.
                       </p>
                     )}
@@ -582,20 +605,20 @@ const ProductModal = ({
                       type="number"
                       min="0"
                       step="1"
-                      className={`w-full border px-2 py-1 rounded ${errors.stockQuantity ? "border-red-500" : ""}`}
+                      className={`w-full border px-3 py-2 rounded ${errors.stockQuantity ? "border-red-500" : ""}`}
                       value={formData.stockQuantity ?? 0}
                       onChange={(event) => handleFieldChange("stockQuantity", event.target.value)}
                     />
-                    {errors.stockQuantity && <p className="text-xs text-red-500 mt-1">{errors.stockQuantity}</p>}
+                    {errors.stockQuantity && <p className="mt-1 text-sm text-red-600">{errors.stockQuantity}</p>}
                   </>
                 )}
               </div>
 
               {/* --- ĐƠN VỊ --- */}
               <div>
-                <label className="text-xs text-gray-600">Đơn vị *</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Đơn vị *</label>
                 {isView ? (
-                  <div className="p-2 border rounded bg-gray-50">
+                  <div className="min-h-10 px-3 py-2 border rounded bg-gray-50 break-words">
                     {product?.unitName ||
                       unitList.find((u) => u.id === Number(formData.unitId))?.name ||
                       "—"}
@@ -625,7 +648,7 @@ const ProductModal = ({
                       isSearchable={true}
                     />
                     {errors.unitId && (
-                      <p className="text-xs text-red-500 mt-1">
+                      <p className="mt-1 text-sm text-red-600">
                         {errors.unitId}
                       </p>
                     )}
@@ -635,16 +658,16 @@ const ProductModal = ({
 
               {/* --- NHÀ CUNG CẤP --- */}
               <div>
-                <label className="text-xs text-gray-600">Nhà cung cấp *</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Nhà cung cấp *</label>
                 {isView ? (
-                  <div className="p-2 border rounded bg-gray-50">
+                  <div className="min-h-10 px-3 py-2 border rounded bg-gray-50 break-words">
                     {supplierList.find((s) => s.id === Number(formData.supplierId))
                       ?.name || product?.supplier?.name || "—"}
                   </div>
                 ) : (
                   <>
                     <select
-                      className={`w-full border px-2 py-1 rounded ${
+                      className={`w-full border px-3 py-2 rounded ${
                         errors.supplierId || errors.supplierOrCategory
                           ? "border-red-500"
                           : ""
@@ -663,7 +686,7 @@ const ProductModal = ({
                       ))}
                     </select>
                     {errors.supplierOrCategory && (
-                      <p className="text-xs text-red-500 mt-1">
+                      <p className="mt-1 text-sm text-red-600">
                         {errors.supplierOrCategory}
                       </p>
                     )}
@@ -673,16 +696,16 @@ const ProductModal = ({
 
               {/* --- DANH MỤC --- */}
               <div>
-                <label className="text-xs text-gray-600">Danh mục *</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Danh mục *</label>
                 {isView ? (
-                  <div className="p-2 border rounded bg-gray-50">
+                  <div className="min-h-10 px-3 py-2 border rounded bg-gray-50 break-words">
                     {categoryList.find((c) => c.id === Number(formData.categoryId))
                       ?.name || product?.category?.name || "—"}
                   </div>
                 ) : (
                   <>
                     <select
-                      className={`w-full border px-2 py-1 rounded ${
+                      className={`w-full border px-3 py-2 rounded ${
                         errors.categoryId || errors.supplierOrCategory
                           ? "border-red-500"
                           : ""
@@ -701,7 +724,7 @@ const ProductModal = ({
                       ))}
                     </select>
                     {errors.supplierOrCategory && (
-                      <p className="text-xs text-red-500 mt-1">
+                      <p className="mt-1 text-sm text-red-600">
                         {errors.supplierOrCategory}
                       </p>
                     )}
@@ -710,8 +733,8 @@ const ProductModal = ({
               </div>
 
               {/* --- MÔ TẢ --- */}
-              <div className="col-span-2 min-w-0">
-                <label className="text-xs text-gray-600">Mô tả</label>
+              <div className="min-w-0 sm:col-span-2">
+                <label className="mb-1 block text-sm font-medium text-gray-700">Mô tả</label>
                 {isView ? (
                   <div className="mt-1 rounded-lg border border-gray-200 bg-white px-3 py-2" aria-busy={descriptionLoading}>
                     {descriptionLoading ? <p className="text-sm text-gray-500">Đang tải mô tả sản phẩm...</p> : <>
@@ -730,7 +753,7 @@ const ProductModal = ({
 
               {/* --- CHECKBOX ĐANG HOẠT ĐỘNG --- */}
               <div>
-                <label className="text-xs text-gray-600">
+                <label className="mb-1 block text-sm font-medium text-gray-700">
                   Trạng thái hoạt động
                 </label>
                 {(() => {
@@ -766,40 +789,13 @@ const ProductModal = ({
               </div>
 
               {saveError && (
-                <p role="alert" className="col-span-2 rounded bg-red-50 p-2 text-sm text-red-700">{saveError}</p>
+                <p role="alert" className="sm:col-span-2 rounded bg-red-50 p-2 text-sm text-red-700">{saveError}</p>
               )}
 
-              {/* --- BUTTONS --- */}
-              <div className="col-span-2 flex items-center justify-end gap-2">
-                {mode !== "create" && onCreatePurchaseOrder && (
-                  <button type="button" className="mr-auto inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2" onClick={() => onCreatePurchaseOrder(product)}>
-                    Nhập hàng từ nhà cung cấp
-                  </button>
-                )}
-                {(!embedded || !isView) && (
-                  <button className="px-3 py-1 rounded border" onClick={onCancel}>
-                    {isView ? "Đóng" : "Hủy"}
-                  </button>
-                )}
-                {!isView && (
-                  <button
-                    className="px-3 py-1 rounded bg-primary-600 text-white hover:bg-primary-700"
-                    onClick={handleSave}
-                    disabled={saving || uploading}
-                  >
-                    {uploading ? "Đang tải ảnh..." : saving
-                      ? "Đang lưu..."
-                      : mode === "create"
-                      ? "Thêm mới"
-                      : "Lưu"}
-                  </button>
-                )}
-              </div>
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 };
 

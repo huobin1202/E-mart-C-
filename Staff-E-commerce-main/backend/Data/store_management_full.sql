@@ -94,9 +94,11 @@ CREATE TABLE dbo.suppliers (
   phone VARCHAR(50),
   email VARCHAR(255),
   address NVARCHAR(MAX),
+  region NVARCHAR(10) NULL,
   is_active BIT NOT NULL DEFAULT 1,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT ck_suppliers_region CHECK (region IS NULL OR region IN (N'Bắc', N'Trung', N'Nam'))
 );
 END;
 GO
@@ -549,6 +551,12 @@ IF COL_LENGTH(N'dbo.invoices', N'employee_id') IS NULL
     ALTER TABLE dbo.invoices ADD employee_id INT NULL;
 IF COL_LENGTH(N'dbo.invoices', N'customer_id') IS NULL
     ALTER TABLE dbo.invoices ADD customer_id INT NULL;
+-- Supplier region (Miền). Nullable: existing suppliers stay "Chưa phân loại"; addresses are not touched or parsed.
+IF COL_LENGTH(N'dbo.suppliers', N'region') IS NULL
+    ALTER TABLE dbo.suppliers ADD region NVARCHAR(10) NULL;
+GO
+IF OBJECT_ID(N'dbo.ck_suppliers_region', N'C') IS NULL
+    ALTER TABLE dbo.suppliers WITH CHECK ADD CONSTRAINT ck_suppliers_region CHECK (region IS NULL OR region IN (N'Bắc', N'Trung', N'Nam'));
 GO
 -- Authorization, checkout and delivery columns from the former startup initializer.
 IF COL_LENGTH(N'dbo.employees', N'date_of_birth') IS NULL
@@ -627,6 +635,22 @@ IF NOT EXISTS (SELECT 1 FROM sys.default_constraints d JOIN sys.columns c
     ALTER TABLE dbo.products ADD CONSTRAINT df_products_stock_quantity DEFAULT (0) FOR stock_quantity;
 IF OBJECT_ID(N'dbo.ck_products_stock_quantity', N'C') IS NULL
     ALTER TABLE dbo.products WITH CHECK ADD CONSTRAINT ck_products_stock_quantity CHECK (stock_quantity >= 0);
+
+-- Every internal account (admin/staff) sells, so each needs an employee profile; otherwise its
+-- invoices land in "Chưa gán nhân viên". Create the missing profiles from the account data;
+-- the invoice/purchase-order backfill below then attributes their historical documents.
+DECLARE @orphanUserId INT, @newEmployeeId INT;
+WHILE 1 = 1
+BEGIN
+    SET @orphanUserId = NULL;
+    SELECT TOP (1) @orphanUserId = u.id FROM dbo.users u JOIN dbo.roles r ON r.id = u.role_id
+    WHERE u.employee_id IS NULL AND r.name <> 'customer' ORDER BY u.id;
+    IF @orphanUserId IS NULL BREAK;
+    INSERT INTO dbo.employees (full_name, phone, email, is_active)
+    SELECT LTRIM(RTRIM(full_name)), phone, email, is_active FROM dbo.users WHERE id = @orphanUserId;
+    SET @newEmployeeId = SCOPE_IDENTITY();
+    UPDATE dbo.users SET employee_id = @newEmployeeId WHERE id = @orphanUserId;
+END;
 
 UPDATE e SET given_name = CASE WHEN s.last_space = 0 THEN s.full_name ELSE RIGHT(s.full_name, s.last_space - 1) END,
     family_middle_name = CASE WHEN s.last_space = 0 THEN N'' ELSE LEFT(s.full_name, LEN(s.full_name) - s.last_space) END
@@ -942,6 +966,21 @@ BEGIN
         INSERT INTO authorization_migrations (name) VALUES ('permissions-v1');
 END;
 GO
+-- One-time backfill: give the demo suppliers their region (matched by seed email, only while still NULL).
+-- Runs once per database so a supplier later set back to "Chưa phân loại" is not overwritten.
+IF NOT EXISTS (SELECT 1 FROM dbo.authorization_migrations WHERE name = 'supplier-region-backfill-v1')
+BEGIN
+    UPDATE s SET region = v.region
+    FROM dbo.suppliers s JOIN (VALUES
+        (N'abc@gmail.com', N'Bắc'), (N'xyz@gmail.com', N'Nam'), (N'123@gmail.com', N'Trung'),
+        (N'thucphamviet@company.com', N'Bắc'), (N'douongsaigon@company.com', N'Nam'), (N'giadungtoancau@company.com', N'Trung'),
+        (N'myphamkorea@company.com', N'Nam'), (N'banhkeohuunghi@company.com', N'Bắc'), (N'giaviphuongnam@company.com', N'Nam'),
+        (N'dientuvienthong@company.com', N'Nam'), (N'vanphongphamstc@company.com', N'Nam'), (N'duocphamvietduc@company.com', N'Bắc'),
+        (N'haisanbiendong@company.com', N'Trung')) v(email, region) ON v.email = s.email
+    WHERE s.region IS NULL;
+    INSERT INTO dbo.authorization_migrations (name) VALUES ('supplier-region-backfill-v1');
+END;
+GO
 -- Optional demo dataset. Never imported by normal backend startup.
 IF TRY_CONVERT(BIT, SESSION_CONTEXT(N'emart_seed_demo')) = 1
    AND NOT EXISTS (SELECT 1 FROM dbo.authorization_migrations WHERE name = 'demo-data-v1')
@@ -1015,22 +1054,22 @@ VALUES
 (N'Văn phòng phẩm', GETUTCDATE()),      
 (N'Thủy hải sản', GETUTCDATE());
 
--- ===== SUPPLIERS (name, contact_name, phone, email, address) =====
-INSERT INTO suppliers (name, contact_name, phone, email, address, created_at)
+-- ===== SUPPLIERS (name, contact_name, phone, email, address, region) =====
+INSERT INTO suppliers (name, contact_name, phone, email, address, region, created_at)
 VALUES
-(N'Công ty TNHH Đồ uống Quốc tế ABC', N'Nguyễn Văn A', '0909123456', 'abc@gmail.com', N'Số 123, Đường Láng, Quận Đống Đa, Hà Nội', GETUTCDATE()),
-(N'Công ty CP Thương mại & Phân phối XYZ', N'Trần Thị B', '0912123456', 'xyz@gmail.com', N'Số 456, Nguyễn Văn Linh, Quận 7, TP HCM', GETUTCDATE()),
-(N'Công ty TNHH Sản xuất 123', N'Lê Văn C', '0933123456', '123@gmail.com', N'Số 789, Đường 2/9, Quận Hải Châu, Đà Nẵng', GETUTCDATE()),
-(N'Công ty Thực phẩm Việt', N'Phạm Minh D', '0909123457', 'thucphamviet@company.com', N'Khu công nghiệp Bắc Thăng Long, Hà Nội', GETUTCDATE()),
-(N'Công ty Đồ uống Sài Gòn', N'Hoàng Thị E', '0912123457', 'douongsaigon@company.com', N'Số 321, Lê Văn Việt, Quận 9, TP HCM', GETUTCDATE()),
-(N'Công ty Gia dụng Toàn Cầu', N'Đặng Văn F', '0933123457', 'giadungtoancau@company.com', N'Khu công nghiệp Hòa Khánh, Đà Nẵng', GETUTCDATE()),
-(N'Công ty Mỹ phẩm Hàn Quốc', N'Kim Soo G', '0909123458', 'myphamkorea@company.com', N'Tầng 5, Tòa nhà Vina, Quận 1, TP HCM', GETUTCDATE()),
-(N'Công ty Bánh kẹo Hữu Nghị', N'Ngô Thị H', '0912123458', 'banhkeohuunghi@company.com', N'Số 55, Minh Khai, Quận Hai Bà Trưng, Hà Nội', GETUTCDATE()),
-(N'Công ty Gia vị Phương Nam', N'Võ Văn I', '0933123458', 'giaviphuongnam@company.com', N'Khu chế xuất Tân Thuận, Quận 7, TP HCM', GETUTCDATE()),
-(N'Công ty Điện tử Viễn Thông', N'Trương Văn J', '0909123459', 'dientuvienthong@company.com', N'Khu công nghiệp Sóng Thần, Bình Dương', GETUTCDATE()),
-(N'Công ty Văn phòng phẩm STC', N'Lý Thị K', '0912123459', 'vanphongphamstc@company.com', N'Số 88, Lê Hồng Phong, Quận 10, TP HCM', GETUTCDATE()),
-(N'Công ty Dược phẩm Việt Đức', N'Mai Văn L', '0933123459', 'duocphamvietduc@company.com', N'Khu công nghiệp Yên Phong, Bắc Ninh', GETUTCDATE()),
-(N'Công ty Thủy hải sản Biển Đông', N'Bùi Thị M', '0909123460', 'haisanbiendong@company.com', N'Cảng cá Thọ Quang, Đà Nẵng', GETUTCDATE());
+(N'Công ty TNHH Đồ uống Quốc tế ABC', N'Nguyễn Văn A', '0909123456', 'abc@gmail.com', N'Số 123, Đường Láng, Quận Đống Đa, Hà Nội', N'Bắc', GETUTCDATE()),
+(N'Công ty CP Thương mại & Phân phối XYZ', N'Trần Thị B', '0912123456', 'xyz@gmail.com', N'Số 456, Nguyễn Văn Linh, Quận 7, TP HCM', N'Nam', GETUTCDATE()),
+(N'Công ty TNHH Sản xuất 123', N'Lê Văn C', '0933123456', '123@gmail.com', N'Số 789, Đường 2/9, Quận Hải Châu, Đà Nẵng', N'Trung', GETUTCDATE()),
+(N'Công ty Thực phẩm Việt', N'Phạm Minh D', '0909123457', 'thucphamviet@company.com', N'Khu công nghiệp Bắc Thăng Long, Hà Nội', N'Bắc', GETUTCDATE()),
+(N'Công ty Đồ uống Sài Gòn', N'Hoàng Thị E', '0912123457', 'douongsaigon@company.com', N'Số 321, Lê Văn Việt, Quận 9, TP HCM', N'Nam', GETUTCDATE()),
+(N'Công ty Gia dụng Toàn Cầu', N'Đặng Văn F', '0933123457', 'giadungtoancau@company.com', N'Khu công nghiệp Hòa Khánh, Đà Nẵng', N'Trung', GETUTCDATE()),
+(N'Công ty Mỹ phẩm Hàn Quốc', N'Kim Soo G', '0909123458', 'myphamkorea@company.com', N'Tầng 5, Tòa nhà Vina, Quận 1, TP HCM', N'Nam', GETUTCDATE()),
+(N'Công ty Bánh kẹo Hữu Nghị', N'Ngô Thị H', '0912123458', 'banhkeohuunghi@company.com', N'Số 55, Minh Khai, Quận Hai Bà Trưng, Hà Nội', N'Bắc', GETUTCDATE()),
+(N'Công ty Gia vị Phương Nam', N'Võ Văn I', '0933123458', 'giaviphuongnam@company.com', N'Khu chế xuất Tân Thuận, Quận 7, TP HCM', N'Nam', GETUTCDATE()),
+(N'Công ty Điện tử Viễn Thông', N'Trương Văn J', '0909123459', 'dientuvienthong@company.com', N'Khu công nghiệp Sóng Thần, Bình Dương', N'Nam', GETUTCDATE()),
+(N'Công ty Văn phòng phẩm STC', N'Lý Thị K', '0912123459', 'vanphongphamstc@company.com', N'Số 88, Lê Hồng Phong, Quận 10, TP HCM', N'Nam', GETUTCDATE()),
+(N'Công ty Dược phẩm Việt Đức', N'Mai Văn L', '0933123459', 'duocphamvietduc@company.com', N'Khu công nghiệp Yên Phong, Bắc Ninh', N'Bắc', GETUTCDATE()),
+(N'Công ty Thủy hải sản Biển Đông', N'Bùi Thị M', '0909123460', 'haisanbiendong@company.com', N'Cảng cá Thọ Quang, Đà Nẵng', N'Trung', GETUTCDATE());
 
 -- ===== THÊM DỮ LIỆU MẪU CHO BẢNG UNITS =====
 INSERT INTO units (code, name, created_at) VALUES

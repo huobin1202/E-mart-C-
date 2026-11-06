@@ -26,12 +26,12 @@ export default function AuditPage() {
     } = useAudit();
 
     return (
-        <div className="max-w-7xl mx-auto p-4 sm:p-6">
+        <div>
             {/* Tiêu đề */}
-            <div className="mb-8">
-                <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
+            <div className="mb-5">
+                <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
                     <svg
-                        className="w-8 h-8 text-primary-600"
+                        className="w-7 h-7 text-primary-600"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -43,9 +43,9 @@ export default function AuditPage() {
                             d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                         />
                     </svg>
-                    Nhật Ký Hoạt Động (Audit Log)
+                    Nhật ký hoạt động
                 </h1>
-                <p className="text-gray-600 mt-1">
+                <p className="mt-1 text-sm text-gray-500">
                     Theo dõi mọi thao tác của nhân viên trong hệ thống
                 </p>
             </div>
@@ -53,11 +53,11 @@ export default function AuditPage() {
     
 
             {/* Hàng 3: Bộ lọc chi tiết */}
-            <div className="bg-white rounded-xl shadow-md p-5 mb-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="mb-5 rounded-xl border bg-white p-4 shadow-sm">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                       <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1 ">
-                            Nhân Viên
+                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                            Nhân viên
                         </label>
                         <select
                             className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
@@ -65,11 +65,10 @@ export default function AuditPage() {
                             const selectedId = e.target.value;
                             const user = listuser.find(u => u.id.toString() === selectedId);
                             setSelectedUser(user);
-                            console.log("Nhân viên đang được chọn:", user);
                             }}
 
                             >
-                            <option value="">-- Chọn user --</option>
+                            <option value="">Tất cả nhân viên</option>
                             {listuser.map(user => (
                                 <option key={user.id} value={user.id}>
                                 {user.fullName}
@@ -81,8 +80,8 @@ export default function AuditPage() {
                     </div>
                     {/* Ngày bắt đầu */}
                     <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1">
-                            Ngày Bắt Đầu
+                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                            Từ ngày
                         </label>
                         <input 
                             type="date"
@@ -93,8 +92,8 @@ export default function AuditPage() {
 
                         {/* Ngày kết thúc */}
                         <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1">
-                            Ngày Kết Thúc
+                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                            Đến ngày
                         </label>
                         <input
                             type="date"
@@ -108,8 +107,8 @@ export default function AuditPage() {
                     <div className="flex items-end">
                         <button 
                         onClick={() => fetchListActivity(1)}
-                        className="w-full px-6 py-2.5 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-700">
-                            Lọc
+                        className="w-full rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 sm:w-auto">
+                            Lọc nhật ký
                         </button>
                     </div>
                 </div>

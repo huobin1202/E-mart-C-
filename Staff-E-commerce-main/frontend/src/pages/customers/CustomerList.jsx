@@ -12,6 +12,7 @@ import {
 } from "../../features/customers/customerSlice";
 import Pagination from "../../components/ui/Pagination";
 import TableDisplayControls from "../../components/ui/TableDisplayControls";
+import TableScroll from "../../components/ui/TableScroll";
 import CustomerDetailModal from "../../components/customers/CustomerDetailModal";
 import CustomerEditModal from "../../components/customers/CustomerEditModal";
 import CustomerAddModal from "../../components/customers/CustomerAddModal";
@@ -228,10 +229,10 @@ const CustomerList = () => {
   }
 
   return (
-    <div className="p-1 sm:p-2">
+    <div>
       {/* Header */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold text-gray-800">Quản Lý Khách Hàng</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Quản lý khách hàng</h1>
         <div className="flex flex-wrap gap-2">
           <ExportExcelButton type="customers" />
           <button
@@ -340,7 +341,7 @@ const CustomerList = () => {
           onPageSizeChange={(size) => dispatch(setPageSize(size))} />
       </div>
       <div className="overflow-hidden border border-gray-300 rounded-lg">
-        <div className="management-table-scroll" key={`${pagination.currentPage}-${pagination.pageSize}-${filters.search}-${filters.status}`}>
+        <TableScroll resetKey={`${pagination.currentPage}-${pagination.pageSize}-${filters.search}-${filters.status}`} busy={loading && customers.length > 0}>
           <table className="management-table w-full min-w-full" data-compact={compact}>
             <thead className="bg-gray-100 border-b border-gray-300">
               <tr>
@@ -365,7 +366,7 @@ const CustomerList = () => {
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {loading && customers.length === 0 ? (
                 <tr>
                   <td
                     colSpan="6"
@@ -455,7 +456,7 @@ const CustomerList = () => {
               )}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
       </div>
 
       {/* Pagination */}

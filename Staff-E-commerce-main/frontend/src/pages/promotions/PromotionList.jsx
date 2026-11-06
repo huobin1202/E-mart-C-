@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import Pagination from "../../components/ui/Pagination";
+import { Eye, Pencil, Power, Trash2 } from "lucide-react";
 import {
   fetchPromotionsPaginated,
   deletePromotion as deletePromotionThunk,
@@ -131,18 +132,19 @@ export default function PromotionList() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div>
       {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <h1 className="text-2xl font-bold text-gray-900">
-              Quản lý Khuyến mãi
-            </h1>
+      <div className="mb-5">
+        <div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Quản lý khuyến mãi</h1>
+              <p className="mt-1 text-sm text-gray-500">Tạo và theo dõi chương trình giảm giá theo sự kiện, voucher hoặc sản phẩm.</p>
+            </div>
             {!readOnly && (
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-all shadow-lg hover:shadow-xl"
+                className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors"
               >
                 <span className="flex items-center">
                   <svg
@@ -166,9 +168,9 @@ export default function PromotionList() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div>
         {/* Statistics */}
-        <div className="flex flex-wrap gap-3 mb-8">
+        <div className="flex flex-wrap gap-3 mb-5">
           <div className="flex-1 min-w-[140px]">
             <StatCard
               icon={
@@ -282,8 +284,8 @@ export default function PromotionList() {
         </div>
 
         {/* Filters */}
-        <div className="bg-white rounded-xl shadow-sm border p-6 mb-8">
-          <div className="flex flex-col lg:flex-row gap-6">
+        <div className="bg-white rounded-xl shadow-sm border p-4 mb-5">
+          <div className="flex flex-col lg:flex-row gap-3">
             <div className="relative flex-1 min-w-0">
               <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                 <svg
@@ -493,36 +495,44 @@ export default function PromotionList() {
                           {getStatusBadge(promo)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm" onClick={(event) => event.stopPropagation()}>
-                          <div className="flex items-center justify-end gap-2">
+                          <div className="table-actions flex items-center justify-end gap-1">
                             <button
+                              type="button"
                               onClick={() => setSelectedPromotionId(promo.id)}
-                              className="px-3 py-1.5 bg-primary-100 text-primary-800 rounded-md text-xs font-medium hover:bg-primary-200"
+                              title="Xem chi tiết"
+                              aria-label={`Xem chi tiết ${promo.voucherCode || promo.name || "khuyến mãi"}`}
+                              className="rounded-lg p-1.5 text-primary-600 hover:bg-primary-50"
                             >
-                              Chi tiết
+                              <Eye size={17} />
                             </button>
                             {!readOnly && (
                               <>
                                 <button
+                                  type="button"
                                   onClick={() => handleToggle(promo.id)}
-                                  className={`px-3 py-1.5 rounded-md text-xs font-medium ${
-                                    promo.active
-                                      ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
-                                      : "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
-                                  }`}
+                                  title={promo.active ? "Tắt khuyến mãi" : "Bật khuyến mãi"}
+                                  aria-label={promo.active ? "Tắt khuyến mãi" : "Bật khuyến mãi"}
+                                  className={`rounded-lg p-1.5 ${promo.active ? "text-orange-500 hover:bg-orange-50" : "text-emerald-600 hover:bg-emerald-50"}`}
                                 >
-                                  {promo.active ? "Tắt" : "Bật"}
+                                  <Power size={17} />
                                 </button>
                                 <button
+                                  type="button"
                                   onClick={() => setEditingPromotion(promo)}
-                                  className="px-3 py-1.5 bg-amber-100 text-amber-800 rounded-md text-xs font-medium hover:bg-amber-200"
+                                  title="Sửa"
+                                  aria-label="Sửa khuyến mãi"
+                                  className="rounded-lg p-1.5 text-emerald-600 hover:bg-emerald-50"
                                 >
-                                  Sửa
+                                  <Pencil size={17} />
                                 </button>
                                 <button
+                                  type="button"
                                   onClick={() => handleDelete(promo.id)}
-                                  className="px-3 py-1.5 bg-red-100 text-red-800 rounded-md text-xs font-medium hover:bg-red-200"
+                                  title="Xóa"
+                                  aria-label="Xóa khuyến mãi"
+                                  className="rounded-lg p-1.5 text-red-600 hover:bg-red-50"
                                 >
-                                  Xóa
+                                  <Trash2 size={17} />
                                 </button>
                               </>
                             )}

@@ -235,10 +235,10 @@ const CategoryList = () => {
   }
 
   return (
-    <div className="p-6">
+    <div>
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-gray-800">Quản Lý Danh Mục</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Quản lý danh mục</h1>
         {!readOnly && (
           <button
             onClick={() => setIsAddModalOpen(true)}

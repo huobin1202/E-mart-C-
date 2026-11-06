@@ -31,13 +31,16 @@ export default function AppLayout() {
     <div className="flex h-screen bg-gray-50">
       {/* Sidebar (fixed or hidden on small screens) */}
       {sidebarEl}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-998 bg-gray-900/40 md:hidden" onClick={handleCloseSidebar} aria-hidden="true" />
+      )}
 
       {/* Page content */}
       <div className="flex-1 min-w-0 md:ml-64 flex flex-col min-h-0">
         {topbarEl}
 
         {/* main area: Outlet is where router will render the active route content */}
-        <main className="min-h-0 min-w-0 flex-1 overflow-auto p-2 sm:p-3">
+        <main className="admin-main min-h-0 min-w-0 flex-1 overflow-auto p-3 sm:p-5">
           <Outlet />
         </main>
       </div>

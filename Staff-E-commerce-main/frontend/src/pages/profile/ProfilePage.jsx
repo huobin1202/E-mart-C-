@@ -150,7 +150,7 @@ export default function ProfilePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-gray-800">Thông tin cá nhân</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Thông tin cá nhân</h1>
         <p className="text-sm text-gray-500">
           Cập nhật thông tin hồ sơ và bảo vệ tài khoản của bạn.
         </p>

@@ -1,4 +1,23 @@
-export const emptyFilters = () => ({ categories: [], min: '', max: '', promotion: '', status: [], regions: [], conditions: [], excludedGroups: [] });
+// excludedCategories: ids the shopper switched OFF. Empty = every category on, so a category
+// added later in the backend is shown by default instead of being hidden by accident.
+export const emptyFilters = () => ({ categories: [], excludedCategories: [], min: '', max: '', promotion: '', status: [], regions: [], conditions: [] });
+
+export const isCategoryOn = (filters, categoryId) => !(filters.excludedCategories || []).includes(String(categoryId));
+
+export function toggleCategory(filters, categoryId) {
+  const id = String(categoryId);
+  const off = filters.excludedCategories || [];
+  return { ...filters, excludedCategories: off.includes(id) ? off.filter((x) => x !== id) : [...off, id] };
+}
+
+export const enableAllCategories = (filters) => ({ ...filters, excludedCategories: [] });
+
+/** Every known category switched off: the result is empty on purpose (never "no filter"). */
+export const allCategoriesOff = (filters, categories) =>
+  categories.length > 0 && categories.every((category) => !isCategoryOn(filters, category.id));
+
+export const hiddenCategoryCount = (filters, categories) =>
+  categories.filter((category) => !isCategoryOn(filters, category.id)).length;
 const normalize = (value) => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase().trim();
 export function compare(left, operator, right) {
   const numeric = typeof left === 'number';
@@ -16,15 +35,14 @@ export function compare(left, operator, right) {
 }
 export function matchesFilters(product, filters) {
   const percent = Number(product.discountPercent) || (product.originalPrice > 0 ? Math.max(0, (product.originalPrice - product.price) / product.originalPrice * 100) : 0);
-  const excluded = filters.excludedGroups || [];
-  const accepts = (key, active, match) => !active || (excluded.includes(key) ? !match : match);
-  if (!accepts('categories', filters.categories.length > 0, filters.categories.includes(String(product.categoryId)))) return false;
-  const withinPrice = (filters.min === '' || product.price >= Number(filters.min)) && (filters.max === '' || product.price <= Number(filters.max));
-  if (!accepts('price', filters.min !== '' || filters.max !== '', withinPrice)) return false;
-  if (!accepts('promotion', filters.promotion !== '', percent > 0 && percent >= Number(filters.promotion))) return false;
-  const statusMatches = (!filters.status.includes('stock') || product.stockQuantity > 0) && (!filters.status.includes('best') || product.isBestSeller === true);
-  if (!accepts('status', filters.status.length > 0, statusMatches)) return false;
-  if (!accepts('regions', filters.regions.length > 0, filters.regions.includes(product.region))) return false;
+  if (!isCategoryOn(filters, product.categoryId)) return false;
+  if (filters.categories.length > 0 && !filters.categories.includes(String(product.categoryId))) return false;
+  if (filters.min !== '' && product.price < Number(filters.min)) return false;
+  if (filters.max !== '' && product.price > Number(filters.max)) return false;
+  if (filters.promotion !== '' && !(percent > 0 && percent >= Number(filters.promotion))) return false;
+  if (filters.status.includes('stock') && !(product.stockQuantity > 0)) return false;
+  if (filters.status.includes('best') && product.isBestSeller !== true) return false;
+  if (filters.regions.length > 0 && !filters.regions.includes(product.region)) return false;
   // AND binds before OR; NOT applies to its own condition.
   let group = true;
   let result = false;

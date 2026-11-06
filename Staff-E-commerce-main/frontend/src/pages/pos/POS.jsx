@@ -589,7 +589,7 @@ export default function POS() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-primary-50">
+    <div>
       {/* Toast */}
       {toast && (
         <div
@@ -636,7 +636,7 @@ export default function POS() {
         </div>
       )}
 
-      <div className="max-w-7xl mx-auto px-4 py-6">
+      <div>
         {openingOrder && <p role="status" className="mb-4 rounded-lg bg-white p-3 text-sm">Đang mở đơn #{selectedOrderId}…</p>}
         {openOrderError && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{openOrderError}</p>}
         {sessionError && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{sessionError}</p>}
@@ -648,7 +648,7 @@ export default function POS() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <div>
-            <h1 className="text-3xl font-black text-gray-900 tracking-tight">🖥️ Bán hàng (POS)</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Bán hàng (POS)</h1>
             <p className="text-gray-500 text-sm mt-1">
               Quét mã vạch tại quầy, tích điểm khách hàng & xử lý đơn online theo thời gian thực
             </p>

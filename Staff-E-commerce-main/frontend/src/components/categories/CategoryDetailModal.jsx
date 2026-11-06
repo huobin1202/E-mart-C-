@@ -36,12 +36,15 @@ export default function CategoryDetailModal({ categoryId, onClose, embedded = fa
           <h2 className="text-2xl font-bold text-gray-800">
             Chi Tiết Danh Mục
           </h2>
-          {!embedded && <button
+          <button
+            type="button"
             onClick={onClose}
+            aria-label="Đóng"
+            title="Đóng"
             className="p-1 hover:bg-gray-100 rounded-lg transition"
           >
             <X size={24} className="text-gray-600" />
-          </button>}
+          </button>
         </div>
 
         {/* Body */}
