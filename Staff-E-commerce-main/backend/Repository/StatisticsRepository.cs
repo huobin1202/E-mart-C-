@@ -188,6 +188,7 @@ namespace backend.Repository
 
         public async Task<OrderStatsDTO> GetOrderStatsAsync(int days = 7)
         {
+            days = Math.Clamp(days, 1, 366);
             var today = DateTimeHelper.VietnamToday;
             var startDate = today.AddDays(-days + 1);
             var startDateUtc = DateTimeHelper.ToUtc(startDate);
@@ -202,7 +203,7 @@ namespace backend.Repository
                 TotalOrders = orders.Count,
                 CompletedOrders = orders.Count(o => o.Status == "completed"),
                 PendingOrders = orders.Count(o => o.Status == "pending"),
-                ProcessingOrders = 0, // No processing status in ENUM
+                ProcessingOrders = orders.Count(o => o.Status == "processing"),
                 CancelledOrders = orders.Count(o => o.Status == "cancelled"),
                 TotalRevenue = orders.Where(o => o.Status == "completed").Sum(o => o.TotalAmount),
                 AverageOrderValue = orders.Where(o => o.Status == "completed").Any()

@@ -16,7 +16,7 @@ function PivotTable({ table, start = 0, end = table.columns.length }) {
   </table>;
 }
 
-export function DailyInvoiceSummary() {
+export function DailyInvoiceSummary({ onRefresh } = {}) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -31,7 +31,7 @@ export function DailyInvoiceSummary() {
   }
   useEffect(() => { load(); }, []);
   return <section className="invoice-report daily-invoices">
-    <div className="report-toolbar"><h2>Hóa đơn hôm nay (giờ Việt Nam)</h2><button onClick={load} disabled={loading}>{loading ? 'Đang tải…' : 'Làm mới'}</button></div>
+    <div className="report-toolbar"><h2>Hóa đơn hôm nay (giờ Việt Nam)</h2><button onClick={() => { load(); onRefresh?.(); }} disabled={loading}>{loading ? 'Đang tải…' : 'Làm mới'}</button></div>
     {error && <p role="alert" className="report-error">{error}</p>}
     {data && <div className="report-kpis"><div>Tổng tiền trong ngày<strong>{money(data.revenue)} ₫</strong></div><div>Số hóa đơn đã thanh toán<strong>{data.invoiceCount}</strong></div></div>}
     <small className="report-note">Dữ liệu cache 10 phút; cập nhật lại sau thay đổi dữ liệu.</small>

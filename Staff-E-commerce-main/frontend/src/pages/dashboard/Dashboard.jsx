@@ -29,7 +29,7 @@ export default function Dashboard() {
         </div>
         {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{typeof error === "string" ? error : "Không tải được số liệu tổng quan."} <button type="button" className="ml-2 underline" onClick={() => dispatch(fetchDashboard())}>Thử lại</button></p>}
 
-        <DailyInvoiceSummary />
+        <DailyInvoiceSummary onRefresh={() => dispatch(fetchDashboard())} />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6" aria-busy={loading || undefined} style={{ opacity: loading ? 0.6 : 1 }}>
           <RevenueChart data={revenue} />
