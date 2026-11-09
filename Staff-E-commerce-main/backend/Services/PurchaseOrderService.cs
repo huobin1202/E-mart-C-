@@ -13,18 +13,20 @@ public class PurchaseOrderService
     private readonly BusMemoryCache<PurchaseOrderListDTO> _cache;
     private readonly BusMemoryCache<SupplierDTO> _supplierCache;
     private readonly RealtimeNotificationService _realtime;
+    private readonly SupplierService _suppliers;
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
 
-    public PurchaseOrderService(PurchaseOrderRepository repository, IHttpContextAccessor httpContextAccessor, BusMemoryCache<PurchaseOrderListDTO> cache, BusMemoryCache<SupplierDTO> supplierCache, RealtimeNotificationService realtime)
+    public PurchaseOrderService(PurchaseOrderRepository repository, IHttpContextAccessor httpContextAccessor, BusMemoryCache<PurchaseOrderListDTO> cache, BusMemoryCache<SupplierDTO> supplierCache, RealtimeNotificationService realtime, SupplierService suppliers)
     {
         _repository = repository;
         _httpContextAccessor = httpContextAccessor;
         _cache = cache;
         _supplierCache = supplierCache;
         _realtime = realtime;
+        _suppliers = suppliers;
     }
 
-    public async Task<PaginationResult<PurchaseOrderListDTO>> GetPagedAsync(int page, int pageSize, string? search, string? status, int? supplierId)
+    public async Task<PaginationResult<PurchaseOrderListDTO>> GetPagedAsync(int page, int pageSize, string? search, string? status, int? supplierId, string? region = null)
     {
         var (itemsFromCache, _) = await _cache.GetOrCreateAsync(
             () => _repository.GetAllForCacheAsync(), CacheTtl);
@@ -48,6 +50,15 @@ public class PurchaseOrderService
             filtered = filtered.Where(item => string.Equals(item.Status, status, StringComparison.OrdinalIgnoreCase));
         if (supplierId.HasValue)
             filtered = filtered.Where(item => item.SupplierId == supplierId.Value);
+        if (!string.IsNullOrWhiteSpace(region))
+        {
+            var wanted = string.Equals(region.Trim(), SupplierRegion.Unclassified, StringComparison.OrdinalIgnoreCase)
+                ? null : SupplierRegion.Normalize(region);
+            var supplierIds = (await _suppliers.GetAllAsync())
+                .Where(s => string.Equals(s.Region, wanted, StringComparison.Ordinal))
+                .Select(s => s.Id).ToHashSet();
+            filtered = filtered.Where(item => supplierIds.Contains(item.SupplierId));
+        }
 
         var totalItems = filtered.Count();
         var items = filtered.Skip((page - 1) * pageSize).Take(pageSize).ToList();

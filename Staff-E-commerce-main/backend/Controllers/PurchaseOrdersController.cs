@@ -13,9 +13,13 @@ public class PurchaseOrdersController : ControllerBase
     public PurchaseOrdersController(PurchaseOrderService service) => _service = service;
 
     [HttpGet]
-    public async Task<ActionResult<PaginationResult<PurchaseOrderListDTO>>> GetPaged([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null, [FromQuery] string? status = null, [FromQuery] int? supplierId = null)
+    public async Task<ActionResult<PaginationResult<PurchaseOrderListDTO>>> GetPaged([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null, [FromQuery] string? status = null, [FromQuery] int? supplierId = null, [FromQuery] string? region = null)
     {
-        return Ok(await _service.GetPagedAsync(Math.Max(page, 1), Math.Clamp(pageSize, 1, 100), search, status, supplierId));
+        try
+        {
+            return Ok(await _service.GetPagedAsync(Math.Max(page, 1), Math.Clamp(pageSize, 1, 100), search, status, supplierId, region));
+        }
+        catch (ArgumentException exception) { return BadRequest(new { message = exception.Message }); }
     }
 
     [HttpGet("{id:int}")]

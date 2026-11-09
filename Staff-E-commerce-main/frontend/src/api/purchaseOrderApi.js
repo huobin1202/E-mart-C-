@@ -1,10 +1,11 @@
 import { request } from "./apiClient";
 
-export function getPurchaseOrders({ page = 1, pageSize = 10, search = "", status = "", supplierId = "" } = {}) {
+export function getPurchaseOrders({ page = 1, pageSize = 10, search = "", status = "", supplierId = "", region = "" } = {}) {
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (search) params.set("search", search);
   if (status) params.set("status", status);
   if (supplierId) params.set("supplierId", String(supplierId));
+  if (region) params.set("region", region);
   return request(`/purchase-orders?${params}`);
 }
 

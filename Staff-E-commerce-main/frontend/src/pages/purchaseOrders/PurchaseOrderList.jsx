@@ -14,6 +14,7 @@ import {
 } from "../../api/purchaseOrderApi";
 import Pagination from "../../components/ui/Pagination";
 import TableDisplayControls from "../../components/ui/TableDisplayControls";
+import { SUPPLIER_REGIONS, UNCLASSIFIED_REGION, matchesSupplierRegion } from "../../utils/supplierRegion";
 
 const emptyLine = () => ({ productId: "", quantity: 1, importPrice: "" });
 const formatMoney = (value) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 }).format(value || 0);
@@ -30,9 +31,10 @@ export default function PurchaseOrderList() {
   const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [filterSuppliers, setFilterSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
   const [meta, setMeta] = useState({ currentPage: 1, totalPages: 1 });
-  const [filters, setFilters] = useState({ search: "", status: "", supplierId: "" });
+  const [filters, setFilters] = useState({ search: "", status: "", supplierId: "", region: "" });
   const [searchInput, setSearchInput] = useState("");
   const latestRequest = useRef(0);
   const [page, setPage] = useState(1);
@@ -78,6 +80,7 @@ export default function PurchaseOrderList() {
   useEffect(() => {
     Promise.all([getAllSuppliers(), getProductsPaginated(1, 100, "", null, null, null, null, "name_asc", 1)])
       .then(([supplierData, productData]) => {
+        setFilterSuppliers(supplierData || []);
         setSuppliers((supplierData || []).filter((supplier) => supplier.isActive));
         setProducts(productData.items || []);
       })
@@ -161,11 +164,13 @@ export default function PurchaseOrderList() {
 
       {error && <div className="border border-red-200 bg-red-50 text-red-800 px-4 py-3 rounded-md text-sm">{error}<button className="float-right font-semibold" onClick={() => setError("")}>Đóng</button></div>}
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         <input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Tìm theo mã phiếu, nhà cung cấp" className="sm:col-span-1 px-3 py-2 border border-gray-300 rounded-md" />
         <select value={filters.status} onChange={(event) => { setPage(1); setFilters((current) => ({ ...current, status: event.target.value })); }} className="px-3 py-2 border border-gray-300 rounded-md"><option value="">Tất cả trạng thái</option><option value="pending">Chờ xử lý</option><option value="completed">Đã nhập kho</option><option value="cancelled">Đã hủy</option></select>
-        <select value={filters.supplierId} onChange={(event) => { setPage(1); setFilters((current) => ({ ...current, supplierId: event.target.value })); }} className="px-3 py-2 border border-gray-300 rounded-md"><option value="">Tất cả nhà cung cáp</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select>
+        <select aria-label="Lọc theo miền nhà cung cấp" value={filters.region} onChange={(event) => { setPage(1); setDetail(null); setFilters((current) => ({ ...current, region: event.target.value, supplierId: "" })); }} className="px-3 py-2 border border-gray-300 rounded-md"><option value="">Tất cả miền</option>{SUPPLIER_REGIONS.map((region) => <option key={region} value={region}>Miền {region}</option>)}<option value={UNCLASSIFIED_REGION}>Chưa phân loại</option></select>
+        <select aria-label="Lọc theo nhà cung cấp" value={filters.supplierId} onChange={(event) => { setPage(1); setFilters((current) => ({ ...current, supplierId: event.target.value })); }} className="px-3 py-2 border border-gray-300 rounded-md"><option value="">Tất cả nhà cung cấp</option>{filterSuppliers.filter((supplier) => matchesSupplierRegion(supplier, filters.region)).map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}{supplier.isActive ? "" : " (Ngừng hoạt động)"}</option>)}</select>
       </div>
+      {(searchInput || filters.search || filters.status || filters.supplierId || filters.region) && <button type="button" onClick={() => { setSearchInput(""); setFilters({ search: "", status: "", supplierId: "", region: "" }); setPage(1); setDetail(null); }} className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-gray-50">Xóa bộ lọc</button>}
 
       <div className={`grid items-start gap-3 ${detail ? "xl:grid-cols-[minmax(0,1.35fr)_minmax(500px,1fr)]" : "grid-cols-1"}`}>
       <section className="min-w-0 space-y-3">
