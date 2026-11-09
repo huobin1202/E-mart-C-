@@ -1,9 +1,13 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import ProductDescription from "./components/ProductDescription";
-import BirthdayInput from "./components/BirthdayInput";
+import DeliveryAddressSelect from "./components/DeliveryAddressSelect";
+import administrativeUnits from "./data/vietnamAdministrativeUnits.json";
+import { formatSelectedDeliveryAddress, parseDeliveryAddress } from "./utils/addressSelection";
+import { API_URL, API_ORIGIN } from "./services/apiConfig";
+import { createCustomerSession, deliveryRecipient, loadCustomerProfile, normalizeVietnamesePhone } from "./utils/customerSession";
+import { repriceVoucher } from "./utils/checkoutPricing";
 import ProductFilters from "./components/ProductFilters";
 import { allCategoriesOff, emptyFilters, enableAllCategories, hiddenCategoryCount, matchesFilters } from "./utils/productFilters";
-import { birthdayToIso } from "./utils/birthday";
 import {
   checkoutDefinitelyRejected,
   checkoutStorageKey,
@@ -55,31 +59,10 @@ import {
   getCategoryIcon,
 } from "./components/Icons";
 
-const defaultHost = typeof window !== "undefined" && window.location?.hostname
-  ? `http://${window.location.hostname}:5099/api`
-  : "http://10.0.2.2:5099/api";
-const API_URL = (typeof window !== "undefined" && window.location?.hostname
-  ? defaultHost
-  : process.env.EXPO_PUBLIC_API_URL || defaultHost).replace(/\/$/, "");
-const API_ORIGIN = API_URL.replace(/\/api$/, "");
 const CART_KEY = "e-mart-mobile-cart";
 const CUSTOMER_KEY = "e-mart-mobile-customer";
 const CUSTOMER_TOKEN_KEY = "e-mart-mobile-customer-token";
 const ADDRESS_KEY = "e-mart-mobile-delivery-address";
-
-function deliveryAddressFromProfile(value) {
-  const parts = (value || "").trim().split(",").map((part) => part.trim()).filter(Boolean);
-  return parts.length >= 3
-    ? { street: parts.slice(0, -2).join(", "), ward: parts.at(-2), city: parts.at(-1), otherReceiver: false }
-    : { street: (value || "").trim(), ward: "", city: "", otherReceiver: false };
-}
-
-function normalizeVietnamesePhone(value) {
-  let phone = String(value || "").trim().replace(/[\s().-]/g, "");
-  if (phone.startsWith("+84")) phone = `0${phone.slice(3)}`;
-  else if (phone.startsWith("84")) phone = `0${phone.slice(2)}`;
-  return phone;
-}
 
 function parseRegistrationDate(value) {
   const input = String(value || "").trim();
@@ -685,11 +668,13 @@ export default function App() {
   const [drawerSearchText, setDrawerSearchText] = useState("");
 
   const [checkoutOpen, setCheckoutOpen] = useState(false);
-  const [checkoutForm, setCheckoutForm] = useState({ fullName: "", phone: "", address: "", note: "" });
+  const [checkoutForm, setCheckoutForm] = useState({ fullName: "", phone: "", note: "" });
+  const [checkoutAddress, setCheckoutAddress] = useState(() => parseDeliveryAddress(""));
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [orderError, setOrderError] = useState("");
   const [completedOrder, setCompletedOrder] = useState(null);
   const [pendingCheckout, setPendingCheckout] = useState(null);
+  const activeCheckoutAddress = pendingCheckout ? parseDeliveryAddress(pendingCheckout.payload.address) : checkoutAddress;
 
   const [customerOrders, setCustomerOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
@@ -703,8 +688,10 @@ export default function App() {
 
   const [customer, setCustomer] = useState(null);
   const [customerToken, setCustomerToken] = useState("");
-  const customerSession = useRef(customerToken);
-  customerSession.current = customerToken;
+  const customerSession = useRef(null);
+  if (!customerSession.current) customerSession.current = createCustomerSession();
+  const pendingCheckoutRef = useRef(pendingCheckout);
+  pendingCheckoutRef.current = pendingCheckout;
   const [accountReady, setAccountReady] = useState(false);
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -712,8 +699,6 @@ export default function App() {
   const [registerFullName, setRegisterFullName] = useState("");
   const [registerPhone, setRegisterPhone] = useState("");
   const [registerEmail, setRegisterEmail] = useState("");
-  const [registerAddress, setRegisterAddress] = useState("");
-  const [registerDateOfBirth, setRegisterDateOfBirth] = useState("");
   const [registerPasswordConfirm, setRegisterPasswordConfirm] = useState("");
   const [passwordForm, setPasswordForm] = useState({ current: "", next: "", confirm: "" });
   const [phoneAvailability, setPhoneAvailability] = useState(null);
@@ -770,26 +755,28 @@ export default function App() {
       setPendingCheckout(null);
       return () => { active = false; };
     }
+    const session = customerSession.current.capture();
 
     AsyncStorage.getItem(checkoutStorageKey(customer.id))
       .then((raw) => parsePendingCheckout(raw, customer.id))
       .then((pending) => {
-        if (!active || !pending) return;
+        if (!active || !customerSession.current.isCurrent(session) || !pending) return;
+        pendingCheckoutRef.current = pending;
         setPendingCheckout(pending);
         setCart(pending.cart);
         setCheckoutForm({
           fullName: pending.payload.fullName || "",
           phone: pending.payload.phone || "",
-          address: pending.payload.address || "",
           note: pending.payload.note || "",
         });
+        setCheckoutAddress(parseDeliveryAddress(pending.payload.address));
         setPaymentMethod(pending.payload.paymentMethod || "cod");
         setUseRewardPoints((pending.payload.pointsUsed || 0) > 0);
         setAppliedVoucher(pending.voucher || null);
         setOrderError("Có một yêu cầu đặt hàng chưa xác định kết quả. Hãy kiểm tra thông tin và gửi lại để nhận đúng kết quả, không tạo đơn trùng.");
       })
       .catch(() => {
-        if (active) setOrderError("Không đọc được yêu cầu đặt hàng đã lưu. Vui lòng liên hệ nhân viên trước khi đặt đơn khác.");
+        if (active && customerSession.current.isCurrent(session)) setOrderError("Không đọc được yêu cầu đặt hàng đã lưu. Vui lòng liên hệ nhân viên trước khi đặt đơn khác.");
       });
 
     return () => { active = false; };
@@ -799,15 +786,17 @@ export default function App() {
   useEffect(() => {
     let active = true;
     const profileAddress = customer?.id && customerToken ? (customer.address || "").trim() : "";
-    setDeliveryAddress(deliveryAddressFromProfile(profileAddress));
-    setCheckoutForm((form) => ({ ...form, address: profileAddress }));
+    const session = customerSession.current.capture();
+    setDeliveryAddress(parseDeliveryAddress(profileAddress));
+    setCheckoutAddress(parseDeliveryAddress(profileAddress));
     if (!customer?.id || !customerToken) return () => { active = false; };
     AsyncStorage.getItem(`${ADDRESS_KEY}:${customer.id}`).then((stored) => {
-      if (!active || !stored) return;
+      if (!active || !customerSession.current.isCurrent(session) || !stored) return;
       const address = JSON.parse(stored);
       // Only reuse structured fields when they still match the current server profile.
       if ([address.street, address.ward, address.city].filter(Boolean).join(", ") !== profileAddress) return;
       setDeliveryAddress(address);
+      if (!pendingCheckoutRef.current) setCheckoutForm(form => ({ ...form, ...deliveryRecipient(customer) }));
     }).catch(() => { });
     return () => { active = false; };
   }, [customer?.id, customer?.address, customerToken]);
@@ -877,24 +866,27 @@ export default function App() {
   useEffect(() => () => productInfoRequest.current?.abort(), []);
 
   useEffect(() => {
+    const session = customerSession.current.capture();
     AsyncStorage.getItem(CART_KEY)
-      .then((stored) => setCart(stored ? JSON.parse(stored) : []))
-      .catch(() => setCart([]))
+      .then((stored) => { if (customerSession.current.isCurrent(session)) setCart(stored ? JSON.parse(stored) : []); })
+      .catch(() => { if (customerSession.current.isCurrent(session)) setCart([]); })
       .finally(() => setCartLoaded(true));
   }, []);
 
   useEffect(() => {
     cartSnapshot.current = { cart, loaded: cartLoaded };
     if (!cartLoaded) return;
+    const session = customerSession.current.capture();
     const timer = setTimeout(() => {
-      AsyncStorage.setItem(CART_KEY, JSON.stringify(cart)).catch(() => { });
+      customerSession.current.write(session, () => AsyncStorage.setItem(CART_KEY, JSON.stringify(cart))).catch(() => {});
     }, 250);
     return () => clearTimeout(timer);
   }, [cart, cartLoaded]);
 
   useEffect(() => () => {
     const snapshot = cartSnapshot.current;
-    if (snapshot.loaded) AsyncStorage.setItem(CART_KEY, JSON.stringify(snapshot.cart)).catch(() => { });
+    const session = customerSession.current.capture();
+    if (snapshot.loaded) customerSession.current.write(session, () => AsyncStorage.setItem(CART_KEY, JSON.stringify(snapshot.cart))).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -923,6 +915,7 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
+    const session = customerSession.current.capture();
     const restoreAccount = async () => {
       try {
         // Retire the old shared address cache so another account cannot reuse it.
@@ -931,13 +924,9 @@ export default function App() {
         const token = values[0][1];
         const storedCustomer = values[1][1] ? JSON.parse(values[1][1]) : null;
         if (!token || !storedCustomer) return;
-
-        const response = await fetch(`${API_URL}/storefront/account`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!response.ok) throw new Error("Phiên đăng nhập đã hết hạn.");
-        const profile = await response.json();
-        if (!active) return;
+        const { profile, offline } = await loadCustomerProfile(fetch, `${API_URL}/storefront/account`, token, storedCustomer);
+        if (!active || !customerSession.current.isCurrent(session)) return;
+        customerSession.current.begin(token);
         setCustomer(profile);
         setCustomerToken(token);
         setAccountName(profile.fullName || "");
@@ -945,8 +934,17 @@ export default function App() {
         setAccountAddress(profile.address || "");
         setAccountDateOfBirth(profile.dateOfBirth ? profile.dateOfBirth.slice(0, 10) : "");
         setCheckoutForm((form) => ({ ...form, fullName: profile.fullName || "", phone: profile.phone || "" }));
-      } catch {
-        await AsyncStorage.multiRemove([CUSTOMER_TOKEN_KEY, CUSTOMER_KEY, ADDRESS_KEY]).catch(() => { });
+        if (offline) setAccountMessage("Chưa kết nối được cửa hàng. Thông tin tài khoản đã lưu vẫn được giữ lại.");
+      } catch (error) {
+        if (!active || !customerSession.current.isCurrent(session)) return;
+        if (error.invalidSession) {
+          const clearing = clearCustomerSession();
+          const loggedOut = customerSession.current.capture();
+          await clearing;
+          if (active && customerSession.current.isCurrent(loggedOut)) setAccountError(error.message);
+        } else if (active && customerSession.current.isCurrent(session)) {
+          setAccountError(error.message || "Không tải được tài khoản. Vui lòng thử lại.");
+        }
       } finally {
         if (active) setAccountReady(true);
       }
@@ -958,6 +956,7 @@ export default function App() {
   useEffect(() => {
     if (tab !== "orders" || !customerToken) return undefined;
     let active = true;
+    const session = customerSession.current.capture();
     setOrdersLoading(true);
     setOrdersError("");
     fetch(`${API_URL}/storefront/orders`, {
@@ -968,14 +967,14 @@ export default function App() {
         return response.json();
       })
       .then((data) => {
-        if (!active) return;
+        if (!active || !customerSession.current.isCurrent(session)) return;
         const list = Array.isArray(data) ? data : [];
         setCustomerOrders(list);
         // Keep an open order detail in step with the refreshed status (e.g. after paying or cancelling).
-        setSelectedOrder((current) => current ? list.find((order) => order.id === current.id) ?? current : current);
+        setSelectedOrder((current) => current ? list.find((order) => order.id === current.id) ?? null : null);
       })
-      .catch((error) => { if (active) setOrdersError(error.message || "Không thể tải lịch sử đơn hàng."); })
-      .finally(() => { if (active) setOrdersLoading(false); });
+      .catch((error) => { if (active && customerSession.current.isCurrent(session)) setOrdersError(error.message || "Không thể tải lịch sử đơn hàng."); })
+      .finally(() => { if (active && customerSession.current.isCurrent(session)) setOrdersLoading(false); });
     return () => { active = false; };
   }, [tab, customerToken, ordersRefreshKey]);
 
@@ -986,6 +985,7 @@ export default function App() {
       return;
     }
 
+    let session = customerSession.current.begin();
     setAccountBusy(true);
     setAccountError("");
     setAccountMessage("");
@@ -997,10 +997,13 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await readError(response));
       const result = await response.json();
-      await AsyncStorage.multiSet([
+      if (!customerSession.current.isCurrent(session)) return;
+      session = customerSession.current.begin(result.token);
+      const saved = await customerSession.current.write(session, () => AsyncStorage.multiSet([
         [CUSTOMER_TOKEN_KEY, result.token],
         [CUSTOMER_KEY, JSON.stringify(result.customer)],
-      ]);
+      ]));
+      if (!saved) return;
       setCustomerToken(result.token);
       setCustomer(result.customer);
       setAccountName(result.customer.fullName || "");
@@ -1010,9 +1013,9 @@ export default function App() {
       setCheckoutForm((form) => ({ ...form, fullName: result.customer.fullName || "", phone: result.customer.phone }));
       setAccountMessage("Đăng nhập thành công.");
     } catch (error) {
-      setAccountError(error.message || "Không thể đăng nhập.");
+      if (customerSession.current.isCurrent(session)) setAccountError(error.message || "Không thể đăng nhập.");
     } finally {
-      setAccountBusy(false);
+      if (customerSession.current.isCurrent(session)) setAccountBusy(false);
     }
   };
 
@@ -1020,7 +1023,6 @@ export default function App() {
     const fullName = registerFullName.trim();
     const phone = normalizeVietnamesePhone(registerPhone);
     const email = registerEmail.trim();
-    const address = registerAddress.trim();
     if (loginPassword.length < 6 || fullName.length < 2) {
       setAccountError("Vui lòng nhập họ tên và mật khẩu hợp lệ (ít nhất 6 ký tự).");
       return;
@@ -1038,20 +1040,12 @@ export default function App() {
       setAccountError("Email chưa đúng định dạng.");
       return;
     }
-    if (address.length > 500) {
-      setAccountError("Địa chỉ không được vượt quá 500 ký tự.");
-      return;
-    }
-    const dateOfBirth = birthdayToIso(registerDateOfBirth);
-    if (registerDateOfBirth.trim() && !dateOfBirth) {
-      setAccountError("Ngày sinh chưa hợp lệ. Vui lòng nhập DD/MM/YYYY và không chọn ngày trong tương lai.");
-      return;
-    }
     if (phoneAvailability?.phone === phone && phoneAvailability.available === false) {
       setAccountError("Số điện thoại này đã được đăng ký. Vui lòng đăng nhập hoặc dùng số khác.");
       return;
     }
 
+    let session = customerSession.current.begin();
     setAccountBusy(true);
     setAccountError("");
     setAccountMessage("");
@@ -1059,14 +1053,17 @@ export default function App() {
       const response = await fetch(`${API_URL}/storefront/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: phone, password: loginPassword, fullName, phone, email: email || null, address: address || null, dateOfBirth }),
+        body: JSON.stringify({ username: phone, password: loginPassword, fullName, phone, email: email || null }),
       });
       if (!response.ok) throw new Error(await readError(response));
       const result = await response.json();
-      await AsyncStorage.multiSet([
+      if (!customerSession.current.isCurrent(session)) return;
+      session = customerSession.current.begin(result.token);
+      const saved = await customerSession.current.write(session, () => AsyncStorage.multiSet([
         [CUSTOMER_TOKEN_KEY, result.token],
         [CUSTOMER_KEY, JSON.stringify(result.customer)],
-      ]);
+      ]));
+      if (!saved) return;
       setCustomerToken(result.token);
       setCustomer(result.customer);
       setAccountName(result.customer.fullName || "");
@@ -1078,14 +1075,12 @@ export default function App() {
       setRegisterFullName("");
       setRegisterPhone("");
       setRegisterEmail("");
-      setRegisterAddress("");
-      setRegisterDateOfBirth("");
       setRegisterPasswordConfirm("");
       setTab("home");
     } catch (error) {
-      setAccountError(error.message || "Không thể tạo tài khoản.");
+      if (customerSession.current.isCurrent(session)) setAccountError(error.message || "Không thể tạo tài khoản.");
     } finally {
-      setAccountBusy(false);
+      if (customerSession.current.isCurrent(session)) setAccountBusy(false);
     }
   };
 
@@ -1136,7 +1131,9 @@ export default function App() {
   });
 
   const cancelCustomerOrder = async (order) => {
+    const session = customerSession.current.capture();
     if (!(await confirmDialog("Hủy đơn hàng", `Bạn chắc chắn muốn hủy đơn ${order.orderNumber}?`))) return;
+    if (!customerSession.current.isCurrent(session)) return;
     setOrderActionBusy(true);
     setOrderActionMessage("");
     try {
@@ -1146,17 +1143,19 @@ export default function App() {
         body: JSON.stringify({ reason: "Khách hủy trên ứng dụng" }),
       });
       if (!response.ok) throw new Error(await readError(response));
+      if (!customerSession.current.isCurrent(session)) return;
       setOrdersRefreshKey((key) => key + 1);
       void loadStore(true); // stock went back to the shelf
     } catch (error) {
-      setOrderActionMessage(error.message || "Không thể hủy đơn hàng.");
+      if (customerSession.current.isCurrent(session)) setOrderActionMessage(error.message || "Không thể hủy đơn hàng.");
     } finally {
-      setOrderActionBusy(false);
+      if (customerSession.current.isCurrent(session)) setOrderActionBusy(false);
     }
   };
 
   // Opens the MoMo page (a new attempt each time) or the bank-transfer page for an unpaid order.
   const payOrderOnline = async (order) => {
+    const session = customerSession.current.capture();
     setOrderActionBusy(true);
     setOrderActionMessage("");
     try {
@@ -1166,6 +1165,7 @@ export default function App() {
         : await fetch(`${API_URL}/storefront/orders/${order.id}/payment-status`, { headers: { Authorization: `Bearer ${customerToken}` } });
       if (!response.ok) throw new Error(await readError(response));
       const result = await response.json();
+      if (!customerSession.current.isCurrent(session)) return;
       const url = method === "e_wallet" ? result.payUrl : result.bankSimulatorUrl;
       if (url) {
         await Linking.openURL(url);
@@ -1175,9 +1175,9 @@ export default function App() {
         throw new Error("Chưa tạo được liên kết thanh toán. Vui lòng thử lại.");
       }
     } catch (error) {
-      setOrderActionMessage(error.message || "Không mở được trang thanh toán.");
+      if (customerSession.current.isCurrent(session)) setOrderActionMessage(error.message || "Không mở được trang thanh toán.");
     } finally {
-      setOrderActionBusy(false);
+      if (customerSession.current.isCurrent(session)) setOrderActionBusy(false);
     }
   };
 
@@ -1194,6 +1194,7 @@ export default function App() {
       setAccountError("Mật khẩu mới phải khác mật khẩu hiện tại.");
       return;
     }
+    const session = customerSession.current.capture();
     setAccountBusy(true);
     setAccountError("");
     setAccountMessage("");
@@ -1204,14 +1205,17 @@ export default function App() {
         body: JSON.stringify({ currentPassword: passwordForm.current, newPassword: passwordForm.next, confirmNewPassword: passwordForm.confirm }),
       });
       if (!response.ok) throw new Error(await readError(response));
+      if (!customerSession.current.isCurrent(session)) return;
       // The server revokes every existing session after a password change, so sign in again.
       setPasswordForm({ current: "", next: "", confirm: "" });
-      await clearCustomerSession();
-      setAccountMessage("Đổi mật khẩu thành công. Vui lòng đăng nhập lại bằng mật khẩu mới.");
+      const clearing = clearCustomerSession();
+      const loggedOut = customerSession.current.capture();
+      await clearing;
+      if (customerSession.current.isCurrent(loggedOut)) setAccountMessage("Đổi mật khẩu thành công. Vui lòng đăng nhập lại bằng mật khẩu mới.");
     } catch (error) {
-      setAccountError(error.message || "Không thể đổi mật khẩu.");
+      if (customerSession.current.isCurrent(session)) setAccountError(error.message || "Không thể đổi mật khẩu.");
     } finally {
-      setAccountBusy(false);
+      if (customerSession.current.isCurrent(session)) setAccountBusy(false);
     }
   };
 
@@ -1222,6 +1226,7 @@ export default function App() {
       return;
     }
 
+    const session = customerSession.current.capture();
     setAccountBusy(true);
     setAccountError("");
     setAccountMessage("");
@@ -1241,17 +1246,18 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await readError(response));
       const profile = await response.json();
-      await AsyncStorage.setItem(CUSTOMER_KEY, JSON.stringify(profile));
+      const saved = await customerSession.current.write(session, () => AsyncStorage.setItem(CUSTOMER_KEY, JSON.stringify(profile)));
+      if (!saved) return;
       setCustomer(profile);
       setAccountEmail(profile.email || "");
       setAccountAddress(profile.address || "");
       setAccountDateOfBirth(profile.dateOfBirth ? profile.dateOfBirth.slice(0, 10) : "");
-      setCheckoutForm((form) => ({ ...form, fullName: profile.fullName }));
+      if (!pendingCheckoutRef.current) setCheckoutForm((form) => ({ ...form, fullName: profile.fullName }));
       setAccountMessage("Đã cập nhật thông tin tài khoản.");
     } catch (error) {
-      setAccountError(error.message || "Không thể lưu thông tin tài khoản.");
+      if (customerSession.current.isCurrent(session)) setAccountError(error.message || "Không thể lưu thông tin tài khoản.");
     } finally {
-      setAccountBusy(false);
+      if (customerSession.current.isCurrent(session)) setAccountBusy(false);
     }
   };
 
@@ -1259,13 +1265,14 @@ export default function App() {
     if (addressBusy) return;
     if (!accountReady) { setAddressMessage("Đang tải tài khoản, vui lòng thử lại sau."); return; }
     if (!customer || !customerToken) { setProfilePage(""); setAccountError("Vui lòng đăng nhập để quản lý địa chỉ nhận hàng."); return; }
-    const sessionToken = customerToken;
+    const session = customerSession.current.capture();
     const addressKey = `${ADDRESS_KEY}:${customer.id}`;
     if (!deliveryAddress.city.trim() || !deliveryAddress.ward.trim() || !deliveryAddress.street.trim()) {
-      setAddressMessage("Vui lòng nhập tỉnh/thành phố, phường/xã và số nhà, tên đường.");
+      setAddressMessage("Vui lòng chọn tỉnh/thành phố, phường/xã và nhập số nhà, tên đường.");
       return;
     }
-    const address = { ...deliveryAddress, city: deliveryAddress.city.trim(), ward: deliveryAddress.ward.trim(), street: deliveryAddress.street.trim() };
+    const recipient = deliveryRecipient(customer);
+    const address = { city: deliveryAddress.city.trim(), ward: deliveryAddress.ward.trim(), street: deliveryAddress.street.trim() };
     const fullAddress = [address.street, address.ward, address.city].join(", ");
     if (fullAddress.length > 500) { setAddressMessage("Địa chỉ không được vượt quá 500 ký tự."); return; }
     setAddressBusy(true);
@@ -1280,41 +1287,29 @@ export default function App() {
         });
         if (!response.ok) throw new Error(await readError(response));
         const profile = await response.json();
-        if (customerSession.current !== sessionToken) return;
-        await AsyncStorage.multiSet([
+        const saved = await customerSession.current.write(session, () => AsyncStorage.multiSet([
           [addressKey, JSON.stringify(address)],
           [CUSTOMER_KEY, JSON.stringify(profile)],
-        ]);
-        if (customerSession.current !== sessionToken) {
-          await AsyncStorage.removeItem(addressKey);
-          if (!customerSession.current) await AsyncStorage.removeItem(CUSTOMER_KEY);
-          return;
-        }
+        ]));
+        if (!saved) return;
         setCustomer(profile);
         setAccountAddress(profile.address || fullAddress);
       }
       setDeliveryAddress(address);
-      setCheckoutForm((form) => ({ ...form, address: fullAddress }));
+      setCheckoutAddress({ ...address });
+      if (!pendingCheckoutRef.current) setCheckoutForm(form => ({ ...form, ...recipient }));
       setAddressMessage("Đã cập nhật địa chỉ tài khoản và địa chỉ nhận hàng.");
     } catch (error) {
-      if (customerSession.current === sessionToken) setAddressMessage(error.message || "Không thể lưu địa chỉ. Vui lòng thử lại.");
+      if (customerSession.current.isCurrent(session)) setAddressMessage(error.message || "Không thể lưu địa chỉ. Vui lòng thử lại.");
     } finally {
-      setAddressBusy(false);
+      if (customerSession.current.isCurrent(session)) setAddressBusy(false);
     }
   };
 
   const clearCustomerSession = async () => {
+    customerSession.current.begin();
     const customerAddressKey = customer?.id ? `${ADDRESS_KEY}:${customer.id}` : null;
     const sessionKeys = [CUSTOMER_TOKEN_KEY, CUSTOMER_KEY, ADDRESS_KEY, CART_KEY, customerAddressKey].filter(Boolean);
-    let storageError = false;
-    try {
-      await AsyncStorage.multiRemove(sessionKeys);
-    } catch {
-      storageError = true;
-      await Promise.all(sessionKeys.map((key) => AsyncStorage.removeItem(key).catch(() => { })));
-    }
-
-    customerSession.current = "";
     setCustomer(null);
     setCustomerToken("");
     setAccountName("");
@@ -1326,8 +1321,6 @@ export default function App() {
     setRegisterFullName("");
     setRegisterPhone("");
     setRegisterEmail("");
-    setRegisterAddress("");
-    setRegisterDateOfBirth("");
     setRegisterPasswordConfirm("");
     setAccountError("");
     setAccountMessage("");
@@ -1337,14 +1330,52 @@ export default function App() {
     setRegisterMode(false);
     setDatePickerOpen(false);
     setCheckoutOpen(false);
-    setCheckoutForm({ fullName: "", phone: "", address: "", note: "" });
+    setCheckoutForm({ fullName: "", phone: "", note: "" });
+    setCheckoutAddress(parseDeliveryAddress(""));
+    pendingCheckoutRef.current = null;
     setPendingCheckout(null);
     setCart([]);
     cartSnapshot.current = { cart: [], loaded: true };
     setAppliedVoucher(null);
     setDraftVoucher(null);
     setUseRewardPoints(false);
-
+    setCustomerOrders([]);
+    setSelectedOrder(null);
+    setInvoiceOrder(null);
+    setCompletedOrder(null);
+    setOrdersLoading(false);
+    setOrdersError("");
+    setOrderActionMessage("");
+    setOrderActionBusy(false);
+    setOrderError("");
+    setOrderSubmitting(false);
+    checkoutRequestLock.current = false;
+    setOrderFilter("all");
+    setVoucherOpen(false);
+    setVoucherCode("");
+    setVoucherSearch("");
+    setVoucherList([]);
+    setVoucherHistory([]);
+    setCodeResult(null);
+    setVoucherMessage("");
+    setVoucherBusy(false);
+    setVouchersLoading(false);
+    setAccountBusy(false);
+    setAddressBusy(false);
+    setPasswordForm({ current: "", next: "", confirm: "" });
+    setPhoneAvailability(null);
+    phoneCheckSequence.current += 1;
+    setPaymentMethod("cod");
+    setAccountReady(true);
+    let storageError = false;
+    await customerSession.current.run(async () => {
+      try {
+        await AsyncStorage.multiRemove(sessionKeys);
+      } catch {
+        storageError = true;
+        await Promise.all(sessionKeys.map((key) => AsyncStorage.removeItem(key).catch(() => {})));
+      }
+    });
     if (storageError) Alert.alert("Đăng xuất", "Đã thoát tài khoản trong ứng dụng nhưng thiết bị chưa xóa được phiên đã lưu.");
   };
 
@@ -1442,18 +1473,29 @@ export default function App() {
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const productDiscount = cart.reduce((sum, item) => sum + productDiscountAmount(item) * item.quantity, 0);
   const originalSubtotal = subtotal + productDiscount;
-  const voucherDiscount = appliedVoucher?.discountAmount || 0;
+  const activeVoucher = pendingCheckout ? appliedVoucher : repriceVoucher(appliedVoucher, subtotal);
+  const currentDraftVoucher = repriceVoucher(draftVoucher, subtotal);
+  const voucherDiscount = activeVoucher?.discountAmount || 0;
   const afterVoucher = Math.max(0, subtotal - voucherDiscount);
   const maxPointsUsable = Math.min(customer?.rewardPoints || 0, Math.floor(afterVoucher / 1000));
-  const pointsDiscount = useRewardPoints ? maxPointsUsable * 1000 : 0;
-  const payable = Math.max(0, afterVoucher - pointsDiscount);
+  const pointsDiscount = pendingCheckout ? (pendingCheckout.payload.pointsUsed || 0) * 1000 : useRewardPoints ? maxPointsUsable * 1000 : 0;
+  const payable = pendingCheckout?.payload.expectedTotal ?? Math.max(0, afterVoucher - pointsDiscount);
+
+  useEffect(() => {
+    if (!pendingCheckout && appliedVoucher && !repriceVoucher(appliedVoucher, subtotal)) {
+      setAppliedVoucher(null);
+      setDraftVoucher(null);
+      setOrderError("Đã bỏ phiếu giảm giá vì giỏ hàng không còn đáp ứng điều kiện.");
+    }
+  }, [appliedVoucher, subtotal, pendingCheckout]);
 
   const openVouchers = async (context = "checkout") => {
     if (context === "checkout" && pendingCheckout) return;
     if (!requireAuthenticatedCustomer()) return;
+    const session = customerSession.current.capture();
     setVoucherContext(context);
     setVoucherView("available");
-    setDraftVoucher(appliedVoucher);
+    setDraftVoucher(activeVoucher);
     setVoucherOpen(true);
     setVoucherMessage("");
     setVouchersLoading(true);
@@ -1467,15 +1509,16 @@ export default function App() {
         if (!response.ok) throw new Error(await readError(response));
         events = (await response.json()).filter((promotion) => promotion.type === "event");
       }
-      setVoucherList([...events, ...wallet.filter((promotion) => !["used", "expired"].includes(promotion.walletStatus))]);
+      if (customerSession.current.isCurrent(session)) setVoucherList([...events, ...wallet.filter((promotion) => !["used", "expired"].includes(promotion.walletStatus))]);
     } catch (error) {
-      setVoucherMessage(error.message || "Không tải được phiếu mua hàng.");
+      if (customerSession.current.isCurrent(session)) setVoucherMessage(error.message || "Không tải được phiếu mua hàng.");
     } finally {
-      setVouchersLoading(false);
+      if (customerSession.current.isCurrent(session)) setVouchersLoading(false);
     }
   };
 
   const applyVoucher = async (code = voucherCode, eventPromotionId = null) => {
+    const session = customerSession.current.capture();
     const normalizedCode = code.trim();
     if (!eventPromotionId && !normalizedCode) { setVoucherMessage("Nhập mã voucher."); return; }
     if (eventPromotionId) {
@@ -1493,13 +1536,14 @@ export default function App() {
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.isValid) throw new Error(result.message || "Phiếu mua hàng không hợp lệ.");
+      if (!customerSession.current.isCurrent(session)) return;
       setDraftVoucher({ code: eventPromotionId ? null : normalizedCode, eventPromotionId, discountAmount: result.discountAmount, promotion: result.promotion });
       if (!eventPromotionId) setVoucherCode(normalizedCode);
       setVoucherMessage("");
     } catch (error) {
-      setVoucherMessage(error.message || "Không thể áp dụng phiếu mua hàng.");
+      if (customerSession.current.isCurrent(session)) setVoucherMessage(error.message || "Không thể áp dụng phiếu mua hàng.");
     } finally {
-      setVoucherBusy(false);
+      if (customerSession.current.isCurrent(session)) setVoucherBusy(false);
     }
   };
 
@@ -1520,6 +1564,7 @@ export default function App() {
 
   const openVoucherHistory = async () => {
     if (!customerToken) return;
+    const session = customerSession.current.capture();
     setVoucherView("history");
     setVouchersLoading(true);
     setVoucherMessage("");
@@ -1527,17 +1572,18 @@ export default function App() {
       const response = await fetch(`${API_URL}/storefront/promotions/history`, { headers: { Authorization: `Bearer ${customerToken}` } });
       if (!response.ok) throw new Error(await readError(response));
       const data = await response.json();
-      setVoucherHistory(Array.isArray(data) ? data : []);
+      if (customerSession.current.isCurrent(session)) setVoucherHistory(Array.isArray(data) ? data : []);
     } catch (error) {
-      setVoucherMessage(error.message || "Không tải được lịch sử voucher.");
+      if (customerSession.current.isCurrent(session)) setVoucherMessage(error.message || "Không tải được lịch sử voucher.");
     } finally {
-      setVouchersLoading(false);
+      if (customerSession.current.isCurrent(session)) setVouchersLoading(false);
     }
   };
 
   // Voucher hunt page. Public vouchers are listed; an Only-code voucher appears only after its code is looked up.
   const openVoucherDiscovery = async (initialCode = "") => {
     if (!requireAuthenticatedCustomer()) return;
+    const session = customerSession.current.capture();
     setVoucherContext("account");
     setVoucherView("discover");
     setVoucherOpen(true);
@@ -1549,17 +1595,18 @@ export default function App() {
       const response = await fetch(`${API_URL}/storefront/vouchers/discover`, { headers: { Authorization: `Bearer ${customerToken}` } });
       if (!response.ok) throw new Error(await readError(response));
       const data = await response.json();
-      setVoucherList(Array.isArray(data) ? data : []);
+      if (customerSession.current.isCurrent(session)) setVoucherList(Array.isArray(data) ? data : []);
     } catch (error) {
-      setVoucherMessage(error.message || "Không tải được voucher.");
+      if (customerSession.current.isCurrent(session)) setVoucherMessage(error.message || "Không tải được voucher.");
     } finally {
-      setVouchersLoading(false);
+      if (customerSession.current.isCurrent(session)) setVouchersLoading(false);
     }
-    if (initialCode.trim()) await lookupVoucherCode(initialCode);
+    if (customerSession.current.isCurrent(session) && initialCode.trim()) await lookupVoucherCode(initialCode);
   };
 
   // Asks the server for the voucher with exactly this code (works for Public and Only-code vouchers).
   const lookupVoucherCode = async (rawCode = voucherSearch) => {
+    const session = customerSession.current.capture();
     const code = rawCode.trim().toUpperCase();
     if (!code) { setVoucherMessage("Nhập mã voucher để tìm."); return; }
     setVoucherBusy(true);
@@ -1567,12 +1614,14 @@ export default function App() {
     try {
       const response = await fetch(`${API_URL}/storefront/vouchers/lookup?code=${encodeURIComponent(code)}`, { headers: { Authorization: `Bearer ${customerToken}` } });
       if (!response.ok) throw new Error(await readError(response));
-      setCodeResult(await response.json());
+      const result = await response.json();
+      if (customerSession.current.isCurrent(session)) setCodeResult(result);
     } catch (error) {
+      if (!customerSession.current.isCurrent(session)) return;
       setCodeResult(null);
       setVoucherMessage(error.message || "Không tìm thấy mã voucher.");
     } finally {
-      setVoucherBusy(false);
+      if (customerSession.current.isCurrent(session)) setVoucherBusy(false);
     }
   };
 
@@ -1613,6 +1662,7 @@ export default function App() {
 
   const claimVoucher = async (promotionId = null, codeOverride = null) => {
     if (voucherBusy || !requireAuthenticatedCustomer()) return;
+    const session = customerSession.current.capture();
     const code = (codeOverride ?? voucherCode).trim().toUpperCase();
     if (!promotionId && !code) { setVoucherMessage("Nhập mã voucher để nhận."); return; }
     setVoucherBusy(true);
@@ -1625,15 +1675,16 @@ export default function App() {
       });
       if (!response.ok) throw new Error(await readError(response));
       const received = await response.json();
+      if (!customerSession.current.isCurrent(session)) return;
       const savedId = promotionId ?? received.id;
       const markSaved = (item) => item.id === savedId ? { ...item, isClaimed: true, claimIssue: "Bạn đã lưu mã này.", claimedCount: received.claimedCount } : item;
       setVoucherList((current) => current.map(markSaved));
       setCodeResult((current) => current ? markSaved(current) : current);
       if (!promotionId && voucherView !== "discover") { await openVouchers("account"); setVoucherCode(""); }
-      setVoucherMessage("Đã lưu voucher vào kho của bạn.");
+      if (customerSession.current.isCurrent(session)) setVoucherMessage("Đã lưu voucher vào kho của bạn.");
     } catch (error) {
-      setVoucherMessage(error.message || "Không thể nhận voucher.");
-    } finally { setVoucherBusy(false); }
+      if (customerSession.current.isCurrent(session)) setVoucherMessage(error.message || "Không thể nhận voucher.");
+    } finally { if (customerSession.current.isCurrent(session)) setVoucherBusy(false); }
   };
 
   const flyProductToCart = useCallback((product, event) => {
@@ -1746,9 +1797,19 @@ export default function App() {
       setCheckoutOpen(false);
       return;
     }
-    const formToValidate = pendingCheckout?.payload || checkoutForm;
-    if (!formToValidate.fullName?.trim() || !formToValidate.phone?.trim() || !formToValidate.address?.trim()) {
-      setOrderError("Nhập họ tên, số điện thoại và địa chỉ nhận hàng.");
+    const session = customerSession.current.capture();
+    const address = pendingCheckout?.payload.address || formatSelectedDeliveryAddress(administrativeUnits.provinces, checkoutAddress);
+    const formToValidate = pendingCheckout?.payload || { ...checkoutForm, address };
+    if (!formToValidate.fullName?.trim() || !formToValidate.phone?.trim()) {
+      setOrderError("Nhập họ tên và số điện thoại người nhận.");
+      return;
+    }
+    if (!formToValidate.address?.trim()) {
+      setOrderError("Vui lòng chọn tỉnh/thành phố, phường/xã và nhập số nhà, tên đường.");
+      return;
+    }
+    if (formToValidate.address.length > 500) {
+      setOrderError("Địa chỉ không được vượt quá 500 ký tự.");
       return;
     }
     if (!/^(0|\+84)[35789]\d{8}$/.test(formToValidate.phone.trim())) {
@@ -1764,9 +1825,10 @@ export default function App() {
       const pending = await preparePendingCheckout(AsyncStorage, customer.id, () => ({
         owner: customer.id,
         cart,
-        voucher: appliedVoucher,
+        voucher: activeVoucher,
         payload: {
           ...checkoutForm,
+          address,
           fullName: checkoutForm.fullName.trim(),
           phone: checkoutForm.phone.trim(),
           requestId: createCheckoutRequestId(),
@@ -1774,10 +1836,11 @@ export default function App() {
           paymentMethod,
           pointsUsed: useRewardPoints ? maxPointsUsable : 0,
           items: cart.map((item) => ({ productId: item.id, quantity: item.quantity })),
-          promotionCode: appliedVoucher?.code || null,
-          eventPromotionId: appliedVoucher?.eventPromotionId || null,
+          promotionCode: activeVoucher?.code || null,
+          eventPromotionId: activeVoucher?.eventPromotionId || null,
         },
       }));
+      if (!customerSession.current.isCurrent(session)) return;
       setPendingCheckout(pending);
       const response = await fetch(`${API_URL}/storefront/orders`, {
         method: "POST",
@@ -1788,14 +1851,17 @@ export default function App() {
         body: JSON.stringify(pending.payload),
       });
       const result = await response.json().catch(() => ({}));
+      if (!customerSession.current.isCurrent(session)) return;
       if (!response.ok) {
         if (checkoutDefinitelyRejected(response.status, result)) {
           await AsyncStorage.removeItem(storageKey);
+          if (!customerSession.current.isCurrent(session)) return;
           setPendingCheckout(null);
         }
         throw new Error(result.message || result.title || "Chưa xác định được kết quả đặt hàng. Hãy thử lại yêu cầu đã lưu.");
       }
       await AsyncStorage.removeItem(storageKey);
+      if (!customerSession.current.isCurrent(session)) return;
       setPendingCheckout(null);
       setCompletedOrder({
         ...result,
@@ -1805,7 +1871,7 @@ export default function App() {
       });
       fetch(`${API_URL}/storefront/account`, { headers: { Authorization: `Bearer ${customerToken}` } })
         .then((accountResponse) => accountResponse.ok ? accountResponse.json() : null)
-        .then((profile) => { if (profile) setCustomer(profile); })
+        .then((profile) => { if (profile && customerSession.current.isCurrent(session)) setCustomer(profile); })
         .catch(() => {});
       const placedOrder = {
         ...result,
@@ -1827,13 +1893,17 @@ export default function App() {
       };
       setCustomerOrders((current) => [placedOrder, ...current.filter((order) => order.id !== placedOrder.id)]);
       setCart([]);
+      setAppliedVoucher(null);
+      setDraftVoucher(null);
       void loadStore(true);
       setUseRewardPoints(false);
     } catch (error) {
-      setOrderError(error.message || "Không thể gửi đơn hàng. Kiểm tra kết nối rồi thử lại.");
+      if (customerSession.current.isCurrent(session)) setOrderError(error.message || "Không thể gửi đơn hàng. Kiểm tra kết nối rồi thử lại.");
     } finally {
-      checkoutRequestLock.current = false;
-      setOrderSubmitting(false);
+      if (customerSession.current.isCurrent(session)) {
+        checkoutRequestLock.current = false;
+        setOrderSubmitting(false);
+      }
     }
   };
 
@@ -2085,10 +2155,10 @@ export default function App() {
                   <Text style={styles.voucherLabel}>Phiếu giảm giá (Voucher)</Text>
                 </View>
                 <Text style={styles.voucherAction}>
-                  {appliedVoucher ? `-${money(appliedVoucher.discountAmount)} · Đổi` : "Chọn mã  ›"}
+                  {activeVoucher ? `-${money(activeVoucher.discountAmount)} · Đổi` : "Chọn mã  ›"}
                 </Text>
               </Pressable>
-              {appliedVoucher && (
+              {activeVoucher && (
                 <Pressable disabled={Boolean(pendingCheckout)} onPress={() => setAppliedVoucher(null)}>
                   <Text style={styles.voucherRemove}>✕ Bỏ phiếu mua hàng</Text>
                 </Pressable>
@@ -2099,6 +2169,7 @@ export default function App() {
                 <Text style={styles.summaryTotalValue}>{money(payable)}</Text>
               </View>
 
+              {orderError ? <Text style={styles.orderError}>{orderError}</Text> : null}
               <AppButton title="Tiến hành đặt hàng  →" onPress={() => { if (!requireAuthenticatedCustomer()) return; setOrderError(""); setCompletedOrder(null); setCheckoutOpen(true); }} />
               <AppButton
                 title="Xóa hết giỏ hàng"
@@ -2338,12 +2409,9 @@ export default function App() {
           <AppButton title={accountBusy ? "Đang lưu..." : "Lưu chỉnh sửa"} onPress={saveAccountName} disabled={accountBusy} />
 
         </View> : <View style={styles.infoCard}>
-          <TextInput value={deliveryAddress.city} onChangeText={(city) => setDeliveryAddress((a) => ({ ...a, city }))} placeholder="Tỉnh/Thành phố" style={styles.accountInput} />
-          <TextInput value={deliveryAddress.ward} onChangeText={(ward) => setDeliveryAddress((a) => ({ ...a, ward }))} placeholder="Phường/Xã" style={styles.accountInput} />
-          <TextInput value={deliveryAddress.street} onChangeText={(street) => setDeliveryAddress((a) => ({ ...a, street }))} placeholder="Số nhà, tên đường" style={styles.accountInput} />
-          <Text style={styles.receiverLine}>Người nhận:  <Text style={styles.receiverPhone}>{customer?.phone}</Text></Text>
-          <Pressable style={styles.receiverCheck} onPress={() => setDeliveryAddress((a) => ({ ...a, otherReceiver: !a.otherReceiver }))}><Text style={styles.checkBox}>{deliveryAddress.otherReceiver ? "☑" : "□"}</Text><Text style={styles.genderText}>Gọi người khác nhận hàng (nếu có)</Text></Pressable>
-          {deliveryAddress.otherReceiver ? <TextInput placeholder="Tên và số điện thoại người nhận" style={styles.accountInput} /> : null}
+          <DeliveryAddressSelect value={deliveryAddress} onChange={(address) => { setDeliveryAddress(address); setAddressMessage(""); }} disabled={addressBusy} />
+          <TextInput value={deliveryAddress.street} onChangeText={(street) => setDeliveryAddress((a) => ({ ...a, street }))} placeholder="Số nhà, tên đường" style={styles.accountInput} editable={!addressBusy} />
+          <Text style={styles.receiverLine}>Người nhận: <Text style={styles.receiverPhone}>{customer?.fullName?.trim() || "Anh/Chị"} - {customer?.phone}</Text></Text>
           {addressMessage ? <Text style={styles.accountMessage}>{addressMessage}</Text> : null}
           <AppButton title={addressBusy ? "Đang lưu..." : "Lưu địa chỉ"} onPress={saveDeliveryAddress} disabled={addressBusy || !accountReady} />
         </View>}
@@ -2382,8 +2450,6 @@ export default function App() {
               {phoneAvailability.checking ? "Đang kiểm tra số điện thoại..." : phoneAvailability.error ? "Chưa kiểm tra được. Số điện thoại sẽ được xác minh khi tạo tài khoản." : phoneAvailability.available ? "Số điện thoại có thể đăng ký." : "Số điện thoại này đã được đăng ký."}
             </Text> : null}
             {registerMode ? <TextInput value={registerEmail} onChangeText={setRegisterEmail} placeholder="Email" style={styles.formInput} keyboardType="email-address" autoCapitalize="none" maxLength={255} /> : null}
-            {registerMode ? <BirthdayInput value={registerDateOfBirth} onChange={setRegisterDateOfBirth} /> : null}
-            {registerMode ? <TextInput value={registerAddress} onChangeText={setRegisterAddress} placeholder="Địa chỉ" style={[styles.formInput, styles.addressInput]} multiline maxLength={500} /> : null}
             {!registerMode ? <TextInput
               value={loginUsername}
               onChangeText={setLoginUsername}
@@ -2775,16 +2841,18 @@ export default function App() {
                         <Pressable
                           disabled={orderActionBusy}
                           onPress={async () => {
+                            const session = customerSession.current.capture();
                             setOrderActionBusy(true);
                             try {
                               const response = await fetch(`${API_URL}/storefront/orders/${completedOrder.id}/pay-momo`, { method: "POST", headers: { Authorization: `Bearer ${customerToken}` } });
                               if (!response.ok) throw new Error(await readError(response));
                               const result = await response.json();
+                              if (!customerSession.current.isCurrent(session)) return;
                               setCompletedOrder((order) => order ? { ...order, momoPayUrl: result.payUrl, paymentError: null } : order);
                             } catch (error) {
-                              setCompletedOrder((order) => order ? { ...order, paymentError: error.message || "Vẫn chưa tạo được liên kết MoMo." } : order);
+                              if (customerSession.current.isCurrent(session)) setCompletedOrder((order) => order ? { ...order, paymentError: error.message || "Vẫn chưa tạo được liên kết MoMo." } : order);
                             } finally {
-                              setOrderActionBusy(false);
+                              if (customerSession.current.isCurrent(session)) setOrderActionBusy(false);
                             }
                           }}
                           style={styles.momoActionBtn}
@@ -2856,15 +2924,11 @@ export default function App() {
                 />
 
                 <Text style={styles.inputLabel}>ĐỊA CHỈ NHẬN HÀNG (CHỈ CHO ĐƠN NÀY)</Text>
-                <Text style={{ color: TEXT_MUTED, fontSize: 12, marginBottom: 6 }}>Bạn có thể nhập địa chỉ khác. Địa chỉ mặc định đã lưu sẽ không thay đổi.</Text>
-                <TextInput
-                  value={checkoutForm.address}
-                  editable={!pendingCheckout}
-                  onChangeText={(value) => setCheckoutForm((form) => ({ ...form, address: value }))}
-                  placeholder="Số nhà, tên đường, phường/xã, quận/huyện..."
-                  style={[styles.formInput, styles.addressInput]}
-                  multiline
-                  maxLength={500}
+                <DeliveryAddressSelect
+                  singleField
+                  value={activeCheckoutAddress}
+                  onChange={(address) => { setCheckoutAddress(address); setOrderError(""); }}
+                  disabled={orderSubmitting || Boolean(pendingCheckout)}
                 />
 
                 <Text style={styles.inputLabel}>GHI CHÚ GIAO HÀNG (NẾU CÓ)</Text>
@@ -3078,8 +3142,8 @@ export default function App() {
 
             {voucherContext === "checkout" && voucherView === "available" && <View style={styles.voucherFooter}>
               <Text style={styles.voucherFooterHint}>{draftVoucher ? "1 voucher đã được chọn." : "Chưa chọn voucher."}</Text>
-              {draftVoucher && <Text style={styles.voucherFooterSaving}>Giảm <Text style={styles.voucherSavingAmount}>-{money(draftVoucher.discountAmount)}</Text></Text>}
-              <AppButton title={voucherBusy ? "Đang kiểm tra..." : "Đồng ý"} disabled={voucherBusy} style={styles.voucherConfirm} onPress={() => { setAppliedVoucher(draftVoucher); setVoucherOpen(false); }} />
+              {currentDraftVoucher && <Text style={styles.voucherFooterSaving}>Giảm <Text style={styles.voucherSavingAmount}>-{money(currentDraftVoucher.discountAmount)}</Text></Text>}
+              <AppButton title={voucherBusy ? "Đang kiểm tra..." : "Đồng ý"} disabled={voucherBusy} style={styles.voucherConfirm} onPress={() => { setAppliedVoucher(currentDraftVoucher); setVoucherOpen(false); }} />
             </View>}
           </View>
         </View>
@@ -3537,8 +3601,6 @@ const styles = StyleSheet.create({
   deleteLink: { color: "#c44343", textDecorationLine: "underline", fontSize: 16, textAlign: "center", marginTop: 12, marginBottom: 5 },
   receiverLine: { color: "#293443", fontSize: 15, marginTop: 5, marginBottom: 10 },
   receiverPhone: { fontWeight: "900" },
-  receiverCheck: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 9 },
-  checkBox: { color: "#75808c", fontSize: 21 },
   bottomNav: { backgroundColor: "#fff", borderTopWidth: 1, borderTopColor: "#e9ede8", flexShrink: 0, paddingBottom: 3 },
   bottomNavInner: { width: "100%", maxWidth: 1200, alignSelf: "center", flexDirection: "row", alignItems: "center", minHeight: 60 },
   navItem: { flex: 1, minWidth: 0, minHeight: 56, alignItems: "center", justifyContent: "center", gap: 4 },

@@ -33,6 +33,8 @@ EXPO_PUBLIC_API_URL=http://YOUR_COMPUTER_LAN_IP:5099/api
 
 For the Android emulator, use `http://10.0.2.2:5099/api` instead. Restart Expo after changing `.env`. The backend listens on `0.0.0.0:5099` for development, so Windows Firewall may ask whether to allow local network access.
 
+`EXPO_PUBLIC_API_URL` takes precedence on Android and web. For a hosted web build, set it to the public HTTPS API URL before exporting (for example, `https://api.example.com/api`). Without an explicit URL, an HTTPS website uses its own origin plus `/api`; local HTTP web development uses port 5099 on the browser's host.
+
 To build and install a native debug APK with `npm.cmd run build:android`, install Android Studio and its Android SDK first. Expo Go is the quickest way to preview the app on a phone.
 
 The app loads active, in-stock products and categories from `GET /api/storefront/products` and `GET /api/storefront/categories`. Checkout sends cart product IDs and quantities to `POST /api/storefront/orders`; the backend recalculates prices and checks stock before saving the order and reducing inventory. Cart contents are stored on-device. Payment is currently cash on delivery; payment gateway and delivery integrations are not configured.
