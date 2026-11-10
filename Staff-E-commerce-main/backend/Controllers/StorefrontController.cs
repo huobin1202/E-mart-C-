@@ -123,17 +123,13 @@ public sealed class StorefrontController(
     public async Task<IActionResult> Login([FromBody] StorefrontCustomerLoginRequest request)
     {
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
-        if (throttle.RetryAfter("customer", request.Username, ip) is { } wait)
-            return StatusCode(429, new { message = LoginThrottle.Message(wait) });
         try
         {
-            var result = await accounts.LoginAsync(request);
-            throttle.RegisterSuccess("customer", request.Username);
+            var result = await accounts.LoginAsync(request, ip);
             return Ok(result);
         }
         catch (BusinessRuleException exception)
         {
-            if (exception.StatusCode == 401) throttle.RegisterFailure("customer", request.Username, ip);
             return BusinessError(exception);
         }
     }

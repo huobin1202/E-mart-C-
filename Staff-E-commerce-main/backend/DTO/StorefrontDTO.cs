@@ -10,7 +10,7 @@ public sealed class StorefrontCategoryDTO
 
 public class StorefrontCustomerLoginRequest
 {
-    [Required, StringLength(150)]
+    [Required, StringLength(255)]
     public string Username { get; set; } = string.Empty;
 
     [Required, StringLength(128, MinimumLength = 6)]

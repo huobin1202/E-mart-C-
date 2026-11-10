@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using backend.DTO;
 using backend.Models;
 using backend.Repository;
+using backend.Security;
 using Microsoft.EntityFrameworkCore;
 
 namespace backend.Services;
@@ -10,7 +11,8 @@ public sealed class StorefrontAccountService(
     StorefrontRepository repository,
     JwtService jwt,
     CustomerService customers,
-    RealtimeNotificationService realtime)
+    RealtimeNotificationService realtime,
+    LoginThrottle throttle)
 {
     public async Task<bool> IsRegistrationPhoneAvailableAsync(string value)
     {
@@ -97,23 +99,35 @@ public sealed class StorefrontAccountService(
         return Authenticate(user, customer);
     }
 
-    public async Task<StorefrontAuthenticationDTO> LoginAsync(StorefrontCustomerLoginRequest request)
+    public async Task<StorefrontAuthenticationDTO> LoginAsync(StorefrontCustomerLoginRequest request, string? ip = null)
     {
         if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
-            throw new BusinessRuleException("Vui lòng nhập tên đăng nhập và mật khẩu.");
+            throw new BusinessRuleException("Vui lòng nhập số điện thoại/email và mật khẩu.");
 
         var identifier = request.Username.Trim();
         var user = await repository.GetCustomerLoginAsync(identifier, NormalizePhone(identifier));
+        // Phone and email belong to one account, so switching identifiers cannot bypass its lockout.
+        var throttleKey = user != null ? $"id:{user.Id}" :
+            $"identifier:{(identifier.Contains('@') ? identifier.ToLowerInvariant() : NormalizePhone(identifier))}";
+        if (throttle.RetryAfter("customer", throttleKey, ip) is { } wait)
+            throw new BusinessRuleException(LoginThrottle.Message(wait), 429);
         if (user?.Customer == null || user.RoleEntity == null ||
             !string.Equals(user.RoleEntity.Name, "customer", StringComparison.OrdinalIgnoreCase) ||
             !user.IsActive || user.IsLocked || !user.RoleEntity.IsActive ||
             !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
-            throw new BusinessRuleException("Tên đăng nhập hoặc mật khẩu không đúng.", 401);
+        {
+            throttle.RegisterFailure("customer", throttleKey, ip);
+            throw new BusinessRuleException("Số điện thoại/email hoặc mật khẩu không đúng.", 401);
+        }
         if (!user.Customer.IsActive)
+        {
+            throttle.RegisterFailure("customer", throttleKey, ip);
             throw new BusinessRuleException("Tài khoản khách hàng đã bị khóa.", 401);
+        }
 
         var now = DateTime.UtcNow;
         await repository.UpdateLastLoginAsync(user.Id, now);
+        throttle.RegisterSuccess("customer", throttleKey);
         user.LastLogin = now;
         return Authenticate(user, user.Customer);
     }

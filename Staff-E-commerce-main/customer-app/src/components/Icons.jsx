@@ -18,6 +18,16 @@ export function IconSearch({ size = 20, color = "#008848" }) {
   );
 }
 
+export function IconEye({ size = 22, color = "#64748b", crossedOut = false }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <Circle cx="12" cy="12" r="3" stroke={color} strokeWidth="1.8" />
+      {crossedOut && <Path d="M3 3l18 18" stroke={color} strokeWidth="2" strokeLinecap="round" />}
+    </Svg>
+  );
+}
+
 export function IconCart({ size = 22, color = "#ffffff" }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">

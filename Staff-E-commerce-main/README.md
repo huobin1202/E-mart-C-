@@ -29,7 +29,7 @@ Tài khoản lưu `role_id` làm khóa ngoại đến bảng `roles`; quyền c�
 được xác định qua quan hệ `roles` - `role_permissions` - `permissions`.
 
 Khách hàng không đăng nhập vào trang quản trị. Khách hàng sử dụng `customer-app`
-và đăng nhập bằng **số điện thoại** và mật khẩu; tại mục Tài khoản có thể tự đăng ký
+và đăng nhập bằng **số điện thoại hoặc email đã lưu trong tài khoản** và mật khẩu (email không phân biệt chữ hoa/thường); tại mục Tài khoản có thể tự đăng ký
 bằng họ tên, số điện thoại và mật khẩu. Tên đăng nhập của tài khoản khách luôn là số
 điện thoại của hồ sơ khách hàng (kể cả khi admin tạo tài khoản hoặc đổi số điện thoại);
 tài khoản cũ có tên đăng nhập tự đặt được tự đổi sang số điện thoại khi backend khởi động.

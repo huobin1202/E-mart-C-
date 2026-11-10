@@ -30,10 +30,18 @@ public sealed class StorefrontRepository
     public Task<Role?> GetActiveCustomerRoleAsync() =>
         _context.Roles.FirstOrDefaultAsync(role => role.Name == "customer" && role.IsActive);
 
-    public Task<User?> GetCustomerLoginAsync(string identifier, string normalizedPhone) =>
-        _context.Users.Include(user => user.RoleEntity).Include(user => user.Customer)
-            .FirstOrDefaultAsync(user => user.Username == identifier ||
-                (user.Customer != null && user.Customer.Phone == normalizedPhone));
+    public Task<User?> GetCustomerLoginAsync(string identifier, string normalizedPhone)
+    {
+        var customers = _context.Users.Include(user => user.RoleEntity).Include(user => user.Customer)
+            .Where(user => user.Customer != null && user.RoleEntity.Name == "customer");
+        if (identifier.Contains('@'))
+        {
+            var email = identifier.ToLowerInvariant();
+            return customers.FirstOrDefaultAsync(user => user.Email != null && user.Email.ToLower() == email);
+        }
+        return customers.FirstOrDefaultAsync(user => user.Username == identifier || user.Username == normalizedPhone ||
+            user.Customer!.Phone == normalizedPhone);
+    }
 
     public async Task SaveRegistrationAsync(Customer customer, User user)
     {

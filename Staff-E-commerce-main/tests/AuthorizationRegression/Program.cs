@@ -104,6 +104,15 @@ var databaseCreated = false;
 var assertions = 0;
 try
 {
+    if (args.Contains("--customer-login-only"))
+    {
+        databaseCreated = true;
+        await AuthorizationSchemaInitializer.InitializeAsync(app.Services);
+        await app.StartAsync();
+        using var loginClient = new HttpClient { BaseAddress = new Uri(app.Urls.Single()) };
+        await CustomerLoginRegression.RunAsync(app.Services, loginClient);
+        return;
+    }
     await WithDb(async db => { await db.Database.EnsureCreatedAsync(); databaseCreated = true; });
     if (args.Contains("--voucher-only")) await VoucherWalletRegression.SeedLegacyAsync(app.Services);
     // Exercise upgrading the previous order schema, not only a freshly generated model.

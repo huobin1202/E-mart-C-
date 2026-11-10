@@ -12,6 +12,14 @@ dotnet Staff-E-commerce-main/.tmp/auth-regression/AuthorizationRegression.dll D:
 
 Pass your backend configuration directory as the last argument if the checkout is elsewhere. Isolated build output avoids overwriting an application already running from `backend/bin`.
 
+Run only the customer phone/email login regression with the canonical temporary schema:
+
+```powershell
+dotnet Staff-E-commerce-main/.tmp/auth-regression/AuthorizationRegression.dll D:/E-mart-C-/Staff-E-commerce-main/backend --customer-login-only
+```
+
+This checks phone normalization, case-insensitive email login, long emails, profile email changes, locked/inactive accounts, staff exclusion, and shared lockout across phone/email aliases. No application accounts are changed.
+
 Coverage includes granting/revoking permissions with an existing token, customer isolation from internal APIs, seed idempotence, last-admin protection (including concurrent requests), employee/account synchronization, staff departure and reactivation, inactive roles, password/role changes, shared account creation validation, deleting unused accounts while keeping profile records, and blocking deletion after login or recorded activity.
 
 Login sessions no longer expire automatically after 60 minutes. New signed tokens omit `exp`, and `expiresIn` is nullable. JWT validation permits tokens without an expiry while preserving signature/issuer/audience checks and database session-version/account checks. Legacy tokens with an existing expiry still require one new login when they expire. Manual sign-out clears local credentials. This policy does not change BUS cache TTL or invalidation. The suite checks no-expiry tokens, anonymous and tampered-token rejection, and existing account/session revocation. Frontend coverage: `node --test tests/loginSession.test.mjs` verifies that a new session survives a simulated future clock and manual sign-out clears it.

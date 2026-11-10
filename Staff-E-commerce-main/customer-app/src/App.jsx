@@ -7,6 +7,7 @@ import { API_URL, API_ORIGIN } from "./services/apiConfig";
 import { createCustomerSession, deliveryRecipient, loadCustomerProfile, normalizeVietnamesePhone } from "./utils/customerSession";
 import { repriceVoucher } from "./utils/checkoutPricing";
 import ProductFilters from "./components/ProductFilters";
+import PasswordInput from "./components/PasswordInput";
 import { allCategoriesOff, emptyFilters, enableAllCategories, hiddenCategoryCount, matchesFilters } from "./utils/productFilters";
 import {
   checkoutDefinitelyRejected,
@@ -981,7 +982,7 @@ export default function App() {
   const loginCustomer = async () => {
     const username = loginUsername.trim();
     if (username.length < 3 || loginPassword.length < 6) {
-      setAccountError("Vui lòng nhập tên đăng nhập và mật khẩu hợp lệ.");
+      setAccountError("Vui lòng nhập số điện thoại/email và mật khẩu hợp lệ.");
       return;
     }
 
@@ -2453,22 +2454,26 @@ export default function App() {
             {!registerMode ? <TextInput
               value={loginUsername}
               onChangeText={setLoginUsername}
-              placeholder="Số điện thoại"
+              placeholder="Số điện thoại/Email"
+              accessibilityLabel="Số điện thoại/Email"
               style={styles.formInput}
               autoCapitalize="none"
-              autoComplete="tel"
-              keyboardType="phone-pad"
+              autoComplete="username"
+              autoCorrect={false}
+              spellCheck={false}
+              keyboardType="email-address"
+              maxLength={255}
               returnKeyType="done"
               onSubmitEditing={() => {
                 if (!accountBusy) loginCustomer();
               }}
             /> : null}
-            <TextInput
+            <PasswordInput
+              key={registerMode ? "register-password" : "login-password"}
               value={loginPassword}
               onChangeText={setLoginPassword}
               placeholder="Mật khẩu"
               style={styles.formInput}
-              secureTextEntry
               autoCapitalize="none"
               autoComplete="password"
               returnKeyType="done"
@@ -2478,12 +2483,12 @@ export default function App() {
                 else loginCustomer();
               }}
             />
-            {registerMode ? <TextInput
+            {registerMode ? <PasswordInput
               value={registerPasswordConfirm}
+              visibilityLabel="mật khẩu xác nhận"
               onChangeText={setRegisterPasswordConfirm}
               placeholder="Nhập lại mật khẩu *"
               style={styles.formInput}
-              secureTextEntry
               autoCapitalize="none"
               returnKeyType="done"
               onSubmitEditing={() => { if (!accountBusy) registerCustomer(); }}
