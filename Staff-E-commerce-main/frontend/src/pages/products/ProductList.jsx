@@ -1,7 +1,7 @@
 // Updated ProductList.jsx with role-based access control
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { advancedSearchProducts, BASE_URL, getProductsPaginated, request } from "../../api/apiClient";
+import { BASE_URL, getProductsPaginated, request } from "../../api/apiClient";
 import { ImageOff } from "lucide-react";
 import { formatPrice } from "../../utils/formatPrice";
 import ProductModal from "../../components/products/ProductModal";
@@ -14,7 +14,6 @@ import InventoryHistory from "../inventory/InventoryHistory";
 import { useRealtimeNotifications } from "../../hooks/useRealtimeNotifications";
 import TableDisplayControls from "../../components/ui/TableDisplayControls";
 import TableScroll from "../../components/ui/TableScroll";
-import AdvancedProductSearch from "../../components/products/AdvancedProductSearch";
 
 function ProductThumbnail({ imagePath, name }) {
   const [failedSource, setFailedSource] = useState(null);
@@ -68,7 +67,6 @@ export default function ProductList() {
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [advancedConditions, setAdvancedConditions] = useState([]);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -139,32 +137,18 @@ export default function ProductList() {
 
       setError(null);
       try {
-        const data = advancedConditions.length > 0
-          ? await advancedSearchProducts({
-              page: p,
-              pageSize: ps,
-              search: q,
-              categoryId: selectedCategory ? Number(selectedCategory) : null,
-              supplierId: selectedSupplier ? Number(selectedSupplier) : null,
-              minPrice: minPrice === "" ? null : Number(minPrice),
-              maxPrice: maxPrice === "" ? null : Number(maxPrice),
-              sortBy,
-              status: status === "" ? null : Number(status),
-              stockStatus,
-              conditions: advancedConditions,
-            })
-          : await getProductsPaginated(
-              p,
-              ps,
-              q,
-              selectedCategory || null,
-              selectedSupplier || null,
-              minPrice || null,
-              maxPrice || null,
-              sortBy,
-              status || null,
-              stockStatus
-            );
+        const data = await getProductsPaginated(
+          p,
+          ps,
+          q,
+          selectedCategory || null,
+          selectedSupplier || null,
+          minPrice || null,
+          maxPrice || null,
+          sortBy,
+          status || null,
+          stockStatus
+        );
         const itemsArr = data.items ?? data.Items ?? [];
         if (requestId !== latestProductRequest.current) return;
         setItems(itemsArr);
@@ -196,7 +180,6 @@ export default function ProductList() {
       sortBy,
       status,
       stockStatus,
-      advancedConditions,
     ]
   );
 
@@ -242,17 +225,6 @@ export default function ProductList() {
     setSortBy("newest");
     setStatus("");
     setStockStatus("");
-    setAdvancedConditions([]);
-    setPage(1);
-  };
-
-  const applyAdvancedSearch = (conditions) => {
-    setAdvancedConditions(conditions);
-    setPage(1);
-  };
-
-  const clearAdvancedSearch = () => {
-    setAdvancedConditions([]);
     setPage(1);
   };
 
@@ -592,8 +564,6 @@ export default function ProductList() {
             </div>
           </div>
         </div>
-
-        <AdvancedProductSearch appliedConditions={advancedConditions} onApply={applyAdvancedSearch} onClear={clearAdvancedSearch} />
 
         {notification && (
           <div

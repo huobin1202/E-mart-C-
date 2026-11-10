@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FileText, Printer, X } from "lucide-react";
+import { FileText, Printer, RefreshCw, X } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getInvoice, getInvoiceById, getInvoices } from "../../api/invoiceApi";
 import { useDebouncedSearch } from "../../hook/useDebouncedSearch";
@@ -33,6 +33,7 @@ export default function InvoicePage() {
   const [to, setTo] = useState("");
   const [customerInput, setCustomerInput] = useState("");
   const [customerSearch, setCustomerSearch] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
   const [loading, setLoading] = useState(false);
   const [listError, setListError] = useState("");
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(null);
@@ -112,6 +113,16 @@ export default function InvoicePage() {
     }
   }, [searchParams, setSearchParams]);
 
+  const resetFilters = () => {
+    latestListRequest.current++;
+    setCustomerInput("");
+    setCustomerSearch("");
+    setFrom("");
+    setTo("");
+    setPage(1);
+    setRefreshKey((current) => current + 1);
+  };
+
   const openByOrderId = useCallback(async (orderId) => {
     setShowDetail(true);
     const requestId = ++latestDetailRequest.current;
@@ -144,7 +155,7 @@ export default function InvoicePage() {
     }
     load();
     return () => { listRequests.current++; };
-  }, [load, linkedOrderId]);
+  }, [load, linkedOrderId, refreshKey]);
 
   useEffect(() => {
     const detailRequests = latestDetailRequest;
@@ -200,6 +211,11 @@ export default function InvoicePage() {
           <input className="mt-1 block rounded-lg border px-3 py-2" type="date"
             value={to} onChange={(event) => { setTo(event.target.value); setPage(1); }} />
         </label>
+        <button type="button" onClick={resetFilters} disabled={loading}
+          className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+          <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+          Làm mới
+        </button>
         <span className="ml-auto text-sm text-gray-500">{result.totalItems} hóa đơn</span>
       </div>
 
@@ -214,7 +230,7 @@ export default function InvoicePage() {
               <thead className="bg-gray-50 text-gray-600">
                 <tr>
                   {["Mã hóa đơn", "Ngày giờ tạo", "Khách hàng", "Tổng thanh toán", "Phương thức thanh toán", "Trạng thái hóa đơn", "Nhân viên tạo", "Thao tác"].map((heading) =>
-                    <th key={heading} className="whitespace-nowrap px-4 py-3 font-medium">{heading}</th>)}
+                    <th key={heading} className={`whitespace-nowrap px-4 py-3 font-medium ${heading === "Tổng thanh toán" ? "invoice-total-column text-right" : "text-left"}`}>{heading}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -230,7 +246,7 @@ export default function InvoicePage() {
                     <td className="px-4 py-3 font-semibold text-primary-700">{invoice.invoiceNumber}</td>
                     <td className="px-4 py-3">{dateTime(invoice.issuedAt)}</td>
                     <td className="px-4 py-3">{invoice.customerName || "Khách lẻ"}</td>
-                    <td className="px-4 py-3 text-right font-medium">{money(invoice.totalAmount)}</td>
+                    <td className="invoice-total-column whitespace-nowrap px-4 py-3 text-right font-medium tabular-nums">{money(invoice.totalAmount)}</td>
                     <td className="px-4 py-3">{paymentMethodLabels[invoice.paymentMethod] || invoice.paymentMethod || "Chưa xác định"}</td>
                     <td className="px-4 py-3">{invoiceStatusLabels[invoice.invoiceStatus] || invoice.invoiceStatus || "Chưa xác định"}</td>
                     <td className="px-4 py-3">{invoice.createdByName || "Hệ thống"}</td>

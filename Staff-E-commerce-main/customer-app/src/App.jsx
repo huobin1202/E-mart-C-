@@ -1955,7 +1955,7 @@ export default function App() {
       showsVerticalScrollIndicator={false}
       ListHeaderComponent={<>
         {/* 1. HERO BANNER BÁCH HÓA XANH */}
-        {!hasSearchFilters && <HeroBanner onOpenOffers={() => openVouchers()} />}
+        <HeroBanner onOpenOffers={() => openVouchers()} />
 
         {!hasSearchFilters && !!flashSaleProducts.length && <View style={styles.flashHomeSection}>
           <View style={styles.flashHomeHeading}>
@@ -2524,7 +2524,7 @@ export default function App() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" />
-      {filtersOpen && <ProductFilters visible value={{ ...advancedFilters, ...(categoryId !== "all" ? { excludedCategories: categories.filter((category) => String(category.id) !== String(categoryId)).map((category) => String(category.id)) } : {}), ...(priceFilter !== "all" ? { min: String((PRICE_FILTERS.find((f) => f.id === priceFilter) || PRICE_FILTERS[0]).min), max: Number.isFinite((PRICE_FILTERS.find((f) => f.id === priceFilter) || PRICE_FILTERS[0]).max) ? String((PRICE_FILTERS.find((f) => f.id === priceFilter) || PRICE_FILTERS[0]).max - 1) : "" } : {}) }} categories={categories} products={products} query={query} onApply={(filters, keyword) => { setQuery(keyword); setAdvancedFilters(filters); setPriceFilter("all"); setCategoryId("all"); setTab("home"); requestAnimationFrame(() => homeListRef.current?.scrollToOffset({ offset: 0, animated: false })); }} onClose={() => setFiltersOpen(false)} />}
+      {filtersOpen && <ProductFilters visible value={{ ...advancedFilters, ...(categoryId !== "all" ? { excludedCategories: categories.filter((category) => String(category.id) !== String(categoryId)).map((category) => String(category.id)) } : {}), ...(priceFilter !== "all" ? { min: String((PRICE_FILTERS.find((f) => f.id === priceFilter) || PRICE_FILTERS[0]).min), max: Number.isFinite((PRICE_FILTERS.find((f) => f.id === priceFilter) || PRICE_FILTERS[0]).max) ? String((PRICE_FILTERS.find((f) => f.id === priceFilter) || PRICE_FILTERS[0]).max - 1) : "" } : {}) }} categories={categories} products={products} query={query} onApply={(filters, keyword) => { setQuery(keyword); setAdvancedFilters(filters); setPriceFilter("all"); setCategoryId("all"); setFlashSaleOpen(false); setTab("home"); requestAnimationFrame(() => homeListRef.current?.scrollToOffset({ offset: 0, animated: false })); }} onClose={() => setFiltersOpen(false)} />}
 
       {/* 1. TOP HEADER PHONG CÁCH BÁCH HÓA XANH (TÁCH 2 TẦNG TRÊN MOBILE ĐẢM BẢO KHÔNG BỊ TRÀN) */}
       <View style={styles.header}>

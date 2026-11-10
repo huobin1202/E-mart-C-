@@ -153,6 +153,10 @@ body {
     overflow-wrap: break-word;
   }
 
+  .management-table .invoice-total-column {
+    padding-right: 0.625rem;
+  }
+
   .management-table > tbody > tr > td {
     border-color: var(--color-gray-100);
   }
