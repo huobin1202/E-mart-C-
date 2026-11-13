@@ -297,37 +297,6 @@ export default function InvoicePage() {
             <p className="py-10 text-center text-sm text-gray-500">Chọn một dòng trong danh sách để xem chi tiết.</p>
           ) : (
             <div className="space-y-3 pt-3">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-xl font-bold">HÓA ĐƠN</h3>
-                  <p className="mt-1 font-semibold text-primary-700">{selected.invoiceNumber}</p>
-                  <p className="text-sm text-gray-500">
-                    Trạng thái hóa đơn: {invoiceStatusLabels[selected.invoiceStatus] || selected.invoiceStatus || "Chưa xác định"}
-                  </p>
-                </div>
-                <div className="text-sm text-gray-600">
-                  <p>Ngày: {dateTime(selected.issuedAt)}</p>
-                  <p>Đơn hàng: {selected.orderNumber}</p>
-                  <p>Nhân viên: {selected.createdByName || "Hệ thống"}</p>
-                  <p>Phương thức: {paymentMethodLabels[selected.paymentMethod] || selected.paymentMethod || "Chưa xác định"}</p>
-                </div>
-              </div>
-
-              {customerDetails.length > 0 && (
-                <div className="space-y-1 border-y py-3 text-sm">
-                  {customerDetails.map(([label, value]) =>
-                    <p key={label}><span className="font-medium">{label}:</span> {value || "—"}</p>)}
-                </div>
-              )}
-              {hasDeliveryDetails && (
-                <section className="space-y-1 text-sm">
-                  <h4 className="font-semibold">Thông tin giao hàng</h4>
-                  <p>Người nhận: {selected.recipientName || "—"}</p>
-                  <p>Số điện thoại người nhận: {selected.recipientPhone || "—"}</p>
-                  <p className="whitespace-pre-line break-words">Địa chỉ giao hàng: {selected.shippingAddress || "—"}</p>
-                </section>
-              )}
-
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                   <thead className="border-b text-gray-500">
@@ -361,6 +330,37 @@ export default function InvoicePage() {
                   <span>Tổng cộng</span><span>{money(selected.totalAmount)}</span>
                 </div>
               </div>
+
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-xl font-bold">HÓA ĐƠN</h3>
+                  <p className="mt-1 font-semibold text-primary-700">{selected.invoiceNumber}</p>
+                  <p className="text-sm text-gray-500">
+                    Trạng thái hóa đơn: {invoiceStatusLabels[selected.invoiceStatus] || selected.invoiceStatus || "Chưa xác định"}
+                  </p>
+                </div>
+                <div className="text-sm text-gray-600">
+                  <p>Ngày: {dateTime(selected.issuedAt)}</p>
+                  <p>Đơn hàng: {selected.orderNumber}</p>
+                  <p>Nhân viên: {selected.createdByName || "Hệ thống"}</p>
+                  <p>Phương thức: {paymentMethodLabels[selected.paymentMethod] || selected.paymentMethod || "Chưa xác định"}</p>
+                </div>
+              </div>
+
+              {customerDetails.length > 0 && (
+                <div className="space-y-1 border-y py-3 text-sm">
+                  {customerDetails.map(([label, value]) =>
+                    <p key={label}><span className="font-medium">{label}:</span> {value || "—"}</p>)}
+                </div>
+              )}
+              {hasDeliveryDetails && (
+                <section className="space-y-1 text-sm">
+                  <h4 className="font-semibold">Thông tin giao hàng</h4>
+                  <p>Người nhận: {selected.recipientName || "—"}</p>
+                  <p>Số điện thoại người nhận: {selected.recipientPhone || "—"}</p>
+                  <p className="whitespace-pre-line break-words">Địa chỉ giao hàng: {selected.shippingAddress || "—"}</p>
+                </section>
+              )}
 
               <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4 text-sm print:hidden">
                 <p>Thanh toán: <span className="font-semibold">{statusLabel[selected.paymentStatus] || selected.paymentStatus}</span></p>
