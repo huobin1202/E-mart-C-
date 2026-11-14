@@ -1,7 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import useDialogFocus from "../ui/useDialogFocus";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getProductSelectionLocks } from "../../api/promotionApi";
 
 export default function ProductPickerModal({ selectedIds, onChange, onClose, startDate, endDate, excludePromotionId }) {
+  const dialogRef = useRef(null);
+  useDialogFocus(dialogRef, { onClose });
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [search, setSearch] = useState("");
@@ -93,8 +96,8 @@ export default function ProductPickerModal({ selectedIds, onChange, onClose, sta
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="product-picker-title" className="flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+    <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/55 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="product-picker-title" className="flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
         <header className="flex items-center justify-between border-b px-5 py-3">
           <h3 id="product-picker-title" className="text-xl font-bold text-black">Chọn Sản Phẩm</h3>
           <button type="button" onClick={onClose} aria-label="Đóng" className="rounded-lg px-1 text-3xl leading-none text-gray-500 hover:text-gray-800">×</button>
@@ -102,7 +105,7 @@ export default function ProductPickerModal({ selectedIds, onChange, onClose, sta
 
         <div className="flex flex-wrap gap-2 px-5 pt-3">
           <div className="min-w-64 flex-1">
-            <input autoFocus value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} aria-label="Tìm sản phẩm" placeholder="Tìm sản phẩm..." className="min-w-0 flex-1 rounded-lg border border-gray-200 px-4 py-2.5 text-sm placeholder:text-gray-400 focus:border-primary-500 focus:outline-none" />
+            <input data-dialog-autofocus value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} aria-label="Tìm sản phẩm" placeholder="Tìm sản phẩm..." className="min-w-0 flex-1 rounded-lg border border-gray-200 px-4 py-2.5 text-sm placeholder:text-gray-400 focus:border-primary-500 focus:outline-none" />
           </div>
           <select value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setPage(1); }} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 sm:w-64">
             <option value="">Tất cả danh mục</option>

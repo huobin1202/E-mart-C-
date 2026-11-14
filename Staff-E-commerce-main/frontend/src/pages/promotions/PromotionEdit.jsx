@@ -125,7 +125,7 @@ export default function PromotionEdit({ promotion, onCancel, onSuccess }) {
 
   return (
     <>
-      <ModalShell
+      <ModalShell suspended={showProductPicker}
         title="Chỉnh sửa khuyến mãi"
         subtitle={formData.code ? <span className="font-mono">{formData.code}</span> : undefined}
         onClose={loading ? undefined : onCancel}

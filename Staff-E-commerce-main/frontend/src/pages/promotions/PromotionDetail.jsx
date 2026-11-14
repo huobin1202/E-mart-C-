@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import PromotionProducts from "../../components/promotions/PromotionProducts";
 import { getPromotionById, getPromotionRedemptions, getPromotionStats } from "../../api/promotionApi";
 
 export default function PromotionDetail({ promotionId, onClose, onEdit }) {
@@ -59,7 +60,7 @@ export default function PromotionDetail({ promotionId, onClose, onEdit }) {
 
   if (loading) {
     return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-1000">
         <div className="bg-white rounded-xl p-8 shadow-2xl">
           <div className="flex items-center gap-3">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div>
@@ -72,7 +73,7 @@ export default function PromotionDetail({ promotionId, onClose, onEdit }) {
 
   if (error || !promotion) {
     return (
-      <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-1000 p-4">
         <div className="bg-white rounded-xl p-8 shadow-2xl max-w-md">
           <div className="text-center">
             <svg className="mx-auto h-12 w-12 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -106,15 +107,15 @@ export default function PromotionDetail({ promotionId, onClose, onEdit }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-1000 p-4">
+      <div role="dialog" aria-modal="true" aria-label="Chi tiết khuyến mãi" className="bg-white rounded-xl shadow-2xl max-w-[1440px] w-full h-[96dvh] max-h-[96dvh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="bg-primary-600 p-6">
-          <div className="flex items-center justify-between">
+        <div className="bg-primary-600 px-4 py-3 shrink-0">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-2xl font-bold text-white">Chi tiết khuyến mãi</h2>
-              <p className="text-white mt-1">{promotion.name}</p>
-              <p className="text-white mt-1 font-mono text-lg">{promotion.type === "voucher" ? promotion.voucherCode : "Chương trình tự động"}</p>
+              <h2 className="text-lg font-bold text-white">Chi tiết khuyến mãi</h2>
+              <p className="text-white mt-0.5 text-sm break-words">{promotion.name}</p>
+              <p className="text-white/90 mt-0.5 font-mono text-xs">{promotion.type === "voucher" ? promotion.voucherCode : "Chương trình tự động"}</p>
             </div>
             <div className="flex items-center gap-3">
               {getStatusBadge()}
@@ -130,11 +131,11 @@ export default function PromotionDetail({ promotionId, onClose, onEdit }) {
         </div>
 
         {/* Tabs */}
-        <div className="border-b bg-gray-50">
+        <div className="shrink-0 border-b bg-gray-50">
           <div className="flex">
             <button
               onClick={() => setActiveTab("info")}
-              className={`px-6 py-3 font-medium transition-colors ${
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
                 activeTab === "info"
                   ? "text-primary-600 border-b-2 border-primary-600 bg-white"
                   : "text-gray-600 hover:text-gray-900"
@@ -144,7 +145,7 @@ export default function PromotionDetail({ promotionId, onClose, onEdit }) {
             </button>
             <button
               onClick={() => setActiveTab("stats")}
-              className={`px-6 py-3 font-medium transition-colors ${
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
                 activeTab === "stats"
                   ? "text-primary-600 border-b-2 border-primary-600 bg-white"
                   : "text-gray-600 hover:text-gray-900"
@@ -154,7 +155,7 @@ export default function PromotionDetail({ promotionId, onClose, onEdit }) {
             </button>
             <button
               onClick={() => setActiveTab("history")}
-              className={`px-6 py-3 font-medium transition-colors ${
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
                 activeTab === "history"
                   ? "text-primary-600 border-b-2 border-primary-600 bg-white"
                   : "text-gray-600 hover:text-gray-900"
@@ -166,112 +167,42 @@ export default function PromotionDetail({ promotionId, onClose, onEdit }) {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
           {activeTab === "info" && (
-            <div className="space-y-6">
-              {/* Thông tin cơ bản */}
-              <div className="bg-primary-50 border border-primary-200 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-primary-900 mb-3">Thông tin cơ bản</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-medium text-primary-700">Mã khuyến mãi</label>
-                    <p className="mt-1 text-base font-bold text-primary-900 font-mono">{promotion.type === "voucher" ? promotion.voucherCode : "Không có mã nhập"}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-primary-700">ID</label>
-                    <p className="mt-1 text-base text-primary-900">#{promotion.id}</p>
-                  </div>
-                </div>
+            <div className={promotion.type === "product" ? "grid gap-3 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] md:items-start" : "space-y-3"}>
+              {promotion.type === "product" && <PromotionProducts key={promotion.id} productIds={promotion.productIds} />}
+              <div className="min-w-0 space-y-2">
+              <section aria-label="Thông tin khuyến mãi" className="rounded-lg border border-gray-200 p-3">
+                <h3 className="mb-2 text-sm font-semibold text-gray-900">Thông tin khuyến mãi</h3>
+                <dl className="space-y-1.5 text-sm [&>div]:grid [&>div]:grid-cols-[8rem_minmax(0,1fr)] [&>div]:items-baseline [&>div]:gap-x-2 [&_dd]:mt-0 [&_dd]:break-words">
+                  <div><dt className="text-xs text-gray-500">Loại chương trình</dt><dd className="mt-0.5 font-medium text-gray-900">{{ product: "Theo sản phẩm", event: "Sự kiện", voucher: "Voucher" }[promotion.type] || promotion.type}</dd></div>
+                  <div><dt className="text-xs text-gray-500">Giá trị giảm</dt><dd className="mt-0.5 font-bold text-primary-700">{promotion.discountType === "percent" ? `${promotion.value}%` : formatCurrency(promotion.value)}</dd></div>
+                  <div><dt className="text-xs text-gray-500">Giảm tối đa</dt><dd className="mt-0.5 font-medium">{promotion.maxDiscount ? formatCurrency(promotion.maxDiscount) : "Không giới hạn"}</dd></div>
+                  <div><dt className="text-xs text-gray-500">Ngày bắt đầu</dt><dd className="mt-0.5 font-medium">{formatDate(promotion.startDate)}</dd></div>
+                  <div><dt className="text-xs text-gray-500">Ngày kết thúc</dt><dd className="mt-0.5 font-medium">{formatDate(promotion.endDate)}</dd></div>
+                  <div><dt className="text-xs text-gray-500">Lượt sử dụng</dt><dd className="mt-0.5 font-medium">{promotion.usedCount || 0} {promotion.type === "voucher" ? "lượt · Mỗi khách tối đa 1 lần" : `/ ${promotion.usageLimit ?? "∞"}`}</dd></div>
+                  {promotion.type === "event" && <div><dt className="text-xs text-gray-500">Đơn hàng tối thiểu</dt><dd className="mt-0.5 font-medium">{formatCurrency(promotion.minOrderAmount)}</dd></div>}
+                  {promotion.type === "voucher" && <div><dt className="text-xs text-gray-500">Mã voucher</dt><dd className="mt-0.5 break-all font-mono font-semibold">{promotion.voucherCode}</dd></div>}
+                  <div><dt className="text-xs text-gray-500">ID khuyến mãi</dt><dd className="mt-0.5 font-medium">#{promotion.id}</dd></div>
+                </dl>
+              </section>
+              {promotion.type === "voucher" && <section aria-label="Phân phối voucher" className="rounded-lg border border-primary-200 bg-primary-50 p-3 text-sm">
+                <h3 className="mb-2 font-semibold text-primary-900">Phân phối voucher</h3>
+                <dl className="grid grid-cols-1 gap-x-5 gap-y-2 sm:grid-cols-2">
+                  <div><dt className="text-xs text-gray-500">Hình thức</dt><dd>{promotion.visibility === "only-code" ? "Only-code — Nhận bằng mã" : "Public — Hiển thị ở trang Nhận voucher"}</dd></div>
+                  <div><dt className="text-xs text-gray-500">Thời gian nhận</dt><dd>{formatDate(promotion.claimStartDate)} — {formatDate(promotion.claimEndDate)}</dd></div>
+                  <div><dt className="text-xs text-gray-500">Đã nhận</dt><dd>{promotion.claimedCount || 0} / {promotion.claimLimit ?? "∞"}</dd></div>
+                  <div><dt className="text-xs text-gray-500">Cách nhận</dt><dd>{promotion.sendToCustomers ? "Cấp sẵn cho khách hàng hiện có khi tạo." : "Khách tự nhận vào kho."} Mỗi khách nhận và dùng tối đa 1 lần.</dd></div>
+                </dl>
+              </section>}
+              {promotion.description && <section className="rounded-lg bg-gray-50 px-3 py-2"><h3 className="text-xs font-semibold text-gray-500">Mô tả</h3><p className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-700">{promotion.description}</p></section>}
+              <dl className="space-y-1 px-1 text-xs text-gray-500">
+                <div className="flex gap-1"><dt>Ngày tạo:</dt><dd>{formatDateTime(promotion.createdAt)}</dd></div>
+                <div className="flex gap-1"><dt>Cập nhật lần cuối:</dt><dd>{formatDateTime(promotion.updatedAt)}</dd></div>
+              </dl>
               </div>
-
-              {/* Thông tin giảm giá */}
-              {promotion.type === "voucher" && <div className="rounded-lg border border-primary-200 bg-primary-50 p-4 text-sm space-y-2">
-                <p><strong>Hình thức:</strong> {promotion.visibility === "only-code" ? "Only-code — Nhận bằng mã" : "Public — Hiển thị ở trang Nhận voucher"}</p>
-                <p><strong>Thời gian nhận:</strong> {formatDate(promotion.claimStartDate)} — {formatDate(promotion.claimEndDate)}</p>
-                <p><strong>Đã nhận:</strong> {promotion.claimedCount || 0} / {promotion.claimLimit ?? "∞"} · <strong>Đã dùng:</strong> {promotion.usedCount || 0}</p>
-                <p>{promotion.sendToCustomers ? "Cấp sẵn cho khách hàng hiện có khi tạo." : "Khách tự nhận vào kho."} Mỗi khách nhận và dùng tối đa 1 lần.</p>
-              </div>}
-              <div>
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">Thông tin giảm giá</h3>
-                <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Loại chương trình</label>
-                  <p className="mt-1 text-lg font-semibold text-gray-900">
-                    {{ product: "Theo sản phẩm", event: "Sự kiện", voucher: "Voucher" }[promotion.type] || promotion.type}
-                  </p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Giá trị</label>
-                  <p className="mt-1 text-lg font-semibold text-gray-900">
-                    {promotion.discountType === "percent" ? `${promotion.value}%` : formatCurrency(promotion.value)}
-                  </p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Đơn hàng tối thiểu</label>
-                  <p className="mt-1 text-lg font-semibold text-gray-900">{promotion.type === "event" ? formatCurrency(promotion.minOrderAmount) : "—"}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Giảm tối đa</label>
-                  <p className="mt-1 text-lg font-semibold text-gray-900">
-                    {promotion.maxDiscount ? formatCurrency(promotion.maxDiscount) : "Không giới hạn"}
-                  </p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Ngày bắt đầu</label>
-                  <p className="mt-1 text-gray-900">{formatDate(promotion.startDate)}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Ngày kết thúc</label>
-                  <p className="mt-1 text-gray-900">{formatDate(promotion.endDate)}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Lượt sử dụng</label>
-                  <p className="mt-1 text-gray-900">
-                    <span className="font-semibold text-lg">{promotion.usedCount}</span>
-                    <span className="text-gray-400 mx-2">{promotion.type === "voucher" ? "lượt" : "/"}</span>
-                    <span>{promotion.type === "voucher" ? "Mỗi khách tối đa 1 lần" : promotion.usageLimit ?? "∞"}</span>
-                  </p>
-                  {promotion.usageLimit && (
-                    <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
-                      <div 
-                        className="bg-primary-600 h-2 rounded-full"
-                        style={{ width: `${Math.min((promotion.usedCount / promotion.usageLimit) * 100, 100)}%` }}
-                      />
-                    </div>
-                  )}
-                </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-500">Trạng thái</label>
-                    <div className="mt-1">{getStatusBadge()}</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Thông tin thời gian */}
-              <div>
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">Thông tin thời gian</h3>
-                <div className="grid grid-cols-2 gap-6">
-                  <div>
-                    <label className="text-sm font-medium text-gray-500">Ngày tạo</label>
-                    <p className="mt-1 text-gray-900">{formatDateTime(promotion.createdAt)}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-500">Cập nhật lần cuối</label>
-                    <p className="mt-1 text-gray-900">{formatDateTime(promotion.updatedAt)}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Mô tả */}
-              {promotion.description && (
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-900 mb-3">Mô tả</h3>
-                  <p className="text-gray-700 bg-gray-50 p-4 rounded-lg whitespace-pre-wrap">{promotion.description}</p>
-                </div>
-              )}
             </div>
           )}
-
           {activeTab === "stats" && (
             <div>
               {!stats ? (
@@ -323,7 +254,7 @@ export default function PromotionDetail({ promotionId, onClose, onEdit }) {
               ) : (
                 <div className="space-y-3">
                   {redemptions.map((item, idx) => (
-                    <div key={idx} className="bg-gray-50 p-4 rounded-lg flex items-center justify-between">
+                    <div key={idx} className="bg-gray-50 p-4 rounded-lg flex items-center justify-between gap-3">
                       <div>
                         <p className="font-medium text-gray-900">Đơn hàng #{item.orderId}</p>
                         <p className="text-sm text-gray-500">{formatDate(item.usedAt)}</p>
@@ -341,16 +272,16 @@ export default function PromotionDetail({ promotionId, onClose, onEdit }) {
         </div>
 
         {/* Footer */}
-        <div className="border-t p-4 bg-gray-50 flex gap-3">
+        <div className="shrink-0 border-t px-4 py-3 bg-gray-50 flex justify-end gap-3">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100"
+            className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100"
           >
             Đóng
           </button>
           <button
             onClick={() => onEdit(promotion)}
-            className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-semibold"
+            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-semibold"
           >
             Chỉnh sửa
           </button>

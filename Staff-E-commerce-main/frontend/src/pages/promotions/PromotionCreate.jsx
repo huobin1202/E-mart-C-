@@ -96,7 +96,7 @@ export default function PromotionCreate({ onCancel, onSuccess }) {
 
   return (
     <>
-      <ModalShell
+      <ModalShell suspended={showProductPicker}
         title="Tạo khuyến mãi mới"
         subtitle={formData.type !== "voucher" ? "Mã nội bộ sẽ được hệ thống tạo tự động. Chỉ voucher mới có mã khách hàng nhập." : undefined}
         onClose={loading ? undefined : onCancel}

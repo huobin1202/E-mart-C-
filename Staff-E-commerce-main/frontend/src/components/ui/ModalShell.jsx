@@ -1,4 +1,5 @@
-import { useEffect, useId } from "react";
+import { useId, useRef } from "react";
+import useDialogFocus from "./useDialogFocus";
 import PanelCloseButton from "./PanelCloseButton";
 
 const widths = { md: "max-w-2xl", lg: "max-w-3xl", xl: "max-w-4xl", "2xl": "max-w-5xl" };
@@ -7,20 +8,16 @@ const widths = { md: "max-w-2xl", lg: "max-w-3xl", xl: "max-w-4xl", "2xl": "max-
  * Centered dialog: fits the viewport height, scrolls only its body and keeps the
  * header and the action footer visible. Escape and the backdrop close it.
  */
-export default function ModalShell({ title, subtitle, headerExtra, footer, onClose, size = "xl", children, busy = false, closeOnBackdrop = true }) {
+export default function ModalShell({ title, subtitle, headerExtra, footer, onClose, size = "xl", children, busy = false, closeOnBackdrop = true, suspended = false }) {
   const titleId = useId();
 
-  useEffect(() => {
-    if (!onClose) return undefined;
-    const onKey = (event) => { if (event.key === "Escape") onClose(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const dialogRef = useRef(null);
+  useDialogFocus(dialogRef, { active: !suspended, onClose });
 
   return (
-    <div className="fixed inset-0 z-1000 flex items-center justify-center bg-black/50 p-2 sm:p-4"
+    <div inert={suspended} aria-hidden={suspended || undefined} className="fixed inset-0 z-1000 flex items-center justify-center bg-black/50 p-2 sm:p-4"
       onMouseDown={(event) => { if (closeOnBackdrop && onClose && event.target === event.currentTarget) onClose(); }}>
-      <div role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy || undefined}
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal={suspended ? undefined : true} aria-labelledby={titleId} aria-busy={busy || undefined}
         className={`flex max-h-[calc(100dvh-1rem)] w-full flex-col overflow-hidden rounded-xl bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)] ${widths[size] || widths.xl}`}>
         <header className="flex shrink-0 items-start justify-between gap-3 border-b px-4 py-3 sm:px-5">
           <div className="min-w-0">
