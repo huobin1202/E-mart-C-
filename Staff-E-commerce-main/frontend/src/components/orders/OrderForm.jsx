@@ -27,8 +27,8 @@ function Panel({ title, onClose, footer, children }) {
 }
 
 /**
- * Order detail panel. Order of information: code, date, total → line items
- * (quantity, unit price and line total side by side) → customer / payment / delivery → notes and metadata.
+ * Order detail panel. Line items appear first, followed by the creation date,
+ * customer / payment / delivery details, notes and metadata.
  * All amounts are shown as returned by the API; nothing is recalculated here.
  */
 export default function OrdersForm({ currentOrder: order, loading = false, onClose }) {
@@ -56,12 +56,6 @@ export default function OrdersForm({ currentOrder: order, loading = false, onClo
   return <Panel onClose={onClose} footer={footer}
     title={<span className="flex flex-wrap items-center gap-2">Đơn hàng <span className="text-primary-700">{order.orderNumber}</span>
       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${orderStatusBadgeClass(order.status)}`}>{orderStatusText(order)}</span></span>}>
-    <section aria-label="Thông tin chính" className="mt-3 grid grid-cols-2 gap-3 rounded-lg border bg-gray-50 p-3">
-      <div><p className="text-xs text-gray-500">Mã đơn hàng</p><p className="font-semibold text-gray-900">{order.orderNumber}</p></div>
-      <div><p className="text-xs text-gray-500">Ngày lập</p><p className="font-semibold tabular-nums text-gray-900">{date(order.createdAt)}</p></div>
-      <div className="col-span-2"><p className="text-xs text-gray-500">Tổng tiền</p><p className="text-xl font-bold tabular-nums text-primary-700">{formatPrice(order.totalAmount)}</p></div>
-    </section>
-
     <section aria-label="Chi tiết mặt hàng" className="mt-4">
       <h3 className="mb-2 font-semibold text-gray-900">Chi tiết mặt hàng</h3>
       <div className="overflow-x-auto rounded-lg border">
@@ -90,6 +84,10 @@ export default function OrdersForm({ currentOrder: order, loading = false, onClo
         </table>
       </div>
     </section>
+
+    <dl className="mt-4 text-sm">
+      <Info label="Ngày lập">{date(order.createdAt)}</Info>
+    </dl>
 
     <section aria-label="Khách hàng và thanh toán" className="mt-4 rounded-lg border p-3">
       <h3 className="mb-2 font-semibold text-gray-900">Khách hàng và thanh toán</h3>

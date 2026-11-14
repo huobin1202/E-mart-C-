@@ -62,9 +62,8 @@ export default function Sidebar({ collapsed, onClose }) {
   })).filter((group) => group.items.length > 0);
   const matchesPath = (path) => pathname === path || pathname.startsWith(`${path}/`);
   const activeGroupId = navigationGroups.find((group) => group.items.some((item) => matchesPath(item.to)))?.id;
-  // Groups the user opened stay open; navigating only adds the active group. The old version
-  // re-keyed every <details> by pathname, remounting the whole menu (and collapsing it) on each click.
-  const [openGroups, setOpenGroups] = useState(() => new Set(activeGroupId ? [activeGroupId] : []));
+  // Start with all groups expanded; preserve manual toggles and open the active group on navigation.
+  const [openGroups, setOpenGroups] = useState(() => new Set(navigationGroups.map((group) => group.id)));
   useEffect(() => {
     if (!activeGroupId) return;
     setOpenGroups((current) => (current.has(activeGroupId) ? current : new Set(current).add(activeGroupId)));

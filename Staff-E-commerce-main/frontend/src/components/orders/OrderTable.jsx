@@ -1,6 +1,5 @@
-import { Link } from "react-router-dom";
 import { formatPrice } from "../../utils/formatPrice";
-import { canProcessOrder, orderStatusBadgeClass, orderStatusText, paymentMethodLabels } from "../../utils/orderStatus";
+import { orderStatusBadgeClass, orderStatusText, paymentMethodLabels } from "../../utils/orderStatus";
 import TableScroll from "../ui/TableScroll";
 
 
@@ -14,7 +13,6 @@ const columns = [
   { label: "Trạng thái", align: "text-center" },
   { label: "Thanh toán", align: "text-center" },
   { label: "Nhân viên", align: "text-left" },
-  { label: "Thao tác", align: "text-center" },
 ];
 
 export default function OrderTable({ showOrder, selectedOrderId, listOrders, loading, currentPage, totalPages, onPrev, onNext, pageSize, compact = true }) {
@@ -32,7 +30,6 @@ export default function OrderTable({ showOrder, selectedOrderId, listOrders, loa
         <td className="whitespace-nowrap px-4 py-3 text-center"><span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${orderStatusBadgeClass(order.status)}`}>{orderStatusText(order)}</span></td>
         <td className="px-4 py-3 text-center">{paymentMethodLabels[order.paymentMethod] || order.paymentMethod || "Chưa xác định"}</td>
         <td className="px-4 py-3">{order.userName || "Chưa phân công"}</td>
-        <td className="px-4 py-3 text-center"><div className="table-actions inline-flex items-center justify-center gap-2">{canProcessOrder(order) ? <Link to={`/pos?orderId=${order.id}`} onClick={(e) => e.stopPropagation()} className="rounded-lg border px-3 py-2 text-xs font-semibold">{order.orderType === "pos" && order.paymentStatus === "pending" ? "Thanh toán" : "Xử lý"}</Link> : <span className="text-gray-400">—</span>}</div></td>
       </tr>)}
     </tbody></table></TableScroll>
     <footer className="flex items-center justify-between border-t px-3 py-2 text-sm"><button disabled={loading || currentPage <= 1} onClick={onPrev} className="min-h-8 rounded border px-3 py-1 disabled:opacity-40">Trước</button><span>Trang {currentPage} / {totalPages}</span><button disabled={loading || currentPage >= totalPages} onClick={onNext} className="min-h-8 rounded border px-3 py-1 disabled:opacity-40">Sau</button></footer>
