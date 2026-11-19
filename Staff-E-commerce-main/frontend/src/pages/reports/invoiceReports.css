@@ -47,7 +47,7 @@
 }
 
 /* Period filter + bar chart */
-.report-period-controls { align-items:center; }
+.report-period-controls { align-items:flex-end; }
 .report-controls-spacer { flex:1 1 0; min-width:0; }
 .report-segmented, .report-quarters { display:inline-flex; padding:3px; gap:3px; background:var(--color-gray-100); border-radius:10px; }
 .invoice-report .report-segmented button, .invoice-report .report-quarters button { border-color:transparent; background:transparent; padding:6px 12px; }
@@ -69,6 +69,9 @@
 /* Keep screen reports sized to their content, including reports with few periods. */
 @media screen {
   .invoice-report table { width:max-content; }
+  .invoice-report .report-scroll { width:fit-content; max-width:100%; }
+  .invoice-report-print > .report-table-section { max-width:1100px; }
+  .invoice-report-print > .report-table-section:has(.report-screen-only > h2:first-child):not(:has(.pivot-bar-chart)) { width:fit-content; max-width:100%; }
   .invoice-report th, .invoice-report td { padding:8px 10px; }
   .invoice-report tr > :first-child { min-width:9rem; max-width:14rem; white-space:normal; overflow-wrap:anywhere; }
 }
@@ -81,6 +84,18 @@
 
 
 .product-report-layout { min-width:0; }
+.pivot-bar-chart { margin-top:20px; padding-top:16px; border-top:1px solid var(--color-gray-200); min-width:0; }
+.pivot-bar-chart h3 { font-size:15px; font-weight:600; margin-bottom:6px; }
+.pivot-bar-chart .report-note { font-size:12px; line-height:1.4; margin-bottom:6px; }
+.pivot-bar-chart-scroll { overflow-x:auto; width:100%; }
+.pivot-report-side-layout { display:grid; grid-template-columns:fit-content(48%) minmax(0, 1fr); align-items:start; gap:12px; }
+.pivot-report-side-layout > .report-scroll { min-width:0; }
+.pivot-report-side-layout > .pivot-bar-chart { margin-top:0; padding:0 0 0 12px; border-top:0; border-left:1px solid var(--color-gray-200); }
+.pivot-chart-year { display:flex; align-items:center; gap:8px; font-size:13px; margin-bottom:8px; }
+@media (max-width:900px) {
+  .pivot-report-side-layout { grid-template-columns:minmax(0,1fr); }
+  .pivot-report-side-layout > .pivot-bar-chart { padding:16px 0 0; border-left:0; border-top:1px solid var(--color-gray-200); }
+}
 .product-report-layout.has-chart { display:grid; grid-template-columns:minmax(0,max-content) minmax(320px,420px); justify-content:start; align-items:start; gap:10px; }
 .product-report-layout > .report-scroll { min-width:0; }
 .product-report-sidebar { min-width:0; position:sticky; top:16px; }

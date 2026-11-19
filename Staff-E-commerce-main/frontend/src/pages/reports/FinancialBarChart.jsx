@@ -8,7 +8,7 @@ const SERIES = [
   { key: "expense", name: "Tổng chi", color: "#eb6834" },
   { key: "profit", name: "Lợi nhuận", color: "#1baf7a" },
 ];
-const CHART_HEIGHT = 320;
+const CHART_HEIGHT = 240;
 const money = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 });
 const compact = new Intl.NumberFormat("vi-VN", { notation: "compact", maximumFractionDigits: 1 });
 

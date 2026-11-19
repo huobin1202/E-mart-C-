@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import FinancialBarChart from './FinancialBarChart';
-import ProductQuarterChart from './ProductQuarterChart';
+import PivotBarChart from './PivotBarChart';
 import { useLatestRequest } from '../../hook/useLatestRequest';
-import { MAX_YEAR_SPAN, QUARTERS, clipRange, currentQuarter, financialSeries, formatViDate, isFutureQuarter, quarterRange, validateDateRange, yearRange, yearsWithData } from '../../utils/reportPeriods';
+import { MAX_YEAR_SPAN, currentQuarter, financialSeries, formatViDate, validateDateRange, yearRange, yearsWithData } from '../../utils/reportPeriods';
 import { invoiceStatistics, vietnamToday } from '../../api/invoiceStatisticsApi';
 import { getAllCategories } from '../../api/categoryApi';
 import './invoiceReports.css';
@@ -10,24 +10,17 @@ import './invoiceReports.css';
 const money = value => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(value);
 
 function PivotTable({ table, start = 0, end = table.columns.length, interactive = false }) {
-  const [selectedRow, setSelectedRow] = useState(null);
-  const entity = table.title.startsWith('Sản phẩm') ? 'sản phẩm' : table.title.startsWith('Nhân viên') ? 'nhân viên' : table.title.startsWith('Khách hàng') ? 'khách hàng' : null;
-  const period = entity === 'sản phẩm' ? 'quý' : 'năm';
-  const canSelect = interactive && Boolean(entity);
-  const showChart = canSelect && table.rows.includes(selectedRow);
-  const toggleRow = row => setSelectedRow(current => current === row ? null : row);
-  return <>{canSelect && <p className="report-note">Nhấn dòng hoặc tên {entity} để xem biểu đồ theo {period} bên phải bảng. Nhấn lại để đóng.</p>}<div className={showChart ? "product-report-layout has-chart" : "product-report-layout"}><div className={interactive ? "report-scroll" : undefined}><table>
+  const showChart = interactive && /^(Sản phẩm|Nhân viên|Khách hàng)/.test(table.title);
+  const sideChart = showChart && !table.title.startsWith('Sản phẩm');
+  return <div className={sideChart ? 'pivot-report-side-layout' : undefined}><div className={interactive ? 'report-scroll' : undefined}><table>
     <thead><tr><th>Chỉ tiêu / Đối tượng</th>{table.columns.slice(start, end).map(c => <th key={c}>{c}</th>)}<th>TC toàn kỳ</th></tr></thead>
-    <tbody>{table.rows.map((row, index) => <tr key={index}
-      onClick={canSelect ? () => toggleRow(row) : undefined}
-      className={canSelect ? (selectedRow === row ? 'product-report-row is-selected' : 'product-report-row') : undefined}>
-      <th scope="row">{canSelect ? <button type="button" className="product-report-select" aria-expanded={showChart && selectedRow === row}
-        onClick={event => { event.stopPropagation(); toggleRow(row); }}>{row.label}</button> : row.label}
+    <tbody>{table.rows.map((row, index) => <tr key={index}>
+      <th scope="row">{row.label}
         {row.price != null && <small style={{ display: 'block', fontWeight: 400 }}>Giá bán: {money(row.price)} ₫</small>}</th>
       {row.values.slice(start, end).map((v, c) => <td key={c}>{money(v)}</td>)}<td><strong>{money(row.total)}</strong></td>
     </tr>)}</tbody>
     {table.totals.length > 0 && <tfoot><tr><th>Tổng cộng</th>{table.totals.slice(start, end).map((v, c) => <td key={c}>{money(v)}</td>)}<td>{money(table.grandTotal)}</td></tr></tfoot>}
-  </table></div>{showChart && <aside className="product-report-sidebar"><ProductQuarterChart row={selectedRow} columns={table.columns} period={period} entity={entity} onClose={() => setSelectedRow(null)} /></aside>}</div></>;
+  </table></div>{showChart && <PivotBarChart table={table} />}</div>;
 }
 export function DailyInvoiceSummary({ onRefresh } = {}) {
   const [data, setData] = useState(null);
@@ -55,13 +48,13 @@ const FINANCIAL_TITLE = 'Tổng thu, tổng chi và lợi nhuận';
 const findFinancial = report => report?.tables?.find(table => table.title === FINANCIAL_TITLE) ?? report?.tables?.[0];
 
 /** What a request covers. The label shown above the numbers always comes from the data's own request. */
-function reportRequest(selection, today) {
+function reportRequest(selection) {
   if (selection.mode === 'range') {
     return { from: selection.from, to: selection.to, period: selection.period, label: `${formatViDate(selection.from)} – ${formatViDate(selection.to)}` };
   }
-  const range = clipRange(quarterRange(selection.year, selection.quarter), today);
-  // Inside one quarter the pivot shows its three months; the chart below compares the quarters of the year.
-  return { ...range, period: 'month', label: `Q${selection.quarter}/${selection.year} · ${formatViDate(range.from)} – ${formatViDate(range.to)}` };
+  const range = yearRange(selection.year);
+  // Show all four quarters of the selected year.
+  return { ...range, period: 'quarter', label: `Năm ${selection.year} · ${formatViDate(range.from)} – ${formatViDate(range.to)}` };
 }
 
 export default function InvoiceReports() {
@@ -108,20 +101,20 @@ export default function InvoiceReports() {
   }, [runReport]);
 
   // Quarter mode: the bar chart compares every quarter of the selected year (up to today), the selected one highlighted.
-  const loadQuarterChart = useCallback(async (year, quarter) => {
+  const loadQuarterChart = useCallback(async (year) => {
     setChartStatus('loading'); setChartError('');
-    const range = clipRange(yearRange(year), today);
+    const range = yearRange(year);
     const outcome = await runChart(signal => invoiceStatistics({ ...range, period: 'quarter' }, 'json', { signal }));
     if (outcome.stale) return;
     if (outcome.error) { setChartStatus('error'); setChartError(outcome.error.message); return; }
-    setChart({ points: financialSeries(findFinancial(outcome.result)), title: `Biểu đồ theo quý · năm ${year}`, caption: `Đang xem Q${quarter}/${year} (cột đậm). Dữ liệu từ ${formatViDate(range.from)} đến ${formatViDate(range.to)}.`, highlightKey: `${year}/Q${quarter}` });
+    setChart({ points: financialSeries(findFinancial(outcome.result)), title: `Biểu đồ theo quý · năm ${year}`, caption: `Đầy đủ 4 quý · ${formatViDate(range.from)} – ${formatViDate(range.to)}`, highlightKey: null });
     setChartStatus('success');
-  }, [runChart, today]);
+  }, [runChart]);
 
   const productFilters = () => ({ productSearch: productSearch.trim() || undefined, categoryId: categoryId || undefined, productSort });
 
   const apply = (next, keepProductFilters = true) => {
-    const request = { mode: next.mode, year: next.year, quarter: next.quarter, ...reportRequest(next, today), ...(keepProductFilters ? productFilters() : { productSort: 'name' }) };
+    const request = { mode: next.mode, year: next.year, quarter: next.quarter, ...reportRequest(next), ...(keepProductFilters ? productFilters() : { productSort: 'name' }) };
     setSelection(next);
     loadReport(request);
     if (next.mode === 'quarter') loadQuarterChart(next.year, next.quarter);
@@ -138,11 +131,7 @@ export default function InvoiceReports() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const chooseYear = year => {
-    const quarter = isFutureQuarter(year, selection.quarter, today) ? currentQuarter(today).quarter : selection.quarter;
-    apply({ ...selection, mode: 'quarter', year, quarter });
-  };
-  const chooseQuarter = quarter => apply({ ...selection, mode: 'quarter', quarter });
+  const chooseYear = year => apply({ ...selection, mode: 'quarter', year });
   const switchMode = mode => {
     if (mode === selection.mode) return;
     setRangeError('');
@@ -189,27 +178,18 @@ export default function InvoiceReports() {
     <h1>Báo cáo thống kê hóa đơn</h1>
     <div className="report-controls report-period-controls">
       <div role="radiogroup" aria-label="Kiểu lọc thời gian" className="report-segmented">
-        <button type="button" role="radio" aria-checked={isQuarter} className={isQuarter ? 'is-active' : ''} onClick={() => switchMode('quarter')}>Theo quý</button>
+        <button type="button" role="radio" aria-checked={isQuarter} className={isQuarter ? 'is-active' : ''} onClick={() => switchMode('quarter')}>Theo năm (đủ 4 quý)</button>
         <button type="button" role="radio" aria-checked={!isQuarter} className={!isQuarter ? 'is-active' : ''} onClick={() => switchMode('range')}>Theo khoảng ngày</button>
       </div>
       {isQuarter ? <>
-        <label>Năm<select value={selection.year} onChange={e => chooseYear(Number(e.target.value))}>{years.map(year => <option key={year} value={year}>{year}</option>)}</select></label>
-        <div className="report-quarters" role="radiogroup" aria-label="Quý">
-          {QUARTERS.map(quarter => {
-            const future = isFutureQuarter(selection.year, quarter, today);
-            const active = selection.quarter === quarter;
-            return <button key={quarter} type="button" role="radio" aria-checked={active} disabled={future}
-              title={future ? 'Quý chưa bắt đầu' : `Q${quarter}/${selection.year}`}
-              className={active ? 'is-active' : ''} onClick={() => chooseQuarter(quarter)}>Q{quarter}</button>;
-          })}
-        </div>
-      </> : <form className="report-range" onSubmit={applyRange} noValidate>
+        <label><select aria-label="Năm" value={selection.year} onChange={e => chooseYear(Number(e.target.value))}>{years.map(year => <option key={year} value={year}>{year}</option>)}</select></label>
+        </> : <form className="report-range" onSubmit={applyRange} noValidate>
         <label>Từ ngày<input type="date" value={draftRange.from} max={draftRange.to || undefined} aria-invalid={Boolean(rangeError) || undefined} onChange={e => { setDraftRange({ ...draftRange, from: e.target.value }); setRangeError(''); }} /></label>
         <label>Đến ngày<input type="date" value={draftRange.to} min={draftRange.from || undefined} aria-invalid={Boolean(rangeError) || undefined} onChange={e => { setDraftRange({ ...draftRange, to: e.target.value }); setRangeError(''); }} /></label>
-        <label>Gom theo<select value={draftRange.period} onChange={e => setDraftRange({ ...draftRange, period: e.target.value })}><option value="month">Tháng</option><option value="quarter">Quý</option><option value="year">Năm / so sánh các năm</option></select></label>
+        <label>Gom theo<select value={draftRange.period} onChange={e => setDraftRange({ ...draftRange, period: e.target.value })}><option value="month">Tháng</option><option value="quarter">Quý</option><option value="year">Năm</option></select></label>
         <button type="submit" className="report-primary" disabled={reportStatus === 'loading'}>Xem báo cáo</button>
       </form>}
-      <button type="button" onClick={resetToCurrent} disabled={reportStatus === 'loading'}>Về quý hiện tại</button>
+      <button type="button" onClick={resetToCurrent} disabled={reportStatus === 'loading'}>Về năm hiện tại</button>
       <span className="report-controls-spacer" />
       <button type="button" disabled={!report || busy} onClick={exportExcel}>{exporting ? 'Đang xuất…' : 'Xuất Excel'}</button>
       <button type="button" disabled={!report || busy} onClick={() => window.print()}>In / Lưu PDF</button>
