@@ -6,7 +6,7 @@ using System.Text;
 
 namespace backend.Services
 {
-    public class ActivityLogService
+    public class ActivityLogService : IActivityLogWriter
     {
         private readonly ActivityLogRepository _logRepo;
         private readonly IConfiguration _config;

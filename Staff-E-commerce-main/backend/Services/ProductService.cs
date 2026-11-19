@@ -420,14 +420,20 @@ namespace backend.Services
                     || (p.Sku?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false)
                     || (p.Barcode?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false)
                     || (p.Supplier?.Name?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false))
+                .OrderByDescending(p => string.Equals(p.Barcode, value, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(p.Sku, value, StringComparison.OrdinalIgnoreCase))
+                .ThenBy(p => p.ProductName)
+                .ThenBy(p => p.Id)
                 .Take(Math.Clamp(maxResults, 1, 200))
                 .ToList();
         }
 
         public async Task<ProductDTO?> GetProductByBarcodeAsync(string barcode)
         {
-            return (await GetLiveProductsAsync()).FirstOrDefault(p =>
-                string.Equals(p.Barcode, barcode, StringComparison.OrdinalIgnoreCase));
+            var code = barcode.Trim();
+            var products = await GetLiveProductsAsync();
+            return products.FirstOrDefault(p => string.Equals(p.Barcode, code, StringComparison.OrdinalIgnoreCase))
+                ?? products.FirstOrDefault(p => string.Equals(p.Sku, code, StringComparison.OrdinalIgnoreCase));
         }
 
         public async Task<PaginationResult<ProductDTO>> AdvancedSearchProductsAsync(ProductAdvancedSearchRequestDTO request)

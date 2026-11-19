@@ -43,6 +43,7 @@ builder.Services.AddControllers(options =>
         options.Filters.AddService<PermissionFilter>();
         options.Filters.AddService<AccountMutationFilter>();
         options.Filters.AddService<ReadCacheInvalidationFilter>();
+        options.Filters.Add<AuditIdentityFilter>();
     })
     .AddJsonOptions(options =>
     {
@@ -119,6 +120,7 @@ builder.Services.AddScoped<StorefrontCheckoutService>();
 builder.Services.AddScoped<BankTransferService>();
 builder.Services.AddScoped<RealtimeNotificationService>();
 builder.Services.AddScoped<ActivityLogService>();
+builder.Services.AddScoped<IActivityLogWriter>(services => services.GetRequiredService<ActivityLogService>());
 builder.Services.AddScoped<CustomerService>();
 builder.Services.AddScoped<CategoryService>();
 builder.Services.AddSingleton(typeof(BusMemoryCache<>));

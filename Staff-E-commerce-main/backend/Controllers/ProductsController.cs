@@ -268,14 +268,14 @@ namespace backend.Controllers
         // TÌM KIẾM
         // GET api/products/search?keyword=...
         [HttpGet("search")]
-        public async Task<ActionResult<IEnumerable<ProductDTO>>> SearchProducts([FromQuery] string keyword)
+        public async Task<ActionResult<IEnumerable<ProductDTO>>> SearchProducts([FromQuery] string keyword, [FromQuery] int maxResults = 50)
         {
             try
             {
                 if (string.IsNullOrWhiteSpace(keyword))
                     return BadRequest("Search keyword is required");
 
-                var products = await _productService.SearchProductsAsync(keyword);
+                var products = await _productService.SearchProductsAsync(keyword, maxResults);
                 return Ok(products);
             }
             catch (Exception ex)

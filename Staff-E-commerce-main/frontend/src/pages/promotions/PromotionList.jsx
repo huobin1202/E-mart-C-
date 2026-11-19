@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import Pagination from "../../components/ui/Pagination";
-import { Eye, Pencil, Power, Trash2 } from "lucide-react";
+import { Pencil, Power, Trash2 } from "lucide-react";
 import {
   fetchPromotionsPaginated,
   deletePromotion as deletePromotionThunk,
@@ -82,12 +82,13 @@ export default function PromotionList() {
     if (!confirm("Bạn có chắc muốn xóa khuyến mãi này?")) return;
     const res = await dispatch(deletePromotionThunk(id));
     if (res.meta.requestStatus === "rejected") alert("Lỗi: " + res.payload);
+    else if (selectedPromotionId === id) setSelectedPromotionId(null);
   };
 
   const handleToggle = async (id) => {
     const res = await dispatch(togglePromotionActiveThunk(id));
     if (res.meta.requestStatus === "rejected") alert("Lỗi: " + res.payload);
-    else dispatch(fetchPromotionStats());
+    else setRefresh((value) => value + 1);
   };
 
   useEffect(() => {
@@ -334,6 +335,8 @@ export default function PromotionList() {
           </div>
         </div>
 
+        <div className={`grid items-start gap-3 ${selectedPromotionId ? "xl:grid-cols-[minmax(0,1.5fr)_minmax(360px,1fr)]" : "grid-cols-1"}`}>
+        <section className="min-w-0" aria-label="Danh sách khuyến mãi">
         {/* Loading */}
         {loading && (
           <div className="flex items-center justify-center py-12">
@@ -431,7 +434,8 @@ export default function PromotionList() {
                         key={promo.id}
                         onClick={() => setSelectedPromotionId(promo.id)}
                         title="Bấm để xem chi tiết"
-                        className={`cursor-pointer hover:bg-primary-50/60 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
+                        aria-selected={selectedPromotionId === promo.id}
+                        className={`cursor-pointer hover:bg-primary-50/60 ${selectedPromotionId === promo.id ? "bg-primary-50" : idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
                       >
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="text-sm font-medium text-gray-900 font-mono bg-primary-50 px-2 py-1 rounded">
@@ -496,15 +500,6 @@ export default function PromotionList() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm" onClick={(event) => event.stopPropagation()}>
                           <div className="table-actions flex items-center justify-end gap-1">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedPromotionId(promo.id)}
-                              title="Xem chi tiết"
-                              aria-label={`Xem chi tiết ${promo.voucherCode || promo.name || "khuyến mãi"}`}
-                              className="rounded-lg p-1.5 text-primary-600 hover:bg-primary-50"
-                            >
-                              <Eye size={17} />
-                            </button>
                             {!readOnly && (
                               <>
                                 <button
@@ -552,6 +547,16 @@ export default function PromotionList() {
             )}
           </>
         )}
+        </section>
+        {selectedPromotionId && (
+          <PromotionDetail
+            key={`${selectedPromotionId}-${refresh}`}
+            promotionId={selectedPromotionId}
+            onClose={() => setSelectedPromotionId(null)}
+            onEdit={readOnly ? undefined : (promo) => setEditingPromotion(promo)}
+          />
+        )}
+        </div>
       </div>
 
       {/* Modal tạo khuyến mãi */}
@@ -561,18 +566,6 @@ export default function PromotionList() {
           onSuccess={() => {
             setShowCreateModal(false);
             setRefresh((r) => r + 1);
-          }}
-        />
-      )}
-
-      {/* Modal chi tiết khuyến mãi */}
-      {selectedPromotionId && (
-        <PromotionDetail
-          promotionId={selectedPromotionId}
-          onClose={() => setSelectedPromotionId(null)}
-          onEdit={(promo) => {
-            setSelectedPromotionId(null);
-            setEditingPromotion(promo);
           }}
         />
       )}

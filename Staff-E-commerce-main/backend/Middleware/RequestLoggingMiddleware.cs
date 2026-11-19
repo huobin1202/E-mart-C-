@@ -14,9 +14,8 @@ public sealed class RequestLoggingMiddleware(RequestDelegate next, IServiceProvi
     public async Task InvokeAsync(HttpContext context)
     {
         var method = context.Request.Method.ToUpperInvariant();
-        if (method is not ("POST" or "PUT" or "PATCH" or "DELETE") ||
-            context.GetEndpoint()?.Metadata.GetMetadata<ReadOnlyRequestAttribute>() is not null ||
-            IsLoginEndpoint(context.Request.Path))
+        var operation = AuditRequest.Describe(context);
+        if (operation == null)
         {
             await next(context);
             return;
@@ -39,40 +38,44 @@ public sealed class RequestLoggingMiddleware(RequestDelegate next, IServiceProvi
         }
         finally
         {
-            await WriteLogSafelyAsync(context, method, path, payload, requestFailure);
+            await WriteLogSafelyAsync(context, method, operation, payload, requestFailure);
         }
     }
 
     private async Task WriteLogSafelyAsync(
-        HttpContext context, string method, string path, string payload, Exception? requestFailure)
+        HttpContext context, string method, AuditOperation operation, string payload, Exception? requestFailure)
     {
         try
         {
-            var entityName = NormalizeEntityName(ExtractEntityName(path));
-            var entityId = ExtractEntityId(path);
-            var action = method switch
-            {
-                "POST" => $"CREATE_{entityName}",
-                "PUT" or "PATCH" => $"UPDATE_{entityName}",
-                "DELETE" => $"DELETE_{entityName}",
-                _ => $"HTTP_{method}_{entityName}"
-            };
+            var entityId = AuditRequest.RouteId(context) ?? context.Items[AuditRequest.IdentityKey]?.ToString();
+            var statusCode = requestFailure == null ? context.Response.StatusCode : 500;
+            var result = context.Items[AuditRequest.ResultKey] as Dictionary<string, object?>;
+            var businessFailed = result?.GetValueOrDefault("success") is false ||
+                result?.GetValueOrDefault("succeeded") is false || result?.GetValueOrDefault("rolledBack") is true;
+            var succeeded = requestFailure == null && statusCode < 400 && !businessFailed;
             var auditPayload = JsonSerializer.Serialize(new
             {
-                statusCode = context.Response.StatusCode,
-                succeeded = requestFailure == null && context.Response.StatusCode < 400,
+                method,
+                // Route templates preserve the endpoint without exposing payment tokens in URLs.
+                path = (context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText,
+                endpoint = operation.Endpoint,
+                entityId,
+                statusCode,
+                succeeded,
+                outcome = !succeeded ? "failed" : result?.GetValueOrDefault("hasErrors") is true ? "partial" : "succeeded",
+                result,
+                parameters = context.Request.Query.Where(pair => pair.Key is "isActive" or "status")
+                    .ToDictionary(pair => pair.Key, pair => pair.Value.ToString()),
                 body = payload
             });
-            if (auditPayload.Length > MaxPayloadLength)
-                auditPayload = auditPayload[..MaxPayloadLength] + "...[truncated]";
 
             using var scope = serviceProvider.CreateScope();
-            var service = scope.ServiceProvider.GetRequiredService<ActivityLogService>();
+            var service = scope.ServiceProvider.GetRequiredService<IActivityLogWriter>();
             await service.LogAsync(
                 GetAuthenticatedUserId(context),
-                action,
-                entityName,
-                entityId,
+                operation.Action,
+                operation.Entity,
+                entityId ?? "",
                 auditPayload,
                 context.Connection.RemoteIpAddress?.ToString() ?? "unknown");
         }
@@ -85,17 +88,28 @@ public sealed class RequestLoggingMiddleware(RequestDelegate next, IServiceProvi
 
     private static async Task<string> ReadAndSanitizePayloadAsync(HttpRequest request)
     {
-        if (request.ContentLength is null or 0) return "[Empty Body]";
+        if (request.ContentLength == 0) return "[Empty Body]";
+        if (request.ContentType?.Contains("json", StringComparison.OrdinalIgnoreCase) != true)
+            return "[Payload omitted: not JSON]";
         try
         {
             request.EnableBuffering();
             using var reader = new StreamReader(request.Body, Encoding.UTF8, leaveOpen: true);
-            var body = await reader.ReadToEndAsync();
+            var buffer = new char[65537];
+            var count = 0;
+            while (count < buffer.Length)
+            {
+                var read = await reader.ReadAsync(buffer.AsMemory(count));
+                if (read == 0) break;
+                count += read;
+            }
             request.Body.Position = 0;
-            return SanitizeJson(body);
+            if (count == buffer.Length) return "[Payload omitted: too large]";
+            return count == 0 ? "[Empty Body]" : SanitizeJson(new string(buffer, 0, count));
         }
         catch
         {
+            if (request.Body.CanSeek) request.Body.Position = 0;
             return "[Unreadable Body]";
         }
     }
@@ -163,26 +177,4 @@ public sealed class RequestLoggingMiddleware(RequestDelegate next, IServiceProvi
         path.Equals("/api/me/change-password", StringComparison.OrdinalIgnoreCase) ||
         path.Equals("/api/storefront/register", StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsLoginEndpoint(PathString path) =>
-        path.Value?.Equals("/api/storefront/login", StringComparison.OrdinalIgnoreCase) == true;
-
-    private static string NormalizeEntityName(string entityName) => entityName switch
-    {
-        "Inventoryadjustment" => "Inventory_Adjustment",
-        _ => entityName
-    };
-
-    private static string ExtractEntityName(string path)
-    {
-        var match = Regex.Match(path, @"^/api/([^/]+)");
-        if (!match.Success || string.IsNullOrEmpty(match.Groups[1].Value)) return "Unknown";
-        var name = match.Groups[1].Value;
-        return char.ToUpperInvariant(name[0]) + (name.Length > 1 ? name[1..].ToLowerInvariant() : string.Empty);
-    }
-
-    private static string ExtractEntityId(string path)
-    {
-        var match = Regex.Match(path, @"^/api/[^/]+/([^/?]+)");
-        return match.Success && !string.IsNullOrEmpty(match.Groups[1].Value) ? match.Groups[1].Value : "0";
-    }
 }

@@ -10,7 +10,7 @@ import {
   updateUserStatus,
 } from "../../api/apiClient";
 import Pagination from "../../components/ui/Pagination";
-import { Eye, Edit2, Lock, Unlock, Trash2 } from "lucide-react";
+import { Edit2, Lock, Unlock, Trash2 } from "lucide-react";
 import { getCustomers } from "../../api/customerApi";
 import { Link } from "react-router-dom";
 
@@ -532,13 +532,6 @@ export default function UserManagement() {
                   </td>
                   <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
                     <div className="flex items-center justify-end gap-2">
-                      <button
-                        className="p-2 text-primary-600 hover:bg-primary-50 rounded-lg transition"
-                        onClick={() => handleViewDetail(user)}
-                        title="Xem chi tiết"
-                      >
-                        <Eye size={16} />
-                      </button>
                       <button
                         className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
                         onClick={() => openEditModal(user)}

@@ -11,7 +11,6 @@ import {
   getOrderHistory,
 } from "../../api/onlineOrderApi";
 import {
-  getProductByBarcode,
   getPaginatedProducts,
   getCurrentUserId,
   request,
@@ -19,9 +18,11 @@ import {
   getAuthToken,
 } from "../../api/apiClient";
 import { getCustomers } from "../../api/customerApi";
+import { getAllCategories } from "../../api/categoryApi";
 import { formatPrice } from "../../utils/formatPrice";
 import { checkoutPos, getCheckoutRequestId, getPosCheckout, findPosCheckoutByRequest } from "../../api/posCheckoutApi";
 import PosPaymentPanel from "../../components/orders/PosPaymentPanel";
+import PosProductLookup from "../../components/orders/PosProductLookup";
 import { useAuth } from "../../hook/useAuth";
 import { paymentStatusLabels } from "../../utils/orderStatus";
 import { mergeLatestCart, hasUnavailableItems } from "../../utils/posCart";
@@ -33,6 +34,35 @@ const STATUS_CONFIG = {
   completed:  { label: "Hoàn thành",   color: "bg-emerald-100 text-emerald-800", dot: "bg-emerald-500"},
   cancelled:  { label: "Đã huỷ",       color: "bg-red-100 text-red-800",         dot: "bg-red-500"    },
 };
+
+function CartQuantityInput({ item, onChange }) {
+  const [draft, setDraft] = useState(null);
+  return <input
+    type="number"
+    inputMode="numeric"
+    min={1}
+    max={item.stock}
+    step={1}
+    aria-label={`Số lượng ${item.name}`}
+    disabled={item.isActive === false || item.stock < 1}
+    value={draft ?? item.quantity}
+    onFocus={(event) => event.target.select()}
+    onChange={(event) => {
+      const value = event.target.value;
+      if (value === "") { setDraft(""); return; }
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) return;
+      const quantity = Math.min(item.stock, Math.max(1, Math.floor(parsed)));
+      setDraft(String(quantity));
+      onChange(item.id, quantity);
+    }}
+    onBlur={() => setDraft(null)}
+    onKeyDown={(event) => {
+      if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); }
+    }}
+    className="h-7 w-14 rounded border border-gray-300 bg-white px-1 text-center font-bold focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-gray-100"
+  />;
+}
 
 function StatusBadge({ status }) {
   const cfg = STATUS_CONFIG[status] ?? { label: status, color: "bg-gray-100 text-gray-700", dot: "bg-gray-400" };
@@ -142,13 +172,15 @@ export default function POS() {
   // =========================================================
   // COUNTER POS (BÁN TẠI QUẦY) STATES
   // =========================================================
-  const [barcodeInput, setBarcodeInput] = useState("");
-  const [barcodeLoading, setBarcodeLoading] = useState(false);
-  const barcodeInputRef = useRef(null);
-
   const [posProducts, setPosProducts] = useState([]);
   const [posProductSearch, setPosProductSearch] = useState("");
+  const [posCategoryId, setPosCategoryId] = useState("");
+  const [posCategories, setPosCategories] = useState([]);
+  const [posCategoriesLoading, setPosCategoriesLoading] = useState(false);
+  const [posCategoriesError, setPosCategoriesError] = useState("");
+  const [categoryRefresh, setCategoryRefresh] = useState(0);
   const [posProductLoading, setPosProductLoading] = useState(false);
+  const [posProductError, setPosProductError] = useState("");
 
   const [posCart, setPosCart] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -297,34 +329,55 @@ export default function POS() {
   // =========================================================
   // COUNTER POS LOGIC
   // =========================================================
+  useEffect(() => {
+    if (activeTab !== "pos") return;
+    let cancelled = false;
+    setPosCategoriesLoading(true);
+    setPosCategoriesError("");
+    getAllCategories().then((categories) => {
+      if (!cancelled) setPosCategories(categories);
+    }).catch(() => {
+      if (!cancelled) setPosCategoriesError("Không tải được danh mục sản phẩm.");
+    }).finally(() => {
+      if (!cancelled) setPosCategoriesLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [activeTab, categoryRefresh]);
+
   // Tải danh sách sản phẩm mẫu cho POS quầy
   const loadPosProducts = useCallback(async (query = "") => {
     const sequence = ++productRequest.current;
     setPosProductLoading(true);
+    setPosProductError("");
     try {
-      const res = await getPaginatedProducts(1, 24, query, null, null, null, null, "", 1);
+      const res = await getPaginatedProducts(1, 24, query, posCategoryId || null, null, null, null, "", 1);
       if (sequence === productRequest.current) setPosProducts(res.items || []);
     } catch (err) {
       console.debug("Lỗi tải sản phẩm POS:", err);
+      if (sequence === productRequest.current) {
+        setPosProducts([]);
+        setPosProductError("Không tải được sản phẩm. Vui lòng thử lại.");
+      }
     } finally {
       if (sequence === productRequest.current) setPosProductLoading(false);
     }
-  }, []);
+  }, [posCategoryId]);
   refreshPosProductsRef.current = () => loadPosProducts(posProductSearch);
 
   useEffect(() => {
+    const requests = productRequest;
     if (activeTab === "pos") {
       loadPosProducts(posProductSearch);
-      setTimeout(() => barcodeInputRef.current?.focus(), 150);
     }
+    return () => { requests.current++; };
   }, [activeTab, loadPosProducts, posProductSearch]);
 
   // Thêm sản phẩm vào giỏ hàng POS
   const addToPosCart = (product) => {
-    if (checkoutBusy.current || pendingCheckout || refreshingCart || sessionError) return;
+    if (checkoutBusy.current || pendingCheckout || refreshingCart || sessionError || !canWriteOrders) return false;
     const stock = product.inventory?.quantity ?? 0;
     if (!product.isActive || stock <= (posCart.find((item) => item.id === product.id)?.quantity || 0)) {
-      showToast("Sản phẩm ngừng bán hoặc đã đạt số lượng tồn kho.", "error"); return;
+      showToast("Sản phẩm ngừng bán hoặc đã đạt số lượng tồn kho.", "error"); return false;
     }
     setPosCart((current) => {
       const existing = current.find((item) => item.id === product.id);
@@ -347,6 +400,7 @@ export default function POS() {
         },
       ];
     });
+    return true;
   };
 
   const updateCartQuantity = (id, delta) => {
@@ -357,28 +411,11 @@ export default function POS() {
     );
   };
 
-  // Quét Barcode trực tiếp từ máy quét
-  const handleBarcodeScan = async (e) => {
-    if (e.key === "Enter" && barcodeInput.trim()) {
-      e.preventDefault();
-      const code = barcodeInput.trim();
-      setBarcodeLoading(true);
-      try {
-        const prod = await getProductByBarcode(code);
-        if (prod) {
-          playBarcodeBeep();
-          addToPosCart(prod);
-          showToast(`Đã thêm: ${prod.productName}`, "success");
-          setBarcodeInput("");
-        } else {
-          showToast(`Không tìm thấy sản phẩm có mã: ${code}`, "error");
-        }
-      } catch {
-        showToast(`Không tìm thấy mã vạch: ${code}`, "error");
-      } finally {
-        setBarcodeLoading(false);
-      }
-    }
+  const setCartQuantity = (id, quantity) => {
+    setPosCart((current) => current.map((item) => {
+      if (item.id !== id || item.isActive === false || item.stock < 1) return item;
+      return { ...item, quantity: Math.min(item.stock, Math.max(1, Math.floor(quantity))) };
+    }));
   };
 
   // Tìm kiếm khách hàng để tích điểm
@@ -885,47 +922,54 @@ export default function POS() {
                   </span>
                 </div>
                 <p className="text-xs text-emerald-100 mb-3">
-                  Sử dụng súng quét mã vạch USB/Bluetooth hoặc gõ trực tiếp mã sản phẩm rồi nhấn Enter.
+                  Quét mã vạch rồi nhấn Enter, hoặc nhập tên / mã sản phẩm để chọn trong 5 gợi ý. Dùng ↑ ↓ và Enter để chọn.
                 </p>
-                <div className="relative">
-                  <input
-                    ref={barcodeInputRef}
-                    type="text"
-                    value={barcodeInput}
-                    onChange={(e) => setBarcodeInput(e.target.value)}
-                    onKeyDown={handleBarcodeScan}
-                    placeholder="Quét mã vạch sản phẩm (ví dụ: 8900000000001)..."
-                    disabled={barcodeLoading}
-                    className="w-full pl-11 pr-24 py-3 bg-white text-gray-900 rounded-xl text-sm font-mono font-bold shadow-inner focus:outline-none focus:ring-4 focus:ring-emerald-300"
-                  />
-                  <span className="absolute left-3.5 top-3.5 text-gray-400 text-base">🔍</span>
-                  <button
-                    onClick={() => handleBarcodeScan({ key: "Enter", preventDefault: () => {} })}
-                    disabled={barcodeLoading || !barcodeInput.trim()}
-                    className="absolute right-2 top-2 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition disabled:opacity-50"
-                  >
-                    {barcodeLoading ? "Đang quét..." : "Thêm vào giỏ"}
-                  </button>
-                </div>
+                <PosProductLookup cart={posCart}
+                  disabled={checkoutSubmitting || refreshingCart || !!pendingCheckout || !!sessionError || !canWriteOrders}
+                  onSelect={(product) => {
+                    if (!addToPosCart(product)) return false;
+                    playBarcodeBeep();
+                    showToast(`Đã thêm: ${product.productName}`, "success");
+                    return true;
+                  }} />
               </div>
 
               {/* Danh sách sản phẩm nhanh */}
               <div className="bg-white rounded-2xl p-5 shadow-sm border space-y-4">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <h3 className="font-bold text-gray-800 text-sm">Danh mục sản phẩm nhanh</h3>
+                  <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+                  <select
+                    aria-label="Danh mục sản phẩm POS"
+                    value={posCategoryId}
+                    onChange={(event) => setPosCategoryId(event.target.value)}
+                    disabled={posCategoriesLoading || !!posCategoriesError}
+                    className="min-w-0 max-w-full rounded-lg border bg-white px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary-300"
+                  >
+                    <option value="">{posCategoriesLoading ? "Đang tải danh mục…" : "Tất cả danh mục"}</option>
+                    {posCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                  </select>
                   <input
                     type="text"
+                    aria-label="Tìm sản phẩm POS"
                     placeholder="Tìm tên sản phẩm..."
                     value={posProductSearch}
                     onChange={(e) => setPosProductSearch(e.target.value)}
                     className="px-3 py-1.5 text-xs border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-300 w-48"
                   />
+                  </div>
                 </div>
+
+                {posCategoriesError && <p role="alert" className="text-xs text-red-600">{posCategoriesError} <button type="button" onClick={() => setCategoryRefresh((value) => value + 1)} className="font-semibold underline">Thử lại</button></p>}
 
                 {posProductLoading ? (
                   <div className="flex items-center justify-center h-36">
                     <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
                   </div>
+                ) : posProductError ? (
+                  <p role="alert" className="py-6 text-center text-xs text-red-600">{posProductError} <button type="button" onClick={() => loadPosProducts(posProductSearch)} className="font-semibold underline">Thử lại</button></p>
+                ) : posProducts.length === 0 ? (
+                  <p className="py-6 text-center text-xs text-gray-500">Không có sản phẩm phù hợp với danh mục và từ khóa đã chọn.</p>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[380px] overflow-y-auto pr-1">
                     {posProducts.map((p) => (
@@ -994,7 +1038,7 @@ export default function POS() {
                           >
                             -
                           </button>
-                          <span className="font-bold w-6 text-center">{item.quantity}</span>
+                          <CartQuantityInput item={item} onChange={setCartQuantity} />
                           <button
                             onClick={() => updateCartQuantity(item.id, 1)}
                             disabled={item.isActive === false || item.quantity >= item.stock}

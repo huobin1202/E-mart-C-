@@ -1,6 +1,7 @@
 import React from "react";
 import { ChevronLeft, ChevronRight, Eye } from "lucide-react";
 import { formatVietnam, toVietnamTime } from "../../utils/dateTimeHelper";
+import { auditActionLabel, auditActor, auditSummary, auditTarget } from "../../utils/auditDisplay";
 
 const actionStyles = [
   { match: /^(create|add|insert|import)/i, label: "Tạo", className: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
@@ -17,8 +18,6 @@ const formatTime = (value) => {
   const vn = toVietnamTime(value);
   return `${formatVietnam(value, "date")} ${String(vn.getHours()).padStart(2, "0")}:${String(vn.getMinutes()).padStart(2, "0")}:${String(vn.getSeconds()).padStart(2, "0")}`;
 };
-
-const cleanEntity = (value) => (!value || /^unknown$/i.test(value) ? "—" : value);
 
 export default function AuditTable({
   openAuditDetailModal,
@@ -40,7 +39,7 @@ export default function AuditTable({
           <thead>
             <tr>
               <th className="text-left">Thời gian</th>
-              <th className="text-left">Nhân viên</th>
+              <th className="text-left">Người thực hiện</th>
               <th className="text-left">Hành động</th>
               <th className="text-left">Đối tượng</th>
               <th className="text-left">Chi tiết</th>
@@ -55,15 +54,15 @@ export default function AuditTable({
                 return (
                   <tr key={activityLog.id ?? index} className="cursor-pointer" onClick={() => openDetail(activityLog)}>
                     <td className="whitespace-nowrap text-gray-700">{formatTime(activityLog.createdAt)}</td>
-                    <td className="whitespace-nowrap font-medium text-gray-900">{activityLog.username || "—"}</td>
+                    <td className="whitespace-nowrap font-medium text-gray-900">{auditActor(activityLog)}</td>
                     <td className="whitespace-nowrap">
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${action.className}`} title={activityLog.action}>
-                        {activityLog.action}
+                        {auditActionLabel(activityLog)}
                       </span>
                     </td>
-                    <td className="whitespace-nowrap">{cleanEntity(activityLog.entityType)}</td>
-                    <td className="max-w-xs truncate font-mono text-xs text-gray-500" title={activityLog.payload}>
-                      {activityLog.payload || "—"}
+                    <td className="whitespace-nowrap">{auditTarget(activityLog)}</td>
+                    <td className="max-w-xs truncate text-xs text-gray-500" title={auditSummary(activityLog)}>
+                      {auditSummary(activityLog)}
                     </td>
                     <td className="whitespace-nowrap text-xs text-gray-500">{activityLog.ipAddress || "—"}</td>
                     <td className="text-right">
