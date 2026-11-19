@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, RefreshCw, TrendingUp, Users, UserRound, Package, ReceiptText, ChevronLeft, ChevronRight } from "lucide-react";
+import ProductQuarterChart from "./ProductQuarterChart";
 import { API_ORIGIN } from "../../api/apiClient";
 
 const API = `${API_ORIGIN}/api/revenue-analytics`;
@@ -19,6 +20,7 @@ function authHeaders() {
 
 function ReportTable({ section, columns, rows, quantity = false, exporting, onExport }) {
   const [page, setPage] = useState(1);
+  const [selectedProduct, setSelectedProduct] = useState(null);
   const pageSize = 10;
   const detailRows = useMemo(() => {
     const detail = rows.filter(row => row.label !== "Tổng cộng");
@@ -28,6 +30,7 @@ function ReportTable({ section, columns, rows, quantity = false, exporting, onEx
   const pageCount = Math.max(1, Math.ceil(detailRows.length / pageSize));
   const visible = detailRows.slice((page - 1) * pageSize, page * pageSize);
   useEffect(() => setPage(1), [section, columns.join("|")]);
+  const showProductChart = section === "products" && visible.includes(selectedProduct);
   const format = value => quantity ? Number(value ?? 0).toLocaleString("vi-VN") : money.format(value ?? 0);
 
   return <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -35,11 +38,12 @@ function ReportTable({ section, columns, rows, quantity = false, exporting, onEx
       <div><h2 className="text-lg font-semibold text-slate-900">{sections.find(s => s.id === section)?.title}</h2><p className="mt-1 text-sm text-slate-500">{section === "financial" ? "Lợi nhuận = doanh thu − chi nhập hàng" : `${detailRows.length.toLocaleString("vi-VN")} ${labels[section].toLowerCase()}`}</p></div>
       <button onClick={() => onExport(section)} disabled={exporting} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Download size={16} />{exporting ? "Đang xuất…" : "Xuất Excel"}</button>
     </div>
+    {section === "products" && <p className="border-b border-slate-100 px-4 py-2 text-xs text-indigo-700">Nhấn vào dòng sản phẩm để xem biểu đồ doanh thu theo quý ngay bên cạnh.</p>}
     <div className="overflow-x-auto">
-      <table className="w-full min-w-max border-collapse text-sm">
-        <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-600"><tr><th className="sticky left-0 z-[1] min-w-52 bg-slate-50 px-4 py-3 text-left">{labels[section]}</th>{columns.map(c => <th key={c} className="min-w-32 whitespace-nowrap px-4 py-3 text-right">{c}</th>)}<th className="min-w-36 whitespace-nowrap px-4 py-3 text-right">Tổng cộng</th></tr></thead>
-        <tbody className="divide-y divide-slate-100">{visible.map((row, ri) => <tr key={`${row.id ?? row.label}-${ri}`} className={row.label === "Lợi nhuận" ? "bg-emerald-50 font-semibold text-emerald-900" : "hover:bg-slate-50"}><td className="sticky left-0 bg-white px-4 py-3 font-medium text-slate-700">{row.label}</td>{columns.map((_, i) => <td key={i} className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-slate-700">{format(row.values?.[i])}</td>)}<td className="whitespace-nowrap px-4 py-3 text-right font-medium tabular-nums">{format(row.total)}</td></tr>)}
-          {totalRow && <tr className="border-t-2 border-slate-300 bg-indigo-50 font-bold text-indigo-950"><td className="sticky left-0 bg-indigo-50 px-4 py-3">Tổng cộng</td>{columns.map((_, i) => <td key={i} className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{format(totalRow.values?.[i])}</td>)}<td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{format(totalRow.total)}</td></tr>}
+      <table className="w-max border-collapse text-sm">
+        <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-600"><tr><th className="sticky left-0 z-[1] w-44 min-w-36 bg-slate-50 px-3 py-2 text-left">{labels[section]}</th>{columns.map(c => <th key={c} className="whitespace-nowrap px-3 py-2 text-right">{c}</th>)}<th className="whitespace-nowrap px-3 py-2 text-right">Tổng cộng</th>{showProductChart && <th className="px-3 py-2 text-left">Biểu đồ theo quý</th>}</tr></thead>
+        <tbody className="divide-y divide-slate-100">{visible.map((row, ri) => <tr key={`${row.id ?? row.label}-${ri}`} onClick={section === "products" ? () => setSelectedProduct(current => current === row ? null : row) : undefined} className={section === "products" ? (selectedProduct === row ? "cursor-pointer bg-indigo-50 ring-1 ring-inset ring-indigo-200" : "cursor-pointer hover:bg-slate-50") : row.label === "Lợi nhuận" ? "bg-emerald-50 font-semibold text-emerald-900" : "hover:bg-slate-50"}><td className="sticky left-0 min-w-36 max-w-56 whitespace-normal break-words bg-white px-3 py-2 font-medium text-slate-700">{section === "products" ? <button type="button" aria-expanded={showProductChart && selectedProduct === row} className="w-full rounded text-left text-indigo-700 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-indigo-600">{row.label}</button> : row.label}</td>{columns.map((_, i) => <td key={i} className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{format(row.values?.[i])}</td>)}<td className="whitespace-nowrap px-3 py-2 text-right font-medium tabular-nums">{format(row.total)}</td>{showProductChart && <td className="align-top px-3 py-2" onClick={event => event.stopPropagation()}>{selectedProduct === row && <ProductQuarterChart row={row} columns={columns} onClose={() => setSelectedProduct(null)} />}</td>}</tr>)}
+          {totalRow && <tr className="border-t-2 border-slate-300 bg-indigo-50 font-bold text-indigo-950"><td className="sticky left-0 bg-indigo-50 px-3 py-2">Tổng cộng</td>{columns.map((_, i) => <td key={i} className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{format(totalRow.values?.[i])}</td>)}<td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{format(totalRow.total)}</td>{showProductChart && <td />}</tr>}
         </tbody>
       </table>
       {!rows.length && <p className="px-5 py-12 text-center text-slate-500">Không có dữ liệu trong khoảng năm đã chọn.</p>}

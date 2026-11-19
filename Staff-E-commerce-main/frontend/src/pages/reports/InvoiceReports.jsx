@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import FinancialBarChart from './FinancialBarChart';
+import ProductQuarterChart from './ProductQuarterChart';
 import { useLatestRequest } from '../../hook/useLatestRequest';
 import { MAX_YEAR_SPAN, QUARTERS, clipRange, currentQuarter, financialSeries, formatViDate, isFutureQuarter, quarterRange, validateDateRange, yearRange, yearsWithData } from '../../utils/reportPeriods';
 import { invoiceStatistics, vietnamToday } from '../../api/invoiceStatisticsApi';
@@ -8,14 +9,26 @@ import './invoiceReports.css';
 
 const money = value => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(value);
 
-function PivotTable({ table, start = 0, end = table.columns.length }) {
-  return <table>
+function PivotTable({ table, start = 0, end = table.columns.length, interactive = false }) {
+  const [selectedRow, setSelectedRow] = useState(null);
+  const entity = table.title.startsWith('Sản phẩm') ? 'sản phẩm' : table.title.startsWith('Nhân viên') ? 'nhân viên' : table.title.startsWith('Khách hàng') ? 'khách hàng' : null;
+  const period = entity === 'sản phẩm' ? 'quý' : 'năm';
+  const canSelect = interactive && Boolean(entity);
+  const showChart = canSelect && table.rows.includes(selectedRow);
+  const toggleRow = row => setSelectedRow(current => current === row ? null : row);
+  return <>{canSelect && <p className="report-note">Nhấn dòng hoặc tên {entity} để xem biểu đồ theo {period} bên phải bảng. Nhấn lại để đóng.</p>}<div className={showChart ? "product-report-layout has-chart" : "product-report-layout"}><div className={interactive ? "report-scroll" : undefined}><table>
     <thead><tr><th>Chỉ tiêu / Đối tượng</th>{table.columns.slice(start, end).map(c => <th key={c}>{c}</th>)}<th>TC toàn kỳ</th></tr></thead>
-    <tbody>{table.rows.map((row, index) => <tr key={index}><th>{row.label}{row.price != null && <small style={{ display: 'block', fontWeight: 400 }}>Giá bán: {money(row.price)} ₫</small>}</th>{row.values.slice(start, end).map((v, c) => <td key={c}>{money(v)}</td>)}<td><strong>{money(row.total)}</strong></td></tr>)}</tbody>
+    <tbody>{table.rows.map((row, index) => <tr key={index}
+      onClick={canSelect ? () => toggleRow(row) : undefined}
+      className={canSelect ? (selectedRow === row ? 'product-report-row is-selected' : 'product-report-row') : undefined}>
+      <th scope="row">{canSelect ? <button type="button" className="product-report-select" aria-expanded={showChart && selectedRow === row}
+        onClick={event => { event.stopPropagation(); toggleRow(row); }}>{row.label}</button> : row.label}
+        {row.price != null && <small style={{ display: 'block', fontWeight: 400 }}>Giá bán: {money(row.price)} ₫</small>}</th>
+      {row.values.slice(start, end).map((v, c) => <td key={c}>{money(v)}</td>)}<td><strong>{money(row.total)}</strong></td>
+    </tr>)}</tbody>
     {table.totals.length > 0 && <tfoot><tr><th>Tổng cộng</th>{table.totals.slice(start, end).map((v, c) => <td key={c}>{money(v)}</td>)}<td>{money(table.grandTotal)}</td></tr></tfoot>}
-  </table>;
+  </table></div>{showChart && <aside className="product-report-sidebar"><ProductQuarterChart row={selectedRow} columns={table.columns} period={period} entity={entity} onClose={() => setSelectedRow(null)} /></aside>}</div></>;
 }
-
 export function DailyInvoiceSummary({ onRefresh } = {}) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -235,7 +248,7 @@ export default function InvoiceReports() {
           </>}
           {table.filterDescription && <p className="report-policy">{table.filterDescription}</p>}
           {table.rows.length === 0 && <p>Không có dữ liệu phù hợp bộ lọc.</p>}
-          <div className="report-scroll"><PivotTable table={table}/></div>
+          <PivotTable table={table} interactive/>
         </div>
         <div className="report-print-only">{Array.from({ length: Math.ceil(table.columns.length / 8) }, (_, index) => <div className="report-print-part" key={index}>
           <h2>{table.title} · {table.columns[index * 8]} — {table.columns[Math.min(index * 8 + 7, table.columns.length - 1)]}</h2>
