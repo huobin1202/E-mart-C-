@@ -16,7 +16,8 @@ public sealed class StorefrontCheckoutService(
     RealtimeNotificationService realtime,
     IConfiguration configuration,
     VoucherWalletService vouchers,
-    PaymentSimulator simulator)
+    PaymentSimulator simulator,
+    GuestCheckoutAccess guestAccess)
 {
     public object GetPaymentOptions() => new
     {
@@ -32,8 +33,14 @@ public sealed class StorefrontCheckoutService(
             ? simulator.BankPageUrl(order.Id)
             : null;
 
-    public async Task<StorefrontCheckoutDTO> CreateAsync(int customerId, StorefrontOrderRequest request)
+    public async Task<StorefrontCheckoutDTO> CreateAsync(int? customerId, StorefrontOrderRequest request)
     {
+        var guestSecret = customerId.HasValue ? null : guestAccess.ReadSession(request.GuestToken);
+        if (!customerId.HasValue && (!string.IsNullOrWhiteSpace(request.PromotionCode) || request.PointsUsed != 0))
+            throw new BusinessRuleException("Đăng nhập để sử dụng voucher và điểm thưởng. Khách vãng lai chỉ được ưu đãi sự kiện.", 400, true);
+        if (request.FullName.Trim().Length < 2 || request.Address.Trim().Length < 5 ||
+            !System.Text.RegularExpressions.Regex.IsMatch(request.Phone.Trim(), "^(0|\\+84)[35789]\\d{8}$"))
+            throw new BusinessRuleException("Nhập đầy đủ tên, số điện thoại hợp lệ và địa chỉ người nhận.", 400, true);
         if (!Guid.TryParse(request.RequestId, out var requestId))
             throw new BusinessRuleException("Mã yêu cầu đặt hàng không hợp lệ.", 400, true);
         if (request.Items is not { Count: > 0 and <= 30 } || request.PointsUsed < 0)
@@ -57,7 +64,7 @@ public sealed class StorefrontCheckoutService(
             "bank" => "card",
             _ => throw new BusinessRuleException("Phương thức thanh toán không hợp lệ.", 400, true)
         };
-        var checkoutHash = HashRequest(customerId, databaseMethod, request, lines);
+        var checkoutHash = HashRequest(customerId, databaseMethod, request, lines, guestSecret);
 
         Order order;
         var replay = false;
@@ -79,13 +86,13 @@ public sealed class StorefrontCheckoutService(
                 if (databaseMethod == "card" && !bank.Enabled)
                     throw new BusinessRuleException("Cửa hàng chưa cấu hình tài khoản nhận chuyển khoản. Vui lòng chọn phương thức khác.", 409, true);
 
-                var customer = await repository.GetActiveCustomerAsync(customerId) ??
-                    throw new BusinessRuleException("Hồ sơ khách hàng không hợp lệ.", 401, true);
+                var customer = customerId.HasValue ? await repository.GetActiveCustomerAsync(customerId.Value) ??
+                    throw new BusinessRuleException("Hồ sơ khách hàng không hợp lệ.", 401, true) : null;
                 var productIds = lines.Select(item => item.ProductId).ToList();
                 var products = await repository.GetTrackedActiveProductsByIdsAsync(productIds);
                 if (products.Count != productIds.Count)
                     throw new BusinessRuleException("Có sản phẩm đã ngừng bán. Vui lòng cập nhật giỏ hàng.", 400, true);
-                var productPromotions = await repository.GetTrackedProductPromotionsAsync(productIds);
+                var productPromotions = customerId.HasValue ? await repository.GetTrackedProductPromotionsAsync(productIds) : [];
 
                 var usedPromotions = new Dictionary<int, Promotion>();
                 var now = DateTime.UtcNow;
@@ -136,7 +143,7 @@ public sealed class StorefrontCheckoutService(
                 }
 
                 var maximumPoints = decimal.Floor((subtotal - discount) / 1000m);
-                if (request.PointsUsed > customer.RewardPoints || request.PointsUsed > maximumPoints)
+                if (request.PointsUsed > (customer?.RewardPoints ?? 0) || request.PointsUsed > maximumPoints)
                     throw new BusinessRuleException("Số điểm hoặc giá đã thay đổi. Vui lòng cập nhật giỏ hàng.", 409, true);
                 discount += request.PointsUsed * 1000m;
                 var total = subtotal - discount;
@@ -187,8 +194,11 @@ public sealed class StorefrontCheckoutService(
                     });
                 }
 
-                customer.RewardPoints -= request.PointsUsed;
-                customer.UpdatedAt = now;
+                if (customer != null)
+                {
+                    customer.RewardPoints -= request.PointsUsed;
+                    customer.UpdatedAt = now;
+                }
                 foreach (var promotion in usedPromotions.Values)
                 {
                     if (promotion.Type == "voucher") continue; // Reserved now; consumed only after completion.
@@ -226,7 +236,7 @@ public sealed class StorefrontCheckoutService(
             }
             catch
             {
-                paymentError = "Đơn đã lưu nhưng chưa tạo được liên kết MoMo. Hãy thử thanh toán lại từ lịch sử đơn hàng.";
+                paymentError = "Đơn đã lưu nhưng chưa tạo được liên kết MoMo. Vui lòng thử lại trên màn hình xác nhận đơn.";
             }
         }
 
@@ -253,12 +263,22 @@ public sealed class StorefrontCheckoutService(
             });
         }
 
-        return MapCheckout(order, requestedMethod, replay, momoPayUrl, paymentError);
+        var receipt = MapCheckout(order, requestedMethod, replay, momoPayUrl, paymentError);
+        if (!customerId.HasValue) receipt.GuestAccessToken = guestAccess.IssueReceipt(order);
+        return receipt;
     }
 
     public async Task<StorefrontPaymentStatusDTO> GetPaymentStatusAsync(int customerId, int orderId)
     {
         var order = await GetOwnedOrderAsync(customerId, orderId);
+        return MapPaymentStatus(order);
+    }
+
+    public async Task<StorefrontPaymentStatusDTO> GetGuestPaymentStatusAsync(int orderId, string? token) =>
+        MapPaymentStatus(await GetGuestOrderAsync(orderId, token));
+
+    private StorefrontPaymentStatusDTO MapPaymentStatus(Order order)
+    {
         return new StorefrontPaymentStatusDTO
         {
             Id = order.Id,
@@ -277,6 +297,14 @@ public sealed class StorefrontCheckoutService(
     public async Task<object> RecreateMomoPaymentAsync(int customerId, int orderId)
     {
         var order = await GetOwnedOrderAsync(customerId, orderId);
+        return await RecreateMomoAsync(order);
+    }
+
+    public async Task<object> RecreateGuestMomoPaymentAsync(int orderId, string? token) =>
+        await RecreateMomoAsync(await GetGuestOrderAsync(orderId, token));
+
+    private async Task<object> RecreateMomoAsync(Order order)
+    {
         if (order.PaymentStatus == "paid")
             throw new BusinessRuleException("Đơn hàng đã được thanh toán.");
         if (order.PaymentMethod != "e_wallet" || order.Status is "cancelled" or "refunded")
@@ -300,6 +328,14 @@ public sealed class StorefrontCheckoutService(
         var order = await repository.GetOrderForPaymentStatusAsync(orderId);
         if (order == null || order.CustomerId != customerId)
             throw new BusinessRuleException("Không tìm thấy đơn hàng.", 404);
+        return order;
+    }
+
+    private async Task<Order> GetGuestOrderAsync(int orderId, string? token)
+    {
+        var order = await repository.GetOrderForPaymentStatusAsync(orderId);
+        if (order == null || !guestAccess.CanRead(order, token))
+            throw new BusinessRuleException("Không tìm thấy đơn hàng hoặc quyền xác nhận đơn đã hết hạn.", 404);
         return order;
     }
 
@@ -336,7 +372,7 @@ public sealed class StorefrontCheckoutService(
     };
 
     private static string HashRequest(
-        int customerId, string paymentMethod, StorefrontOrderRequest request, IReadOnlyList<CheckoutLine> lines)
+        int? customerId, string paymentMethod, StorefrontOrderRequest request, IReadOnlyList<CheckoutLine> lines, string? guestSecret)
     {
         var canonical = JsonSerializer.Serialize(new
         {
@@ -352,7 +388,7 @@ public sealed class StorefrontCheckoutService(
             expectedTotal = request.ExpectedTotal.HasValue ? (decimal?)SalePricing.Price(request.ExpectedTotal.Value) : null,
             lines
         });
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(guestSecret == null ? canonical : canonical + "|" + guestSecret)));
     }
 
     private sealed record CheckoutLine(int ProductId, int Quantity);

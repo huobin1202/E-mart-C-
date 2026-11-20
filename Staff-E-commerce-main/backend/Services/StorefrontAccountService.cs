@@ -33,8 +33,6 @@ public sealed class StorefrontAccountService(
             throw new BusinessRuleException("Mật khẩu phải có ít nhất 6 ký tự.");
         if (string.IsNullOrWhiteSpace(request.FullName) || request.FullName.Trim().Length < 2)
             throw new BusinessRuleException("Họ tên phải có ít nhất 2 ký tự.");
-        if (request.DateOfBirth.HasValue && request.DateOfBirth.Value.Date > DateTime.UtcNow.Date)
-            throw new BusinessRuleException("Ngày sinh không thể ở trong tương lai.");
 
         var username = phone;
         var internationalPhone = $"+84{phone[1..]}";
@@ -64,7 +62,6 @@ public sealed class StorefrontAccountService(
             Phone = phone,
             Email = email,
             Address = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address.Trim(),
-            DateOfBirth = request.DateOfBirth,
             IsActive = true,
             CreatedAt = now,
             UpdatedAt = now
@@ -157,8 +154,6 @@ public sealed class StorefrontAccountService(
         var fullName = request.FullName?.Trim();
         if (string.IsNullOrWhiteSpace(fullName) || fullName.Length < 2)
             throw new BusinessRuleException("Họ tên cần có ít nhất 2 ký tự.");
-        if (request.DateOfBirth.HasValue && request.DateOfBirth.Value.Date > DateTime.UtcNow.Date)
-            throw new BusinessRuleException("Ngày sinh không thể ở trong tương lai.");
 
         var customer = await GetCustomerAsync(customerId);
         var email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
@@ -172,7 +167,6 @@ public sealed class StorefrontAccountService(
         customer.FullName = fullName;
         customer.Email = email;
         customer.Address = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address.Trim();
-        customer.DateOfBirth = request.DateOfBirth;
         customer.UpdatedAt = now;
         if (account != null)
         {
@@ -222,7 +216,6 @@ public sealed class StorefrontAccountService(
         Phone = customer.Phone ?? string.Empty,
         Email = customer.Email,
         Address = customer.Address,
-        DateOfBirth = customer.DateOfBirth,
         RewardPoints = customer.RewardPoints
     };
 
@@ -233,7 +226,6 @@ public sealed class StorefrontAccountService(
         phone = customer.Phone,
         email = customer.Email,
         address = customer.Address,
-        dateOfBirth = customer.DateOfBirth,
         rewardPoints = customer.RewardPoints,
         isActive = customer.IsActive,
         createdAt = customer.CreatedAt,

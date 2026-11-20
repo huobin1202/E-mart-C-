@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { request } from "../../api/apiClient";
-import { formatPrice } from "../../utils/formatPrice";
+import PosProductPrice from "./PosProductPrice";
 import { canAddPosProduct, nextSuggestionIndex, POS_SEARCH_DELAY, POS_SUGGESTION_LIMIT, productSearchPath, resolvePosProduct } from "../../utils/posProductLookup";
 
 export default function PosProductLookup({ cart, disabled, onSelect }) {
@@ -138,7 +138,7 @@ export default function PosProductLookup({ cart, disabled, onSelect }) {
                   className={`flex w-full items-center justify-between gap-3 border-b p-3 text-left last:border-b-0 disabled:cursor-not-allowed disabled:opacity-50 ${activeIndex === index ? "bg-emerald-50" : "enabled:hover:bg-gray-50"}`}>
                   <span className="min-w-0"><span className="block break-words text-sm font-semibold">{product.productName}</span>
                     <span className="mt-1 block text-xs text-gray-500">{product.barcode || product.sku || "Chưa có mã"} · {product.isActive === false ? "Ngừng bán" : `Còn: ${product.inventory?.quantity ?? 0}`}{!available && product.isActive !== false ? " · Không thể thêm" : ""}</span></span>
-                  <span className="shrink-0 text-sm font-bold text-emerald-700">{formatPrice(product.discountPrice ?? product.price)}</span>
+                  <span className="shrink-0 text-right text-sm"><PosProductPrice product={product} /></span>
                 </button>;
               })}
       </div>}

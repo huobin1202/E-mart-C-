@@ -32,6 +32,8 @@ Invoice management checks exclude paid-but-unfulfilled orders, retain completed 
 
 Delivery checks exercise adding the recipient columns to the previous schema, migrating recognized legacy notes once, preserving multiline addresses/instructions/rejection text, leaving ambiguous/counter notes and existing snapshots untouched, creating an order for a recipient different from the account owner, preserving delivery data after profile changes, exposing separate fields in admin/POS/customer history/invoices, and denying anonymous point redemption. These checks also run only in the temporary database.
 
+Pass `--guest-only` to run the guest checkout checks separately. Guest orders require an opaque checkout token and recipient name/phone/address, keep `CustomerId` null even when the phone belongs to an account, receive only event discounts, and never spend/earn account points or appear in a matching account's history. Checks cover anonymous/member catalogue pricing and shared-cache isolation, public/private voucher rejection, repeat requests with the same key, wrong secret/changed payload, server price and stock enforcement, private receipt access, admin fulfillment/cancellation, and simulated MoMo/bank payments. The full runner includes these checks as well. Payment simulations never contact a live provider.
+
 Frontend recovery and cart-state checks: run `node --test tests/posWorkflow.test.js` from `frontend`. They verify the exact persisted request survives reload, employee isolation, storage errors, preserving unresolved requests after network/authorization failures, and refreshing prices/stock without silently altering quantities.
 
 See [POS_CHECKOUT.md](../../POS_CHECKOUT.md) for the new checkout workflow and deployment notes.

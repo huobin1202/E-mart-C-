@@ -117,6 +117,7 @@ builder.Services.AddScoped<PosCheckoutService>();
 builder.Services.AddScoped<StorefrontService>();
 builder.Services.AddScoped<StorefrontAccountService>();
 builder.Services.AddScoped<StorefrontCheckoutService>();
+builder.Services.AddSingleton<GuestCheckoutAccess>();
 builder.Services.AddScoped<BankTransferService>();
 builder.Services.AddScoped<RealtimeNotificationService>();
 builder.Services.AddScoped<ActivityLogService>();

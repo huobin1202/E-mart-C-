@@ -8,7 +8,6 @@ const CustomerAddModal = ({ isOpen, onClose, onSuccess }) => {
     email: "",
     phone: "",
     address: "",
-    dateOfBirth: "",
   });
 
   const [errors, setErrors] = useState({});
@@ -24,7 +23,6 @@ const CustomerAddModal = ({ isOpen, onClose, onSuccess }) => {
         email: "",
         phone: "",
         address: "",
-        dateOfBirth: "",
       });
       setErrors({});
       setSuccessMessage("");
@@ -106,7 +104,6 @@ const CustomerAddModal = ({ isOpen, onClose, onSuccess }) => {
         email: formData.email.trim() || null,
         phone: formData.phone.trim(),
         address: formData.address.trim() || null,
-        dateOfBirth: formData.dateOfBirth || null,
       };
       console.log("Sending customer data:", customerData);
 
@@ -123,7 +120,6 @@ const CustomerAddModal = ({ isOpen, onClose, onSuccess }) => {
           email: "",
           phone: "",
           address: "",
-          dateOfBirth: "",
         });
 
         onSuccess?.();
@@ -175,10 +171,6 @@ const CustomerAddModal = ({ isOpen, onClose, onSuccess }) => {
             className="space-y-6"
           >
             {/* Full Name */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Ngày sinh</label>
-              <input type="date" name="dateOfBirth" value={formData.dateOfBirth} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
-            </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Tên Khách Hàng <span className="text-red-500">*</span>

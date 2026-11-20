@@ -16,14 +16,15 @@ public sealed class StorefrontController(
     StorefrontCheckoutService checkout,
     VoucherWalletService vouchers,
     OrderService orders,
-    LoginThrottle throttle) : ControllerBase
+    LoginThrottle throttle,
+    GuestCheckoutAccess guestAccess) : ControllerBase
 {
     [HttpGet("promotions")]
     [AllowAnonymous]
     public async Task<IActionResult> GetStorefrontPromotions()
     {
         var items = await promotions.GetActivePromotionsAsync();
-        return Ok(items.Where(item => item.Type == "event" || item.Type == "voucher" && item.Visibility == "public"));
+        return Ok(items.Where(item => item.Type == "event" || HasMemberPricing && item.Type == "voucher" && item.Visibility == "public"));
     }
 
     [HttpGet("vouchers/discover")]
@@ -90,6 +91,8 @@ public sealed class StorefrontController(
             return BadRequest(new { message = "Chỉ chọn một ưu đãi sự kiện hoặc nhập một mã voucher." });
         if (!request.EventPromotionId.HasValue && string.IsNullOrWhiteSpace(request.Code))
             return BadRequest(new { message = "Nhập mã voucher hoặc chọn ưu đãi sự kiện." });
+        if (!request.EventPromotionId.HasValue && !HasMemberPricing)
+            return Unauthorized(new { message = "Đăng nhập để sử dụng voucher. Khách vãng lai chỉ được ưu đãi sự kiện." });
         var result = request.EventPromotionId.HasValue
             ? await promotions.ValidateEventPromotionAsync(request.EventPromotionId.Value, request.OrderAmount)
             : await promotions.ValidatePromotionAsync(request.Code, request.OrderAmount);
@@ -192,7 +195,7 @@ public sealed class StorefrontController(
     [HttpGet("products")]
     [AllowAnonymous]
     public async Task<ActionResult<List<StorefrontProductDTO>>> GetProducts() =>
-        Ok(await storefront.GetAvailableProductsAsync());
+        Ok(await storefront.GetAvailableProductsAsync(HasMemberPricing));
 
     [HttpGet("products/page")]
     [AllowAnonymous]
@@ -200,13 +203,13 @@ public sealed class StorefrontController(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 40,
         [FromQuery] bool discountedOnly = false) =>
-        Ok(await storefront.GetAvailableProductsPageAsync(page, pageSize, discountedOnly));
+        Ok(await storefront.GetAvailableProductsPageAsync(page, pageSize, discountedOnly, HasMemberPricing));
 
     [HttpGet("products/{id:int}")]
     [AllowAnonymous]
     public async Task<ActionResult<StorefrontProductDTO>> GetProduct(int id)
     {
-        var product = await storefront.GetAvailableProductAsync(id);
+        var product = await storefront.GetAvailableProductAsync(id, HasMemberPricing);
         return product == null ? NotFound(new { message = "Sản phẩm hiện không còn khả dụng." }) : Ok(product);
     }
 
@@ -226,6 +229,35 @@ public sealed class StorefrontController(
         if (!TryGetCustomerId(out var customerId))
             return Unauthorized(new { message = "Đăng nhập bằng tài khoản khách hàng để đặt đơn." });
         try { return Ok(await checkout.CreateAsync(customerId, request)); }
+        catch (BusinessRuleException exception) { return BusinessError(exception); }
+    }
+
+    [HttpPost("guest/session")]
+    [AllowAnonymous]
+    [ReadOnlyRequest]
+    public IActionResult CreateGuestSession() => Ok(new { token = guestAccess.IssueSession() });
+
+    [HttpPost("guest/orders")]
+    [AllowAnonymous]
+    public async Task<IActionResult> CreateGuestOrder([FromBody] StorefrontOrderRequest request)
+    {
+        try { return Ok(await checkout.CreateAsync(null, request)); }
+        catch (BusinessRuleException exception) { return BusinessError(exception); }
+    }
+
+    [HttpGet("guest/orders/{id:int}/payment-status")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetGuestPaymentStatus(int id, [FromHeader(Name = "X-Guest-Order-Token")] string? token)
+    {
+        try { return Ok(await checkout.GetGuestPaymentStatusAsync(id, token)); }
+        catch (BusinessRuleException exception) { return BusinessError(exception); }
+    }
+
+    [HttpPost("guest/orders/{id:int}/pay-momo")]
+    [AllowAnonymous]
+    public async Task<IActionResult> RecreateGuestMomoPayment(int id, [FromHeader(Name = "X-Guest-Order-Token")] string? token)
+    {
+        try { return Ok(await checkout.RecreateGuestMomoPaymentAsync(id, token)); }
         catch (BusinessRuleException exception) { return BusinessError(exception); }
     }
 
@@ -263,6 +295,8 @@ public sealed class StorefrontController(
 
     private bool TryGetCustomerId(out int customerId) =>
         int.TryParse(User.FindFirst("customer_id")?.Value, out customerId);
+
+    private bool HasMemberPricing => User.Identity?.IsAuthenticated == true && User.IsInRole("customer") && TryGetCustomerId(out _);
 
     private UnauthorizedObjectResult InvalidSession() =>
         Unauthorized(new { message = "Phiên đăng nhập không hợp lệ." });

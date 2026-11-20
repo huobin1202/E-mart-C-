@@ -45,7 +45,6 @@ namespace backend.Services
                 Phone = c.Phone,
                 Email = c.Email,
                 Address = c.Address,
-                DateOfBirth = c.DateOfBirth,
                 RewardPoints = c.RewardPoints
             }).ToList();
 
@@ -61,7 +60,7 @@ namespace backend.Services
                 .Select(c => new CustomerDTO
                 {
                     Id = c.Id, FullName = c.FullName, Phone = c.Phone, Email = c.Email,
-                    Address = c.Address, DateOfBirth = c.DateOfBirth, RewardPoints = c.RewardPoints
+                    Address = c.Address, RewardPoints = c.RewardPoints
                 }).ToList();
         }
 
@@ -120,7 +119,6 @@ namespace backend.Services
                 Phone = createDto.Phone,
                 Email = createDto.Email,
                 Address = createDto.Address,
-                DateOfBirth = createDto.DateOfBirth,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow
             };
@@ -177,11 +175,6 @@ namespace backend.Services
             if (updateDto.Address != null && updateDto.Address != customer.Address)
             {
                 customer.Address = updateDto.Address;
-                hasChanges = true;
-            }
-            if (updateDto.DateOfBirth != customer.DateOfBirth)
-            {
-                customer.DateOfBirth = updateDto.DateOfBirth;
                 hasChanges = true;
             }
 
@@ -244,7 +237,6 @@ namespace backend.Services
                 Phone = customer.Phone!,
                 Email = customer.Email,
                 Address = customer.Address,
-                DateOfBirth = customer.DateOfBirth,
                 IsActive = customer.IsActive,
                 RewardPoints = customer.RewardPoints,
                 CreatedAt = customer.CreatedAt,

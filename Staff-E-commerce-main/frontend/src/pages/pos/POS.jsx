@@ -23,6 +23,7 @@ import { formatPrice } from "../../utils/formatPrice";
 import { checkoutPos, getCheckoutRequestId, getPosCheckout, findPosCheckoutByRequest } from "../../api/posCheckoutApi";
 import PosPaymentPanel from "../../components/orders/PosPaymentPanel";
 import PosProductLookup from "../../components/orders/PosProductLookup";
+import PosProductPrice from "../../components/orders/PosProductPrice";
 import { useAuth } from "../../hook/useAuth";
 import { paymentStatusLabels } from "../../utils/orderStatus";
 import { mergeLatestCart, hasUnavailableItems } from "../../utils/posCart";
@@ -988,7 +989,7 @@ export default function POS() {
                           <div className="text-xs font-bold text-gray-800 line-clamp-2 mt-0.5">{p.productName}</div>
                         </div>
                         <div className="mt-2 flex flex-wrap justify-between items-center gap-2">
-                          <span className="text-xs font-black text-emerald-700">{formatPrice(p.discountPrice ?? p.price)}</span>
+                          <span className="text-xs"><PosProductPrice product={p} /></span>
                           <span className="text-xs font-medium text-gray-500 whitespace-nowrap">
                             Còn: {(p.inventory?.quantity ?? 0).toLocaleString("vi-VN")}
                           </span>

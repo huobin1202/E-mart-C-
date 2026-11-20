@@ -355,10 +355,10 @@ const CustomerList = () => {
                   Điện Thoại
                 </th>
                 <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
-                  Ngày Sinh
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
                   Địa Chỉ
+                </th>
+                <th className="px-6 py-3 text-center text-sm font-semibold text-gray-700">
+                  Trạng Thái
                 </th>
                 <th className="px-6 py-3 text-center text-sm font-semibold text-gray-700">
                   Hành Động
@@ -406,7 +406,6 @@ const CustomerList = () => {
                               : "";
                             return formattedDate;
                           })()}
-                          <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${customer.isActive ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>{customer.isActive ? "Đang hoạt động" : "Không hoạt động"}</span>
                         </p>
                       </div>
                     </td>
@@ -417,10 +416,10 @@ const CustomerList = () => {
                       {customer.phone || "-"}
                     </td>
                     <td className="px-6 py-3 text-sm text-gray-600">
-                      {customer.dateOfBirth ? new Date(customer.dateOfBirth).toLocaleDateString("vi-VN") : "-"}
-                    </td>
-                    <td className="px-6 py-3 text-sm text-gray-600">
                       {customer.address || "-"}
+                    </td>
+                    <td className="px-6 py-3 text-center">
+                      <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs ${customer.isActive ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>{customer.isActive ? "Đang hoạt động" : "Không hoạt động"}</span>
                     </td>
                     <td className="px-6 py-3 text-center" onClick={(event) => event.stopPropagation()}>
                       <div className="table-actions flex items-center justify-center gap-2">

@@ -42,7 +42,7 @@ public static class AuditRequest
         {
             "Login" => "LOGIN",
             "ChangePassword" => "CHANGE_PASSWORD",
-            "CreateOrder" => "CHECKOUT",
+            "CreateOrder" or "CreateGuestOrder" => "CHECKOUT",
             "CreateOrderItems" => "ADD_ITEMS",
             "DeleteItemsByOrder" => "REMOVE_ITEMS",
             "CreateTemporaryOrder" => "CREATE_TEMP",
@@ -55,7 +55,7 @@ public static class AuditRequest
             "DeliverOnlineOrder" => "DELIVER",
             "MarkOrderRefunded" => "REFUND",
             "CompletePendingOrder" or "Complete" => "COMPLETE",
-            "CreatePosPaymentLink" or "CreatePayment" or "RecreateMomoPayment" => "CREATE_PAYMENT_LINK",
+            "CreatePosPaymentLink" or "CreatePayment" or "RecreateMomoPayment" or "RecreateGuestMomoPayment" => "CREATE_PAYMENT_LINK",
             "MomoCallback" => "PAYMENT_CALLBACK",
             "CompleteMomoSimulation" or "CompleteBankSimulation" => "SIMULATE_PAYMENT",
             "ApplyPromotion" or "ApplyPromotionToOrder" => "APPLY_PROMOTION",

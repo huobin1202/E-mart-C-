@@ -111,7 +111,6 @@ CREATE TABLE dbo.customers (
   phone VARCHAR(50),
   password_hash VARCHAR(512) DEFAULT NULL,
   email VARCHAR(255),
-  date_of_birth DATE NULL,
   reward_points INT NOT NULL DEFAULT 0,
   address NVARCHAR(MAX),
   note NVARCHAR(MAX),
@@ -561,8 +560,17 @@ GO
 -- Authorization, checkout and delivery columns from the former startup initializer.
 IF COL_LENGTH(N'dbo.employees', N'date_of_birth') IS NULL
     ALTER TABLE dbo.employees ADD date_of_birth DATE NULL;
-IF COL_LENGTH(N'dbo.customers', N'date_of_birth') IS NULL
-    ALTER TABLE dbo.customers ADD date_of_birth DATE NULL;
+-- Customer birthdays are retired. Existing birthday values are intentionally deleted.
+IF COL_LENGTH(N'dbo.customers', N'date_of_birth') IS NOT NULL
+BEGIN
+    DECLARE @customerBirthdayDefault NVARCHAR(MAX);
+    SELECT @customerBirthdayDefault = N'ALTER TABLE dbo.customers DROP CONSTRAINT ' + QUOTENAME(d.name)
+    FROM sys.default_constraints d
+    JOIN sys.columns c ON c.object_id = d.parent_object_id AND c.column_id = d.parent_column_id
+    WHERE c.object_id = OBJECT_ID(N'dbo.customers') AND c.name = N'date_of_birth';
+    IF @customerBirthdayDefault IS NOT NULL EXEC sys.sp_executesql @customerBirthdayDefault;
+    ALTER TABLE dbo.customers DROP COLUMN date_of_birth;
+END;
 IF COL_LENGTH(N'dbo.users', N'employee_id') IS NULL
     ALTER TABLE dbo.users ADD employee_id INT NULL;
 IF COL_LENGTH(N'dbo.users', N'customer_id') IS NULL

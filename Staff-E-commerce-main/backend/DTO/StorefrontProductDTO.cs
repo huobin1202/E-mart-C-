@@ -2,6 +2,17 @@ namespace backend.DTO;
 
 public sealed class StorefrontProductDTO
 {
+    public StorefrontProductDTO ForGuest()
+    {
+        var copy = (StorefrontProductDTO)MemberwiseClone();
+        copy.Price = copy.OriginalPrice;
+        copy.DiscountAmount = 0;
+        copy.DiscountPercent = 0;
+        copy.PromotionName = null;
+        copy.PromotionEndsAt = null;
+        return copy;
+    }
+
     public int Id { get; set; }
     public string ProductName { get; set; } = string.Empty;
     public string? Description { get; set; }

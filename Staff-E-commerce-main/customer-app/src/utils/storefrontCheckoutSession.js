@@ -1,4 +1,5 @@
 export const checkoutStorageKey = (customerId) => {
+  if (customerId === "guest") return "emart_pending_checkout_v1_guest";
   if (!Number.isSafeInteger(customerId) || customerId <= 0) {
     throw new Error("Không xác định được khách hàng của yêu cầu đặt đơn.");
   }
@@ -18,6 +19,7 @@ export function parsePendingCheckout(raw, customerId) {
   const value = JSON.parse(raw);
   const requestId = value?.payload?.requestId || "";
   if (value?.owner !== customerId ||
+      (customerId === "guest" && !value?.payload?.guestToken) ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId) ||
       !Array.isArray(value?.payload?.items) || value.payload.items.length === 0 ||
       !Array.isArray(value?.cart)) {
@@ -30,7 +32,7 @@ export async function preparePendingCheckout(storage, customerId, create) {
   const key = checkoutStorageKey(customerId);
   const existing = parsePendingCheckout(await storage.getItem(key), customerId);
   if (existing) return existing;
-  const pending = create();
+  const pending = await create();
   parsePendingCheckout(JSON.stringify(pending), customerId);
   await storage.setItem(key, JSON.stringify(pending));
   return pending;

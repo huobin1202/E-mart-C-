@@ -26,7 +26,9 @@ var connection = new SqlConnectionStringBuilder(config.GetConnectionString("Defa
     InitialCatalog = "AuthorizationRegression_" + Guid.NewGuid().ToString("N"),
     ConnectTimeout = 8
 };
-var builder = WebApplication.CreateBuilder();
+var regressionRoot = Path.GetFullPath(Path.Combine(backendPath, "../.tmp/authorization-runtime"));
+Directory.CreateDirectory(regressionRoot);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions { ContentRootPath = regressionRoot });
 builder.Logging.ClearProviders();
 builder.WebHost.UseUrls("http://127.0.0.1:0");
 builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
@@ -61,6 +63,8 @@ builder.Services.AddScoped<PosCheckoutService>();
 builder.Services.AddScoped<StorefrontService>();
 builder.Services.AddScoped<StorefrontAccountService>();
 builder.Services.AddScoped<StorefrontCheckoutService>();
+builder.Services.AddSingleton<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>(new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider());
+builder.Services.AddSingleton<GuestCheckoutAccess>();
 builder.Services.AddScoped<BankTransferService>();
 builder.Services.AddScoped<RealtimeNotificationService>();
 builder.Services.AddScoped<OrderService>();
@@ -117,6 +121,12 @@ try
     if (args.Contains("--voucher-only")) await VoucherWalletRegression.SeedLegacyAsync(app.Services);
     // Exercise upgrading the previous order schema, not only a freshly generated model.
     await WithDb(async db => await db.Database.ExecuteSqlRawAsync("""
+        -- The legacy migration reads users.phone; EF's current account model no longer maps it.
+        IF COL_LENGTH('dbo.users', 'phone') IS NULL ALTER TABLE dbo.users ADD phone VARCHAR(50) NULL;
+        -- Match defaults used by the canonical legacy employee backfill.
+        ALTER TABLE dbo.employees ADD DEFAULT (GETUTCDATE()) FOR created_at;
+        ALTER TABLE dbo.employees ADD DEFAULT (GETUTCDATE()) FOR updated_at;
+        ALTER TABLE dbo.employees ADD DEFAULT (0) FOR base_salary;
         DROP INDEX ux_orders_checkout_key ON orders;
         ALTER TABLE orders DROP COLUMN checkout_key, checkout_hash, points_used, points_earned, cash_received, recipient_name, recipient_phone, shipping_address;
         """));
@@ -161,6 +171,12 @@ try
     if (args.Contains("--voucher-only"))
     {
         await VoucherWalletRegression.RunAsync(app.Services, client, adminToken);
+        return;
+    }
+
+    if (args.Contains("--guest-only"))
+    {
+        await GuestCheckoutRegression.RunAsync(app.Services, client, adminToken);
         return;
     }
 
@@ -278,7 +294,7 @@ try
     await Expect(HttpMethod.Get, "/api/me", staffToken, null, HttpStatusCode.Unauthorized);
     staffToken = await Token(staffId);
     await Expect(HttpMethod.Put, $"/api/users/{staffId}", adminToken,
-        new { username = "staff_test", role = "admin", isActive = true }, HttpStatusCode.OK);
+        new { username = "staff_test", role = "admin", employeeId, isActive = true }, HttpStatusCode.OK);
     await Expect(HttpMethod.Get, "/api/me", staffToken, null, HttpStatusCode.Unauthorized);
     // Two concurrent removals must never eliminate both active administrators.
     var removals = await Task.WhenAll(new[] { adminId, staffId }.Select(async id =>
@@ -337,6 +353,7 @@ try
     await PosCheckoutRegression.RunAsync(app.Services, client, adminToken);
     await OrderDeliveryRegression.RunAsync(app.Services, client, adminToken);
     await VoucherWalletRegression.RunAsync(app.Services, client, adminToken);
+    await GuestCheckoutRegression.RunAsync(app.Services, client, adminToken);
 
     async Task CheckUserFilter(string query, int expectedTotal, int? expectedId = null, int? expectedPage = null)
     {
@@ -364,6 +381,11 @@ try
             throw new Exception($"{method} {path}: expected {(int)expected}, got {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
         assertions++;
     }
+}
+catch (Exception exception)
+{
+    Console.Error.WriteLine(exception);
+    Environment.ExitCode = 1;
 }
 finally
 {

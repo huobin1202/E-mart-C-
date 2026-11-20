@@ -31,7 +31,6 @@ public sealed class StorefrontCustomerRegisterRequest : StorefrontCustomerLoginR
     [StringLength(500)]
     public string? Address { get; set; }
 
-    public DateTime? DateOfBirth { get; set; }
 }
 
 public sealed class StorefrontAddressUpdateRequest
@@ -51,7 +50,6 @@ public sealed class StorefrontAccountUpdateRequest
     [StringLength(500)]
     public string? Address { get; set; }
 
-    public DateTime? DateOfBirth { get; set; }
 }
 
 public sealed class StorefrontCustomerProfileDTO
@@ -61,7 +59,6 @@ public sealed class StorefrontCustomerProfileDTO
     public string Phone { get; set; } = string.Empty;
     public string? Email { get; set; }
     public string? Address { get; set; }
-    public DateTime? DateOfBirth { get; set; }
     public int RewardPoints { get; set; }
 }
 
@@ -75,6 +72,9 @@ public sealed class StorefrontAuthenticationDTO
 
 public sealed class StorefrontOrderRequest
 {
+    [StringLength(1024)]
+    public string? GuestToken { get; set; }
+
     [Required, StringLength(36)]
     public string RequestId { get; set; } = string.Empty;
 
@@ -132,6 +132,7 @@ public sealed class StorefrontPromotionRequest
 
 public sealed class StorefrontCheckoutDTO
 {
+    public string? GuestAccessToken { get; set; }
     public int Id { get; set; }
     public string OrderNumber { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;

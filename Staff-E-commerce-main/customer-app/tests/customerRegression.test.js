@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import vm from "node:vm";
 import { createCustomerSession, deliveryRecipient, loadCustomerProfile, normalizeVietnamesePhone } from "../src/utils/customerSession.js";
 import { resolveApiUrl } from "../src/utils/apiConfig.js";
-import { repriceVoucher } from "../src/utils/checkoutPricing.js";
+import { catalogForAudience, repriceVoucher } from "../src/utils/checkoutPricing.js";
 import { parseDeliveryAddress, formatSelectedDeliveryAddress } from "../src/utils/addressSelection.js";
 import * as checkout from "../src/utils/storefrontCheckoutSession.js";
 
@@ -46,7 +46,8 @@ function harness(overrides = {}) {
     CUSTOMER_KEY: "profile", CUSTOMER_TOKEN_KEY: "token", ADDRESS_KEY: "address", CART_KEY: "cart",
     API_URL: "http://mock/api", customer: { id: 1, fullName: "Customer A", phone: "0912345678", rewardPoints: 0 }, customerToken: "token-A",
     customerSession: { current: scope }, pendingCheckoutRef: { current: null }, phoneCheckSequence: { current: 0 }, cartSnapshot: {}, checkoutRequestLock: { current: false },
-    accountReady: true, accountBusy: false, addressBusy: false, accountName: "Updated A", accountEmail: "", accountAddress: "", accountDateOfBirth: "",
+    accountReady: true, accountBusy: false, addressBusy: false, accountName: "Updated A", accountEmail: "", accountAddress: "",
+    isMember: true, checkoutOwner: 1, guestCheckoutSelected: false, checkoutAfterLogin: false, loading: false, loadError: "",
     checkoutForm: { fullName: "Customer A", phone: "0912345678", note: "Keep this note" },
     deliveryAddress: address, checkoutAddress: { ...address }, pendingCheckout: null,
     cart: [{ id: 11, name: "Product", price: 100000, quantity: 1 }], appliedVoucher: null, activeVoucher: null, useRewardPoints: false, paymentMethod: "cod", voucherBusy: false,
@@ -184,7 +185,7 @@ test("voucher follows the cart subtotal, minimum, ceiling and fixed-discount bou
 });
 
 function refreshTotals(context) {
-  for (const name of ["subtotal", "activeVoucher", "voucherDiscount", "afterVoucher", "maxPointsUsable", "pointsDiscount", "payable"]) context[name] = evaluate(name, context);
+  for (const name of ["subtotal", "eligibleVoucher", "activeVoucher", "voucherDiscount", "afterVoucher", "maxPointsUsable", "pointsDiscount", "payable"]) context[name] = evaluate(name, context);
 }
 
 test("checkout sends the recalculated voucher total and preserves it on a retry", async () => {
@@ -245,4 +246,89 @@ test("API config honors explicit endpoints on web and keeps HTTPS without config
   assert.equal(resolveApiUrl("", { hostname: "[::1]", protocol: "http:" }), "http://[::1]:5099/api");
   assert.equal(resolveApiUrl("http://192.168.1.5:5099/api", undefined), "http://192.168.1.5:5099/api");
   assert.equal(resolveApiUrl("", undefined), "http://10.0.2.2:5099/api");
+});
+
+test("guest checkout submits event-only pricing without creating account history", async () => {
+  const calls = [];
+  const event = { eventPromotionId: 7, promotion: { id: 7, type: "event", discountType: "percent", value: 10, minOrderAmount: 0 } };
+  const context = harness({ isMember: false, checkoutOwner: "guest", guestCheckoutSelected: true, customer: null, customerToken: "",
+    customerOrders: [], appliedVoucher: event, useRewardPoints: true,
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+      if (url.endsWith("/guest/session")) return { ok: true, json: async () => ({ token: "guest-private-secret" }) };
+      return { ok: true, json: async () => ({ id: 88, orderNumber: "DH88", totalAmount: 90000, guestAccessToken: "private-receipt" }) };
+    } });
+  refreshTotals(context);
+  assert.equal(context.payable, 90000);
+  assert.equal(context.maxPointsUsable, 0);
+  await action("submitOrder", context);
+  assert.equal(calls.length, 2);
+  assert.ok(calls[1].url.endsWith("/guest/orders"));
+  assert.equal(calls[1].options.headers.Authorization, undefined);
+  const payload = JSON.parse(calls[1].options.body);
+  assert.equal(payload.guestToken, "guest-private-secret");
+  assert.equal(payload.eventPromotionId, 7);
+  assert.equal(payload.promotionCode, null);
+  assert.equal(payload.pointsUsed, 0);
+  assert.equal(payload.expectedTotal, 90000);
+  assert.equal(context.completedOrder.isGuest, true);
+  assert.equal(context.customerOrders.length, 0);
+  assert.equal(context.cart.length, 0);
+  assert.equal(context.records.has(checkout.checkoutStorageKey("guest")), false);
+});
+
+test("guest retries keep the same private checkout and cannot mix with a member request", async () => {
+  const payloads = [];
+  let sessions = 0;
+  const context = harness({ isMember: false, checkoutOwner: "guest", guestCheckoutSelected: true, customer: null, customerToken: "",
+    fetch: async (url, options) => {
+      if (url.endsWith("/guest/session")) { sessions++; return { ok: true, json: async () => ({ token: "guest-private-secret" }) }; }
+      payloads.push(JSON.parse(options.body));
+      return { ok: false, status: 500, json: async () => ({}) };
+    } });
+  refreshTotals(context);
+  await action("submitOrder", context);
+  context.cart[0].quantity = 2;
+  refreshTotals(context);
+  await action("submitOrder", context);
+  assert.equal(sessions, 1);
+  assert.deepEqual(payloads[0], payloads[1]);
+  assert.ok(context.records.has(checkout.checkoutStorageKey("guest")));
+  assert.notEqual(checkout.checkoutStorageKey("guest"), checkout.checkoutStorageKey(1));
+});
+
+test("guest cannot apply any voucher code even with a stale voucher in local state", async () => {
+  let calls = 0;
+  const context = harness({ isMember: false, checkoutOwner: "guest", customer: null, customerToken: "", appliedVoucher: voucher,
+    fetch: async () => { calls++; throw new Error("Must not call wallet API"); } });
+  refreshTotals(context);
+  assert.equal(context.activeVoucher, null);
+  assert.equal(context.payable, 100000);
+  await evaluate("applyVoucher", context)("PUBLIC-SALE");
+  assert.equal(calls, 0);
+  assert.match(context.voucherMessage, /Đăng nhập/);
+});
+
+test("guest checkout requires recipient details and an explicit guest choice", async () => {
+  let calls = 0;
+  const context = harness({ isMember: false, checkoutOwner: "guest", guestCheckoutSelected: false, customer: null, customerToken: "",
+    fetch: async () => { calls++; } });
+  refreshTotals(context);
+  await action("submitOrder", context);
+  assert.equal(calls, 0);
+  context.guestCheckoutSelected = true;
+  context.checkoutForm.phone = "";
+  await action("submitOrder", context);
+  assert.equal(calls, 0);
+  assert.match(context.orderError, /số điện thoại/);
+});
+
+test("guest display immediately removes cached member prices without mutating the member catalogue", () => {
+  const memberCatalog = [{ id: 1, price: 80000, originalPrice: 100000, discountAmount: 20000, discountPercent: 20, promotionName: "Member sale" }];
+  const guest = catalogForAudience(memberCatalog, false);
+  assert.equal(guest[0].price, 100000);
+  assert.equal(guest[0].discountAmount, 0);
+  assert.equal(guest[0].promotionName, null);
+  assert.equal(memberCatalog[0].price, 80000);
+  assert.equal(catalogForAudience(memberCatalog, true), memberCatalog);
 });

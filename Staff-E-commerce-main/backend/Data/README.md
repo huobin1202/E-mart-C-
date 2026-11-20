@@ -32,6 +32,10 @@ failure. There is no database reset or DROP DATABASE command.
 
 ## Legacy objects
 
+- `customers.date_of_birth`: removed from new and existing databases. Applying
+  the schema permanently deletes existing customer birthday values. Deploy the
+  updated backend with this schema; an older backend still queries this column.
+  Employee birthdays remain available.
 - `inventory`: populate missing `products.stock_quantity`, check all quantities,
   then remove the old table. Conflicting/orphan/duplicate rows stop the upgrade.
 - `po_details`: renamed to `purchase_order_items`; `import_price` becomes `unit_cost`

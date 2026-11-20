@@ -67,13 +67,14 @@ public sealed class StorefrontService(
         return items;
     }
 
-    public async Task<List<StorefrontProductDTO>> GetAvailableProductsAsync() => (await GetCatalogAsync()).ToList();
+    public async Task<List<StorefrontProductDTO>> GetAvailableProductsAsync(bool memberPricing = false) =>
+        (await GetCatalogAsync()).Select(product => memberPricing ? product : product.ForGuest()).ToList();
 
-    public async Task<StorefrontProductPageDTO> GetAvailableProductsPageAsync(int page, int pageSize, bool discountedOnly)
+    public async Task<StorefrontProductPageDTO> GetAvailableProductsPageAsync(int page, int pageSize, bool discountedOnly, bool memberPricing = false)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 200);
-        IEnumerable<StorefrontProductDTO> catalog = await GetCatalogAsync();
+        IEnumerable<StorefrontProductDTO> catalog = await GetAvailableProductsAsync(memberPricing);
         if (discountedOnly) catalog = catalog.Where(product => product.DiscountAmount > 0 && product.StockQuantity > 0);
         var filtered = catalog as IReadOnlyCollection<StorefrontProductDTO> ?? catalog.ToList();
         return new StorefrontProductPageDTO
@@ -85,8 +86,8 @@ public sealed class StorefrontService(
         };
     }
 
-    public async Task<StorefrontProductDTO?> GetAvailableProductAsync(int productId) =>
-        (await GetCatalogAsync()).FirstOrDefault(product => product.Id == productId);
+    public async Task<StorefrontProductDTO?> GetAvailableProductAsync(int productId, bool memberPricing = false) =>
+        (await GetAvailableProductsAsync(memberPricing)).FirstOrDefault(product => product.Id == productId);
 
     private async Task<List<StorefrontProductDTO>> MapProductsAsync(List<backend.Models.Product> entities)
     {

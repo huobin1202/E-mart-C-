@@ -20,6 +20,7 @@ try
 {
     await AuthorizationSchemaInitializer.InitializeAsync(services);
     await CheckColumns();
+    await CheckCustomerBirthdayRemoved();
     Check(await Scalar("SELECT COUNT(*) AS Value FROM sys.tables WHERE schema_id = SCHEMA_ID('dbo')") == 26, "26 current tables (incl. customer_vouchers) created from an absent database");
     foreach (var resource in PermissionCatalog.Resources.Keys)
     foreach (var op in resource is "reports" or "audit" or "invoices" ? new[] { "read" } : new[] { "read", "write" })
@@ -41,6 +42,8 @@ try
     // Emulate the previous schema, including old names and id primary keys.
     await db.Database.ExecuteSqlRawAsync("""
         CREATE TABLE dbo.inventory(id INT IDENTITY PRIMARY KEY, product_id INT NOT NULL, quantity INT NOT NULL);
+        ALTER TABLE dbo.customers ADD date_of_birth DATE NULL CONSTRAINT df_legacy_customer_birthday DEFAULT ('2000-01-01');
+        EXEC sys.sp_executesql N'INSERT dbo.customers(full_name,phone,date_of_birth,reward_points) VALUES (N''Legacy customer'',''0912345678'',''1995-03-09'',120);';
         INSERT dbo.inventory(product_id,quantity) VALUES (1,7);
         DROP INDEX idx_products_stock_quantity ON dbo.products;
         ALTER TABLE dbo.products DROP CONSTRAINT ck_products_stock_quantity;
@@ -85,6 +88,8 @@ try
         """);
     await AuthorizationSchemaInitializer.InitializeAsync(services);
     await CheckColumns();
+    await CheckCustomerBirthdayRemoved();
+    Check(await Scalar("SELECT reward_points AS Value FROM dbo.customers WHERE phone='0912345678'") == 120, "removing birthdays preserves customer and points");
     Check(await Scalar("SELECT stock_quantity AS Value FROM dbo.products WHERE id=1") == 7, "legacy stock copied");
     Check(await Scalar("SELECT CAST(selling_price AS INT) AS Value FROM dbo.products WHERE id=1") == 12500, "legacy price retained");
     Check(await Scalar("SELECT CAST(discount_percent AS INT) AS Value FROM dbo.product_promotions WHERE product_id=1") == 20, "promotion percent backfilled");
@@ -97,6 +102,7 @@ try
     Check(await Scalar("SELECT COUNT(*) AS Value FROM sys.triggers WHERE name='trg_invoice_items_lock_paid_snapshot' AND is_disabled=0") == 1, "paid invoice protection restored");
     await AuthorizationSchemaInitializer.InitializeAsync(services);
     Check(await Scalar("SELECT COUNT(*) AS Value FROM dbo.products") == 1, "upgraded database can initialize twice");
+    await CheckCustomerBirthdayRemoved();
 
     // A conflicting legacy stock table must abort and roll back earlier renames.
     await db.Database.ExecuteSqlRawAsync("""
@@ -138,6 +144,11 @@ finally
 }
 
 async Task<int> Scalar(string sql) => await db.Database.SqlQueryRaw<int>(sql).SingleAsync();
+async Task CheckCustomerBirthdayRemoved()
+{
+    Check(await Scalar("SELECT COUNT(*) AS Value FROM sys.columns WHERE object_id=OBJECT_ID('dbo.customers') AND name='date_of_birth'") == 0, "customer birthday column absent");
+    Check(await Scalar("SELECT COUNT(*) AS Value FROM sys.columns WHERE object_id=OBJECT_ID('dbo.employees') AND name='date_of_birth'") == 1, "employee birthday column retained");
+}
 void Check(bool condition, string message)
 {
     if (!condition) throw new Exception(message);

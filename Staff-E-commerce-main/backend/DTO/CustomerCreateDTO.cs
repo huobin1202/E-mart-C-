@@ -19,6 +19,5 @@ namespace backend.DTO
 
         [MaxLength(250, ErrorMessage = "Địa chỉ tối đa 250 ký tự.")]
         public string? Address { get; set; }
-        public DateTime? DateOfBirth { get; set; }
     }
 }

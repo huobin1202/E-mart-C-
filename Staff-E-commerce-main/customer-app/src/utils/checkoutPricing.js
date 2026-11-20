@@ -1,3 +1,11 @@
+export function catalogForAudience(products, isMember) {
+  if (isMember) return products;
+  return products.map((product) => {
+    if (!(Number(product.discountAmount) > 0) && Number(product.price) === Number(product.originalPrice ?? product.price)) return product;
+    return { ...product, price: product.originalPrice ?? product.price, discountAmount: 0, discountPercent: 0, promotionName: null, promotionEndsAt: null };
+  });
+}
+
 export function repriceVoucher(voucher, subtotal) {
   if (!voucher || subtotal <= 0) return null;
   const promotion = voucher.promotion;
